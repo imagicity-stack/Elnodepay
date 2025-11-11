@@ -673,7 +673,9 @@ const AccountantDashboard = () => {
         setDueDateSetting(resolvedDueDate || '');
         setDueDateDraft(resolvedDueDate || '');
       }
+      return students[0].id;
     });
+  }, [students]);
 
     const generalSettingsRef = doc(db, 'settings', 'general');
     const unsubscribeGeneral = onSnapshot(generalSettingsRef, (snapshot) => {
@@ -1015,6 +1017,7 @@ const AccountantDashboard = () => {
         status: 'Pending',
         due_date: dueDateSetting || '',
         created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
       });
 
       triggerToast('Fee request created successfully.');
