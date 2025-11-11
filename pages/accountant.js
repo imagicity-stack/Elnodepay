@@ -1,16 +1,22 @@
 import { useEffect, useMemo, useState } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { createUserWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
   addDoc,
   collection,
   deleteDoc,
   doc,
+  getDocs,
   onSnapshot,
+  query,
+  setDoc,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+
+const CLASS_OPTIONS = ['UKG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
 
 const initialFormState = {
   name: '',
@@ -30,6 +36,7 @@ const AccountantDashboard = () => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [editingStudentId, setEditingStudentId] = useState(null);
+  const [selectedClass, setSelectedClass] = useState('All');
 
   useEffect(() => {
     let active = true;
@@ -133,8 +140,34 @@ const AccountantDashboard = () => {
         await updateDoc(studentRef, payload);
         alert('Student updated successfully.');
       } else {
+        let parentAccountCreated = false;
+        let parentEmailAlreadyExists = false;
+        try {
+          const defaultPassword = 'elnode123';
+          const parentUser = await createUserWithEmailAndPassword(auth, payload.parent_email, defaultPassword);
+          await setDoc(doc(db, 'users', parentUser.user.uid), {
+            email: payload.parent_email,
+            name: payload.parent_email.split('@')[0],
+            role: 'parent',
+          });
+          parentAccountCreated = true;
+        } catch (parentError) {
+          if (parentError?.code === 'auth/email-already-in-use') {
+            parentEmailAlreadyExists = true;
+          } else {
+            throw parentError;
+          }
+        }
+
         await addDoc(collection(db, 'students'), payload);
-        alert('Student added successfully.');
+
+        if (parentAccountCreated) {
+          alert('Student added and parent account created successfully.');
+        } else if (parentEmailAlreadyExists) {
+          alert('Student added successfully. Parent account already exists.');
+        } else {
+          alert('Student added successfully.');
+        }
       }
 
       setIsFormOpen(false);
@@ -162,6 +195,13 @@ const AccountantDashboard = () => {
   };
 
   const hasStudents = useMemo(() => students.length > 0, [students]);
+  const filteredStudents = useMemo(() => {
+    if (selectedClass === 'All') {
+      return students;
+    }
+    return students.filter((student) => String(student.class ?? '').toLowerCase() === selectedClass.toLowerCase());
+  }, [selectedClass, students]);
+  const hasFilteredStudents = useMemo(() => filteredStudents.length > 0, [filteredStudents]);
 
   if (checkingAuth) {
     return (
@@ -235,15 +275,34 @@ const AccountantDashboard = () => {
             )}
           </div>
 
-          {error && <p className="mb-4 text-sm font-medium text-red-600">{error}</p>}
+          <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            {error && <p className="text-sm font-medium text-red-600">{error}</p>}
+            <div className="flex flex-1 justify-end">
+              <label className="flex w-full max-w-xs flex-col text-sm font-medium text-slate-700">
+                <span className="mb-1 text-slate-600">Select Class</span>
+                <select
+                  value={selectedClass}
+                  onChange={(event) => setSelectedClass(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm shadow-sm transition focus:border-[#A31F36] focus:outline-none focus:ring-2 focus:ring-[#A31F36]/30"
+                >
+                  <option value="All">All</option>
+                  {CLASS_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          </div>
 
           {!studentsLoading && !hasStudents && !error && (
             <p className="text-sm text-slate-600">No student data found. Use the &ldquo;Add Student&rdquo; button to get started.</p>
           )}
 
-          {hasStudents && (
+          {hasStudents && hasFilteredStudents && (
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-              {students.map((student) => (
+              {filteredStudents.map((student) => (
                 <article
                   key={student.id}
                   className="flex flex-col rounded-2xl border border-[#A31F36]/15 bg-[#A31F36]/5 p-5 shadow-sm transition hover:border-[#A31F36]/40"
@@ -293,6 +352,10 @@ const AccountantDashboard = () => {
               ))}
             </div>
           )}
+
+          {hasStudents && !hasFilteredStudents && (
+            <p className="text-sm text-slate-600">No students found for the selected class.</p>
+          )}
         </section>
       </div>
 
@@ -338,16 +401,23 @@ const AccountantDashboard = () => {
                 <label htmlFor="class" className="mb-1 block text-sm font-medium text-slate-700">
                   Class
                 </label>
-                <input
+                <select
                   id="class"
                   name="class"
-                  type="text"
                   required
                   value={formState.class}
                   onChange={handleFormChange}
                   className="w-full rounded-2xl border border-slate-200 px-4 py-2 text-sm shadow-sm transition focus:border-[#A31F36] focus:outline-none focus:ring-2 focus:ring-[#A31F36]/30"
-                  placeholder="Enter class"
-                />
+                >
+                  <option value="" disabled>
+                    Select class
+                  </option>
+                  {CLASS_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
