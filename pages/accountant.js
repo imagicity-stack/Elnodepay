@@ -29,6 +29,59 @@ import { auth, db } from '../lib/firebase';
 const CLASS_OPTIONS = ['Nursery', 'KG1', 'KG2', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
 const FEE_TYPE_OPTIONS = ['Monthly', 'Quarterly', '6 Months', 'Custom'];
 
+const toInputString = (value) => {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value === 'string') return value;
+  return '';
+};
+
+const buildFeeStructureDraft = (structure = {}) =>
+  CLASS_OPTIONS.reduce((acc, classKey) => {
+    const entry = structure[classKey] || {};
+    acc[classKey] = {
+      monthly: toInputString(entry.monthly),
+      quarterly: toInputString(entry.quarterly),
+      sixmonth: toInputString(entry.sixmonth ?? entry['6month']),
+    };
+    return acc;
+  }, {});
+
+const formatCurrency = (amount) => `₹${Number(amount || 0).toLocaleString('en-IN')}`;
+
+const resolveTransactionDate = (entry) => {
+  if (!entry) return null;
+  if (entry.date?.toDate) {
+    const asDate = entry.date.toDate();
+    return Number.isFinite(asDate.getTime()) ? asDate : null;
+  }
+  if (entry.date) {
+    const asDate = new Date(entry.date);
+    return Number.isFinite(asDate.getTime()) ? asDate : null;
+  }
+  return null;
+};
+
+const resolveTransactionMonthKey = (entry) => {
+  if (!entry) return '';
+  if (entry.month && typeof entry.month === 'string') {
+    return entry.month;
+  }
+  const date = resolveTransactionDate(entry);
+  if (!date) return '';
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const resolveTransactionMonthLabel = (entry) => {
+  if (!entry) return '';
+  if (entry.month && typeof entry.month === 'string') {
+    return entry.month;
+  }
+  const date = resolveTransactionDate(entry);
+  if (!date) return '';
+  return date.toLocaleString('default', { month: 'long', year: 'numeric' });
+};
+
 const emptyStudentForm = {
   studentId: '',
   name: '',
@@ -543,6 +596,13 @@ const AccountantDashboard = () => {
   const [classFilter, setClassFilter] = useState('All');
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [toast, setToast] = useState(null);
+  const [transactions, setTransactions] = useState([]);
+  const [transactionsLoading, setTransactionsLoading] = useState(true);
+  const [transactionFilters, setTransactionFilters] = useState({ month: 'All', mode: 'All' });
+  const [requestFilters, setRequestFilters] = useState({ status: 'All', class: 'All', search: '' });
+  const [feeStructureDraft, setFeeStructureDraft] = useState(() => buildFeeStructureDraft({}));
+  const [dueDateDraft, setDueDateDraft] = useState('');
+  const [savingFeeStructure, setSavingFeeStructure] = useState(false);
   const toastTimerRef = useRef(null);
   const secondaryAuthRef = useRef(null);
 
@@ -608,15 +668,22 @@ const AccountantDashboard = () => {
         const data = snapshot.data();
         const { due_date, defaultDueDate, ...rest } = data;
         setFeeStructure(rest);
-        setDueDateSetting((prev) => due_date || defaultDueDate || prev || '');
+        setFeeStructureDraft(buildFeeStructureDraft(rest));
+        const resolvedDueDate = due_date || defaultDueDate || '';
+        setDueDateSetting(resolvedDueDate || '');
+        setDueDateDraft(resolvedDueDate || '');
       }
+      return students[0].id;
     });
+  }, [students]);
 
     const generalSettingsRef = doc(db, 'settings', 'general');
     const unsubscribeGeneral = onSnapshot(generalSettingsRef, (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data();
-        setDueDateSetting((prev) => prev || data.defaultDueDate || '');
+        const resolvedDueDate = data.defaultDueDate || '';
+        setDueDateSetting((prev) => prev || resolvedDueDate);
+        setDueDateDraft((prev) => prev || resolvedDueDate);
       }
     });
 
@@ -624,6 +691,27 @@ const AccountantDashboard = () => {
       unsubscribeStructure();
       unsubscribeGeneral();
     };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    setTransactionsLoading(true);
+    const transactionsQuery = query(collection(db, 'transactions_log'), orderBy('date', 'desc'));
+    const unsubscribe = onSnapshot(
+      transactionsQuery,
+      (snapshot) => {
+        const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        setTransactions(data);
+        setTransactionsLoading(false);
+      },
+      (error) => {
+        console.error('Error fetching transactions', error);
+        setTransactions([]);
+        setTransactionsLoading(false);
+        triggerToast('Unable to load transactions.', 'error');
+      },
+    );
+    return () => unsubscribe();
   }, [user]);
 
   useEffect(() => {
@@ -929,6 +1017,7 @@ const AccountantDashboard = () => {
         status: 'Pending',
         due_date: dueDateSetting || '',
         created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
       });
 
       triggerToast('Fee request created successfully.');
@@ -954,6 +1043,91 @@ const AccountantDashboard = () => {
       setForm: () => {},
       submitting: false,
     });
+  };
+
+  const handleRequestFilterChange = (event) => {
+    const { name, value } = event.target;
+    setRequestFilters((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleTransactionFilterChange = (event) => {
+    const { name, value } = event.target;
+    setTransactionFilters((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleFeeStructureDraftChange = (classKey, field, value) => {
+    setFeeStructureDraft((prev) => ({
+      ...prev,
+      [classKey]: {
+        ...prev[classKey],
+        [field]: value.replace(/[^0-9.]/g, ''),
+      },
+    }));
+  };
+
+  const handleSaveFeeStructure = async (event) => {
+    event.preventDefault();
+    setSavingFeeStructure(true);
+    try {
+      const payload = { due_date: dueDateDraft || '' };
+      Object.entries(feeStructureDraft).forEach(([classKey, values]) => {
+        payload[classKey] = {
+          monthly: Number(values.monthly || 0),
+          quarterly: Number(values.quarterly || 0),
+          sixmonth: Number(values.sixmonth || 0),
+        };
+      });
+      await setDoc(doc(db, 'settings', 'feestructure'), payload, { merge: true });
+      triggerToast('Fee configuration saved.');
+      setDueDateSetting(dueDateDraft || '');
+    } catch (error) {
+      console.error('Error saving fee configuration', error);
+      triggerToast('Unable to save fee configuration.', 'error');
+    } finally {
+      setSavingFeeStructure(false);
+    }
+  };
+
+  const handleExportTransactions = () => {
+    if (typeof window === 'undefined') return;
+    if (filteredTransactions.length === 0) {
+      triggerToast('No transactions available to export.', 'error');
+      return;
+    }
+    const header = ['Date', 'Student', 'Class', 'Amount', 'Mode', 'Transaction ID', 'Month', 'Status'];
+    const rows = filteredTransactions.map((entry) => {
+      const date = resolveTransactionDate(entry);
+      return [
+        date ? date.toLocaleString() : '',
+        entry.student_name || '',
+        entry.class || '',
+        Number(entry.amount || 0).toFixed(2),
+        entry.mode || 'Online',
+        entry.transaction_id || '',
+        entry.month || resolveTransactionMonthLabel(entry) || '',
+        entry.status || 'Paid',
+      ];
+    });
+    const csvContent = [header, ...rows]
+      .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'transactions-report.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const findStudentForRequest = (request) => {
+    if (!request) return null;
+    return (
+      students.find((student) => student.id === request.studentDocId) ||
+      students.find((student) => student.studentId === request.studentId)
+    );
   };
 
   const openMarkPaidModal = (request) => {
@@ -1011,6 +1185,44 @@ const AccountantDashboard = () => {
     await signOut(auth);
     router.replace('/');
   };
+  const filteredRequests = useMemo(() => {
+    const search = requestFilters.search.trim().toLowerCase();
+    const filtered = feeRequests.filter((request) => {
+      const matchesStatus = requestFilters.status === 'All' || request.status === requestFilters.status;
+      const matchesClass = requestFilters.class === 'All' || request.class === requestFilters.class;
+      const matchesSearch =
+        search.length === 0 ||
+        request.student_name?.toLowerCase().includes(search) ||
+        request.studentId?.toLowerCase().includes(search);
+      return matchesStatus && matchesClass && matchesSearch;
+    });
+    return filtered.sort((a, b) => {
+      const dateA = a.created_at?.toDate ? a.created_at.toDate().getTime() : 0;
+      const dateB = b.created_at?.toDate ? b.created_at.toDate().getTime() : 0;
+      return dateB - dateA;
+    });
+  }, [feeRequests, requestFilters]);
+
+  const transactionMonthOptions = useMemo(() => {
+    const monthMap = new Map();
+    transactions.forEach((entry) => {
+      const key = resolveTransactionMonthKey(entry);
+      if (!key || monthMap.has(key)) return;
+      monthMap.set(key, resolveTransactionMonthLabel(entry) || key);
+    });
+    return Array.from(monthMap.entries()).map(([value, label]) => ({ value, label }));
+  }, [transactions]);
+
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter((entry) => {
+      const matchesMode =
+        transactionFilters.mode === 'All' || (entry.mode || 'Online') === transactionFilters.mode;
+      const matchesMonth =
+        transactionFilters.month === 'All' || resolveTransactionMonthKey(entry) === transactionFilters.month;
+      return matchesMode && matchesMonth;
+    });
+  }, [transactions, transactionFilters]);
+
   const filteredStudents = useMemo(() => {
     const search = searchValue.trim().toLowerCase();
     return students.filter((student) => {
@@ -1086,7 +1298,10 @@ const AccountantDashboard = () => {
         <nav className="mb-6 flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2">
           {[
             { id: 'students', label: 'Students' },
+            { id: 'requests', label: 'Fee Requests' },
             { id: 'add-student', label: 'Add Student' },
+            { id: 'transactions', label: 'Transactions' },
+            { id: 'settings', label: 'Settings' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -1438,6 +1653,449 @@ const AccountantDashboard = () => {
                 </div>
               </div>
             )}
+          </section>
+        )}
+        {activeTab === 'requests' && (
+          <section className="space-y-6">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Fee Requests</h2>
+                  <p className="text-sm text-slate-500">Track pending and paid fee requests for every student.</p>
+                </div>
+                <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                  <div className="flex w-full items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 focus-within:border-cardinal focus-within:ring-2 focus-within:ring-cardinal/20 sm:w-64">
+                    <span className="mr-2 text-slate-400">🔍</span>
+                    <input
+                      type="search"
+                      name="search"
+                      placeholder="Search by student or ID"
+                      value={requestFilters.search}
+                      onChange={handleRequestFilterChange}
+                      className="w-full bg-transparent text-sm focus:outline-none"
+                    />
+                  </div>
+                  <select
+                    name="status"
+                    value={requestFilters.status}
+                    onChange={handleRequestFilterChange}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 sm:w-auto"
+                  >
+                    <option value="All">All Statuses</option>
+                    <option value="Pending">Pending</option>
+                    <option value="Paid">Paid</option>
+                  </select>
+                  <select
+                    name="class"
+                    value={requestFilters.class}
+                    onChange={handleRequestFilterChange}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 sm:w-auto"
+                  >
+                    <option value="All">All Classes</option>
+                    {CLASS_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {filteredRequests.length === 0 ? (
+                <div className="mt-8 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                  No fee requests found yet.
+                </div>
+              ) : (
+                <>
+                  <div className="mt-6 hidden overflow-x-auto md:block">
+                    <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                          <th className="px-4 py-3 font-semibold">Student</th>
+                          <th className="px-4 py-3 font-semibold">Class</th>
+                          <th className="px-4 py-3 font-semibold">Fee Type</th>
+                          <th className="px-4 py-3 font-semibold">Amount</th>
+                          <th className="px-4 py-3 font-semibold">Status</th>
+                          <th className="px-4 py-3 font-semibold">Created</th>
+                          <th className="px-4 py-3 font-semibold">Due</th>
+                          <th className="px-4 py-3 font-semibold text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredRequests.map((request) => {
+                          const createdAt = request.created_at?.toDate ? request.created_at.toDate() : null;
+                          const extras = [];
+                          if (request.breakdown?.others) {
+                            extras.push({
+                              label: request.breakdown.others.label || 'Others',
+                              amount: request.breakdown.others.amount || 0,
+                            });
+                          }
+                          if (request.breakdown?.store) {
+                            extras.push({
+                              label: request.breakdown.store.label || 'Store Item',
+                              amount: request.breakdown.store.amount || 0,
+                            });
+                          }
+                          const studentForRow = findStudentForRequest(request);
+                          return (
+                            <tr key={request.id} className="transition hover:bg-slate-50/80">
+                              <td className="px-4 py-3">
+                                <div className="flex flex-col">
+                                  <span className="font-semibold text-slate-900">{request.student_name || '—'}</span>
+                                  <span className="text-xs text-slate-500">ID: {request.studentId || '—'}</span>
+                                  {extras.length > 0 && (
+                                    <div className="mt-2 text-xs text-slate-500">
+                                      <p className="font-semibold text-slate-600">Extras</p>
+                                      <ul className="mt-1 space-y-1">
+                                        {extras.map((extra) => (
+                                          <li key={`${request.id}-${extra.label}`} className="flex justify-between">
+                                            <span>{extra.label}</span>
+                                            <span>{formatCurrency(extra.amount)}</span>
+                                          </li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-slate-700">{request.class || '—'}</td>
+                              <td className="px-4 py-3 text-slate-700">{request.fee_type || '—'}</td>
+                              <td className="px-4 py-3 font-semibold text-slate-900">{formatCurrency(request.amount || 0)}</td>
+                              <td className="px-4 py-3">
+                                <span
+                                  className={`inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                                    request.status === 'Paid'
+                                      ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
+                                      : 'border-amber-200 bg-amber-50 text-amber-600'
+                                  }`}
+                                >
+                                  {request.status || 'Pending'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-slate-500">{createdAt ? createdAt.toLocaleDateString() : '—'}</td>
+                              <td className="px-4 py-3 text-slate-500">{request.due_date || dueDateSetting || '—'}</td>
+                              <td className="px-4 py-3">
+                                <div className="flex flex-wrap justify-end gap-2 text-xs font-semibold">
+                                  {request.status !== 'Paid' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openMarkPaidModal(request)}
+                                      className="rounded-full border border-cardinal/30 px-3 py-1 text-cardinal transition hover:bg-cardinal/10"
+                                    >
+                                      Mark Paid
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const studentRecord = studentForRow;
+                                      if (studentRecord) {
+                                        openHistoryModal(studentRecord);
+                                      } else {
+                                        triggerToast('Student record not found for this request.', 'error');
+                                      }
+                                    }}
+                                    className="rounded-full border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
+                                  >
+                                    View History
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-6 space-y-3 md:hidden">
+                    {filteredRequests.map((request) => {
+                      const createdAt = request.created_at?.toDate ? request.created_at.toDate() : null;
+                      const extras = [];
+                      if (request.breakdown?.others) {
+                        extras.push({
+                          label: request.breakdown.others.label || 'Others',
+                          amount: request.breakdown.others.amount || 0,
+                        });
+                      }
+                      if (request.breakdown?.store) {
+                        extras.push({
+                          label: request.breakdown.store.label || 'Store Item',
+                          amount: request.breakdown.store.amount || 0,
+                        });
+                      }
+                      const studentForRow = findStudentForRequest(request);
+                      return (
+                        <div key={request.id} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                          <div className="flex flex-col gap-1">
+                            <p className="text-sm font-semibold text-slate-900">{request.student_name || '—'}</p>
+                            <p className="text-xs text-slate-500">
+                              ID: {request.studentId || '—'} · Class {request.class || '—'}
+                            </p>
+                          </div>
+                          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                            <span className="rounded-full border border-slate-200 px-2 py-1">{request.fee_type || '—'}</span>
+                            <span className="rounded-full border border-slate-200 px-2 py-1 font-semibold text-slate-700">
+                              {formatCurrency(request.amount || 0)}
+                            </span>
+                            <span
+                              className={`rounded-full border px-2 py-1 font-semibold ${
+                                request.status === 'Paid'
+                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
+                                  : 'border-amber-200 bg-amber-50 text-amber-600'
+                              }`}
+                            >
+                              {request.status || 'Pending'}
+                            </span>
+                          </div>
+                          <p className="mt-2 text-xs text-slate-500">
+                            Created: {createdAt ? createdAt.toLocaleDateString() : '—'} · Due: {request.due_date || dueDateSetting || '—'}
+                          </p>
+                          {extras.length > 0 && (
+                            <div className="mt-3 text-xs text-slate-600">
+                              <p className="font-semibold uppercase text-slate-500">Extras</p>
+                              <ul className="mt-1 space-y-1">
+                                {extras.map((extra) => (
+                                  <li key={`${request.id}-mobile-${extra.label}`} className="flex justify-between">
+                                    <span>{extra.label}</span>
+                                    <span>{formatCurrency(extra.amount)}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+                            {request.status !== 'Paid' && (
+                              <button
+                                type="button"
+                                onClick={() => openMarkPaidModal(request)}
+                                className="rounded-full border border-cardinal/30 px-3 py-1 text-cardinal transition hover:bg-cardinal/10"
+                              >
+                                Mark Paid
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (studentForRow) {
+                                  openHistoryModal(studentForRow);
+                                } else {
+                                  triggerToast('Student record not found for this request.', 'error');
+                                }
+                              }}
+                              className="rounded-full border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
+                            >
+                              View History
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
+        )}
+        {activeTab === 'transactions' && (
+          <section className="space-y-6">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Transactions Log</h2>
+                  <p className="text-sm text-slate-500">Central ledger of all online and manual fee collections.</p>
+                </div>
+                <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                  <select
+                    name="month"
+                    value={transactionFilters.month}
+                    onChange={handleTransactionFilterChange}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 sm:w-auto"
+                  >
+                    <option value="All">All Months</option>
+                    {transactionMonthOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    name="mode"
+                    value={transactionFilters.mode}
+                    onChange={handleTransactionFilterChange}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 sm:w-auto"
+                  >
+                    <option value="All">All Modes</option>
+                    <option value="Cash">Cash</option>
+                    <option value="Online">Online</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleExportTransactions}
+                    className="w-full rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10 sm:w-auto"
+                  >
+                    Export to Excel
+                  </button>
+                </div>
+              </div>
+              {transactionsLoading ? (
+                <div className="mt-8 flex justify-center">
+                  <p className="text-sm text-slate-500">Loading transactions…</p>
+                </div>
+              ) : filteredTransactions.length === 0 ? (
+                <div className="mt-8 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                  No transactions recorded for the selected filters.
+                </div>
+              ) : (
+                <>
+                  <div className="mt-6 hidden overflow-x-auto md:block">
+                    <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                      <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="px-4 py-3 font-semibold">Date</th>
+                          <th className="px-4 py-3 font-semibold">Student</th>
+                          <th className="px-4 py-3 font-semibold">Class</th>
+                          <th className="px-4 py-3 font-semibold">Amount</th>
+                          <th className="px-4 py-3 font-semibold">Mode</th>
+                          <th className="px-4 py-3 font-semibold">Transaction ID</th>
+                          <th className="px-4 py-3 font-semibold">Month</th>
+                          <th className="px-4 py-3 font-semibold">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredTransactions.map((entry) => {
+                          const dateValue = resolveTransactionDate(entry);
+                          return (
+                            <tr key={entry.id} className="transition hover:bg-slate-50/80">
+                              <td className="px-4 py-3 text-slate-700">{dateValue ? dateValue.toLocaleString() : '—'}</td>
+                              <td className="px-4 py-3 text-slate-700">{entry.student_name || '—'}</td>
+                              <td className="px-4 py-3 text-slate-700">{entry.class || '—'}</td>
+                              <td className="px-4 py-3 font-semibold text-slate-900">{formatCurrency(entry.amount || 0)}</td>
+                              <td className="px-4 py-3 text-slate-700">{entry.mode || 'Online'}</td>
+                              <td className="px-4 py-3 text-slate-700">{entry.transaction_id || '—'}</td>
+                              <td className="px-4 py-3 text-slate-700">{entry.month || resolveTransactionMonthLabel(entry) || '—'}</td>
+                              <td className="px-4 py-3 text-slate-700">{entry.status || 'Paid'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mt-6 space-y-3 md:hidden">
+                    {filteredTransactions.map((entry) => {
+                      const dateValue = resolveTransactionDate(entry);
+                      return (
+                        <div key={entry.id} className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                          <p className="text-sm font-semibold text-slate-900">{entry.student_name || '—'}</p>
+                          <p className="mt-1 text-xs text-slate-500">
+                            {entry.studentId || ''} · Class {entry.class || '—'}
+                          </p>
+                          <p className="mt-2 text-xs text-slate-500">{dateValue ? dateValue.toLocaleString() : '—'}</p>
+                          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                            <span className="rounded-full border border-slate-200 px-2 py-1">{entry.mode || 'Online'}</span>
+                            <span className="rounded-full border border-slate-200 px-2 py-1 font-semibold text-slate-700">
+                              {formatCurrency(entry.amount || 0)}
+                            </span>
+                            <span className="rounded-full border border-slate-200 px-2 py-1">{entry.status || 'Paid'}</span>
+                          </div>
+                          <p className="mt-2 text-xs text-slate-500">
+                            Txn ID: {entry.transaction_id || '—'} · {entry.month || resolveTransactionMonthLabel(entry) || '—'}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
+        )}
+        {activeTab === 'settings' && (
+          <section className="space-y-6">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-900">Fee configuration</h2>
+              <p className="mt-1 text-sm text-slate-500">
+                Update tuition fees for each class and the default due date used when generating requests.
+              </p>
+              <form className="mt-6 space-y-6" onSubmit={handleSaveFeeStructure}>
+                <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                  Default Due Date
+                  <input
+                    value={dueDateDraft}
+                    onChange={(event) => setDueDateDraft(event.target.value)}
+                    placeholder="Ex: 10th of every month"
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  />
+                </label>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">Class</th>
+                        <th className="px-4 py-3 font-semibold">Monthly</th>
+                        <th className="px-4 py-3 font-semibold">Quarterly</th>
+                        <th className="px-4 py-3 font-semibold">6 Months</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {CLASS_OPTIONS.map((classKey) => {
+                        const values = feeStructureDraft[classKey] || {};
+                        return (
+                          <tr key={classKey}>
+                            <td className="px-4 py-3 font-semibold text-slate-700">{classKey}</td>
+                            <td className="px-4 py-3">
+                              <input
+                                value={values.monthly ?? ''}
+                                onChange={(event) => handleFeeStructureDraftChange(classKey, 'monthly', event.target.value)}
+                                placeholder="0"
+                                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                              />
+                            </td>
+                            <td className="px-4 py-3">
+                              <input
+                                value={values.quarterly ?? ''}
+                                onChange={(event) => handleFeeStructureDraftChange(classKey, 'quarterly', event.target.value)}
+                                placeholder="0"
+                                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                              />
+                            </td>
+                            <td className="px-4 py-3">
+                              <input
+                                value={values.sixmonth ?? ''}
+                                onChange={(event) => handleFeeStructureDraftChange(classKey, 'sixmonth', event.target.value)}
+                                placeholder="0"
+                                className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFeeStructureDraft(buildFeeStructureDraft(feeStructure));
+                      setDueDateDraft(dueDateSetting || '');
+                    }}
+                    className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
+                  >
+                    Reset
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingFeeStructure}
+                    className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {savingFeeStructure ? 'Saving…' : 'Save configuration'}
+                  </button>
+                </div>
+              </form>
+            </div>
           </section>
         )}
       </main>
