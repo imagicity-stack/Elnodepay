@@ -89,6 +89,24 @@ const handler = async (req, res) => {
       }
     }
 
+    const eventDate = new Date();
+    const monthKey = `${eventDate.getFullYear()}-${String(eventDate.getMonth() + 1).padStart(2, '0')}`;
+    const monthLabel = eventDate.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+    await addDoc(collection(db, 'transactions_log'), {
+      student_doc_id: studentDocId || '',
+      studentId: studentId || '',
+      student_name: studentName || '',
+      class: className || '',
+      amount: amountPaid,
+      mode: paymentMode || 'Online',
+      transaction_id: razorpay_payment_id || '',
+      status: 'Success',
+      month_key: monthKey,
+      month_label: monthLabel,
+      date: serverTimestamp(),
+      created_at: serverTimestamp(),
+    });
+
     if (parentUid || userId) {
       await addDoc(collection(db, 'notifications'), {
         user_uid: parentUid || userId,

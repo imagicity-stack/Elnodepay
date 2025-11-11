@@ -39,7 +39,9 @@ import { auth, db } from '../lib/firebase';
 
 ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend, Title);
 
-const CLASS_OPTIONS = ['UKG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+const CLASS_OPTIONS = ['Nursery', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+const SESSION_OPTIONS = ['2023-24', '2024-25', '2025-26', '2026-27', '2027-28'];
+const FEE_CYCLE_OPTIONS = ['Monthly', 'Quarterly', 'Half-Yearly'];
 const STATUS_OPTIONS = ['All', 'Paid', 'Pending', 'Overdue'];
 
 const emptyStudentForm = {
@@ -47,11 +49,9 @@ const emptyStudentForm = {
   name: '',
   class: '',
   section: '',
+  parent_phone: '',
   parent_email: '',
-  fee_amount: '',
-  balance: '',
-  status: 'Pending',
-  due_date: '',
+  fee_cycle: 'Monthly',
 };
 
 const statusBadgeClasses = {
@@ -78,7 +78,16 @@ const Modal = ({ title, children, onClose }) => (
   </div>
 );
 
-const StudentFormModal = ({ isEditing, formState, onChange, onSubmit, onClose, isSubmitting }) => (
+const StudentFormModal = ({
+  isEditing,
+  formState,
+  onChange,
+  onSubmit,
+  onClose,
+  isSubmitting,
+  calculatedFee,
+  defaultDueDate,
+}) => (
   <Modal title={isEditing ? 'Edit Student' : 'Add Student'} onClose={onClose}>
     <form onSubmit={onSubmit} className="space-y-4">
       <div className="grid gap-4 md:grid-cols-2">
@@ -131,7 +140,17 @@ const StudentFormModal = ({ isEditing, formState, onChange, onSubmit, onClose, i
             placeholder="A"
           />
         </label>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700 md:col-span-2">
+        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+          Parent Phone
+          <input
+            name="parent_phone"
+            value={formState.parent_phone}
+            onChange={onChange}
+            placeholder="9876543210"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
           Parent Email
           <input
             type="email"
@@ -144,54 +163,28 @@ const StudentFormModal = ({ isEditing, formState, onChange, onSubmit, onClose, i
           />
         </label>
         <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Fee Amount (₹)
-          <input
-            name="fee_amount"
-            value={formState.fee_amount}
-            onChange={onChange}
-            required
-            inputMode="decimal"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            placeholder="25000"
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Current Balance (₹)
-          <input
-            name="balance"
-            value={formState.balance}
-            onChange={onChange}
-            inputMode="decimal"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            placeholder="25000"
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Due Date
-          <input
-            type="date"
-            name="due_date"
-            value={formState.due_date}
-            onChange={onChange}
-            required
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Status
+          Fee Cycle
           <select
-            name="status"
-            value={formState.status}
+            name="fee_cycle"
+            value={formState.fee_cycle}
             onChange={onChange}
             className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
           >
-            {['Pending', 'Paid', 'Overdue'].map((status) => (
-              <option key={status} value={status}>
-                {status}
+            {FEE_CYCLE_OPTIONS.map((cycle) => (
+              <option key={cycle} value={cycle}>
+                {cycle}
               </option>
             ))}
           </select>
         </label>
+      </div>
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+        <p className="font-medium text-slate-900">Summary</p>
+        <p className="mt-1">Fee cycle: {formState.fee_cycle}</p>
+        <p className="mt-1">Due date: {defaultDueDate || 'Not configured'}</p>
+        <p className="mt-1 font-semibold text-slate-900">
+          Tuition fee payable: ₹{Number(calculatedFee || 0).toLocaleString('en-IN')}
+        </p>
       </div>
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
@@ -331,7 +324,147 @@ const AccountantDashboard = () => {
   });
   const [savingSettings, setSavingSettings] = useState(false);
   const [bulkSending, setBulkSending] = useState(false);
+  const [feeStructure, setFeeStructure] = useState({ session: '', defaultDueDate: '', fees: {} });
+  const [feeStructureDraft, setFeeStructureDraft] = useState({ session: '', defaultDueDate: '', fees: {} });
+  const [feeStructureSaving, setFeeStructureSaving] = useState(false);
+  const [storeCharges, setStoreCharges] = useState([]);
+  const [storeChargeForm, setStoreChargeForm] = useState({
+    studentId: '',
+    itemName: '',
+    amount: '',
+    date: new Date().toISOString().slice(0, 10),
+  });
+  const [storeChargeSubmitting, setStoreChargeSubmitting] = useState(false);
+  const [transactionsLog, setTransactionsLog] = useState([]);
+  const [transactionFilters, setTransactionFilters] = useState({ month: 'All', mode: 'All' });
+  const [toast, setToast] = useState(null);
   const secondaryAuthRef = useRef(null);
+  const toastTimerRef = useRef(null);
+
+  const normaliseFeeStructure = (data) => {
+    const rawFees = data?.fees || {};
+    const formattedFees = {};
+    CLASS_OPTIONS.forEach((cls) => {
+      const entry = rawFees[cls] || {};
+      formattedFees[cls] = {
+        monthly: entry.monthly ?? '',
+        quarterly: entry.quarterly ?? '',
+        halfYearly: entry.halfYearly ?? '',
+      };
+    });
+    return {
+      session: data?.session || '',
+      defaultDueDate: data?.defaultDueDate || '',
+      fees: formattedFees,
+    };
+  };
+
+  const getFeeAmountFromStructure = (className, cycle) => {
+    if (!className) return 0;
+    const entry = feeStructureDraft.fees?.[className] || {};
+    const monthly = Number(entry.monthly || 0);
+    const quarterly = Number(entry.quarterly || 0);
+    const halfYearly = Number(entry.halfYearly || 0);
+    switch (cycle) {
+      case 'Monthly':
+        return monthly;
+      case 'Quarterly':
+        return quarterly;
+      case 'Half-Yearly':
+        if (halfYearly) return halfYearly;
+        if (quarterly) return quarterly * 2;
+        return monthly * 6;
+      default:
+        return 0;
+    }
+  };
+
+  const getMonthMeta = (dateInput) => {
+    let dateValue;
+    if (!dateInput) {
+      dateValue = new Date();
+    } else if (dateInput?.toDate) {
+      dateValue = dateInput.toDate();
+    } else if (dateInput instanceof Date) {
+      dateValue = dateInput;
+    } else {
+      dateValue = new Date(dateInput);
+    }
+    if (!Number.isFinite(dateValue.getTime())) {
+      dateValue = new Date();
+    }
+    const key = `${dateValue.getFullYear()}-${String(dateValue.getMonth() + 1).padStart(2, '0')}`;
+    const label = dateValue.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+    return { key, label, date: dateValue };
+  };
+
+  const parseMonthKey = (value) => {
+    if (!value) return '';
+    if (/^\d{4}-\d{2}$/.test(value)) return value;
+    const parsed = new Date(value);
+    if (Number.isFinite(parsed.getTime())) {
+      return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+    }
+    const parts = `${value}`.split(' ');
+    if (parts.length >= 2) {
+      const tryDate = new Date(`${parts[0]} 1, ${parts[1]}`);
+      if (Number.isFinite(tryDate.getTime())) {
+        return `${tryDate.getFullYear()}-${String(tryDate.getMonth() + 1).padStart(2, '0')}`;
+      }
+    }
+    return value;
+  };
+
+  const resolveTransactionMonthKey = (entry) => {
+    if (!entry) return '';
+    if (entry.month_key) return entry.month_key;
+    if (entry.month) return parseMonthKey(entry.month);
+    return getMonthMeta(entry.date).key;
+  };
+
+  const resolveTransactionMonthLabel = (entry) => {
+    if (!entry) return '';
+    if (entry.month_label) return entry.month_label;
+    if (entry.month) {
+      const parsed = new Date(entry.month);
+      if (Number.isFinite(parsed.getTime())) {
+        return parsed.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+      }
+      return entry.month;
+    }
+    return getMonthMeta(entry.date).label;
+  };
+
+  const logTransactionEntry = async ({ student, amount, mode, transactionId, status }) => {
+    if (!student) return;
+    const meta = getMonthMeta();
+    try {
+      await addDoc(collection(db, 'transactions_log'), {
+        student_doc_id: student.id,
+        studentId: student.studentId || student.id,
+        student_name: student.name,
+        class: student.class,
+        amount: Number(amount || 0),
+        mode: mode || 'Online',
+        transaction_id: transactionId || '',
+        status: status || 'Success',
+        month_key: meta.key,
+        month_label: meta.label,
+        date: serverTimestamp(),
+        created_at: serverTimestamp(),
+      });
+    } catch (error) {
+      console.error('Unable to record transaction log', error);
+    }
+  };
+
+  const triggerToast = (message, tone = 'success') => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    setToast({ message, tone });
+    toastTimerRef.current = setTimeout(() => setToast(null), 4000);
+  };
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -354,6 +487,12 @@ const AccountantDashboard = () => {
 
     return () => unsubscribe();
   }, [router]);
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -404,11 +543,35 @@ const AccountantDashboard = () => {
       }
     });
 
+    const feeStructureRef = doc(db, 'settings', 'feestructure');
+    const unsubscribeFeeStructure = onSnapshot(feeStructureRef, (snapshot) => {
+      const structure = snapshot.exists()
+        ? normaliseFeeStructure(snapshot.data())
+        : normaliseFeeStructure({});
+      setFeeStructure(structure);
+      setFeeStructureDraft(structure);
+    });
+
+    const storeChargesQuery = query(collection(db, 'store_charges'), orderBy('created_at', 'desc'));
+    const unsubscribeStoreCharges = onSnapshot(storeChargesQuery, (snapshot) => {
+      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setStoreCharges(data);
+    });
+
+    const transactionsQuery = query(collection(db, 'transactions_log'), orderBy('date', 'desc'));
+    const unsubscribeTransactions = onSnapshot(transactionsQuery, (snapshot) => {
+      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setTransactionsLog(data);
+    });
+
     return () => {
       unsubscribeStudents();
       unsubscribePayments();
       unsubscribeReminders();
       unsubscribeSettings();
+      unsubscribeFeeStructure();
+      unsubscribeStoreCharges();
+      unsubscribeTransactions();
     };
   }, [user]);
 
@@ -509,6 +672,44 @@ const AccountantDashboard = () => {
     };
   }, [payments, students]);
 
+  const calculatedFeeAmount = useMemo(
+    () => getFeeAmountFromStructure(formState.class, formState.fee_cycle),
+    [formState.class, formState.fee_cycle, feeStructureDraft],
+  );
+
+  const sessionOptions = useMemo(() => {
+    if (!feeStructureDraft.session || SESSION_OPTIONS.includes(feeStructureDraft.session)) {
+      return SESSION_OPTIONS;
+    }
+    return [...SESSION_OPTIONS, feeStructureDraft.session];
+  }, [feeStructureDraft.session]);
+
+  const transactionMonthOptions = useMemo(() => {
+    const monthMap = new Map();
+    transactionsLog.forEach((entry) => {
+      const key = resolveTransactionMonthKey(entry);
+      const label = resolveTransactionMonthLabel(entry);
+      if (key) {
+        monthMap.set(key, label || key);
+      }
+    });
+    return Array.from(monthMap.entries())
+      .sort((a, b) => (a[0] > b[0] ? -1 : 1))
+      .map(([value, label]) => ({ value, label }));
+  }, [transactionsLog]);
+
+  const filteredTransactions = useMemo(() => {
+    return transactionsLog.filter((entry) => {
+      const matchesMode =
+        transactionFilters.mode === 'All' || (entry.mode || 'Online') === transactionFilters.mode;
+      if (transactionFilters.month === 'All') {
+        return matchesMode;
+      }
+      const key = resolveTransactionMonthKey(entry);
+      return matchesMode && key === transactionFilters.month;
+    });
+  }, [transactionsLog, transactionFilters]);
+
   const filteredStudents = useMemo(() => {
     return students.filter((student) => {
       const matchesClass = filters.class === 'All' || student.class === filters.class;
@@ -529,7 +730,7 @@ const AccountantDashboard = () => {
   };
 
   const handleOpenAddStudent = () => {
-    setFormState({ ...emptyStudentForm, due_date: settingsState.defaultDueDate || '' });
+    setFormState({ ...emptyStudentForm, fee_cycle: 'Monthly' });
     setEditingStudentId(null);
     setIsFormOpen(true);
   };
@@ -540,22 +741,29 @@ const AccountantDashboard = () => {
       name: student.name || '',
       class: student.class || '',
       section: student.section || '',
+      parent_phone: student.parent_phone || '',
       parent_email: student.parent_email || '',
-      fee_amount: String(student.fee_amount ?? ''),
-      balance: String(student.balance ?? ''),
-      status: student.status || 'Pending',
-      due_date: student.due_date || '',
+      fee_cycle: student.fee_cycle || 'Monthly',
     });
     setEditingStudentId(student.id);
     setIsFormOpen(true);
   };
 
-  const ensureParentAccount = async (email) => {
+  const ensureParentAccount = async (email, details = {}) => {
     if (!email) return null;
     const parentQuery = query(collection(db, 'users'), where('email', '==', email), limit(1));
     const existing = await getDocs(parentQuery);
     if (!existing.empty) {
-      return existing.docs[0].id;
+      const existingId = existing.docs[0].id;
+      if (details.name || details.phone) {
+        const updates = {};
+        if (details.name) updates.name = details.name;
+        if (details.phone) updates.contactNumber = details.phone;
+        if (Object.keys(updates).length > 0) {
+          await setDoc(doc(db, 'users', existingId), updates, { merge: true });
+        }
+      }
+      return existingId;
     }
 
     if (!secondaryAuthRef.current) {
@@ -568,8 +776,9 @@ const AccountantDashboard = () => {
       const userCredential = await createUserWithEmailAndPassword(parentAuth, email, defaultPassword);
       await setDoc(doc(db, 'users', userCredential.user.uid), {
         email,
-        name: email.split('@')[0],
+        name: details.name || email.split('@')[0],
         role: 'parent',
+        contactNumber: details.phone || '',
         created_at: serverTimestamp(),
       });
       return userCredential.user.uid;
@@ -577,7 +786,16 @@ const AccountantDashboard = () => {
       if (error?.code === 'auth/email-already-in-use') {
         const checkAgain = await getDocs(parentQuery);
         if (!checkAgain.empty) {
-          return checkAgain.docs[0].id;
+          const existingId = checkAgain.docs[0].id;
+          if (details.name || details.phone) {
+            const updates = {};
+            if (details.name) updates.name = details.name;
+            if (details.phone) updates.contactNumber = details.phone;
+            if (Object.keys(updates).length > 0) {
+              await setDoc(doc(db, 'users', existingId), updates, { merge: true });
+            }
+          }
+          return existingId;
         }
       }
       console.warn('Parent account creation skipped', error);
@@ -589,9 +807,10 @@ const AccountantDashboard = () => {
     const { name, value } = event.target;
     setFormState((prev) => ({
       ...prev,
-      [name]: ['fee_amount', 'balance'].includes(name)
-        ? value.replace(/[^0-9.]/g, '')
-        : value,
+      [name]:
+        name === 'parent_phone'
+          ? value.replace(/[^0-9+]/g, '')
+          : value,
     }));
   };
 
@@ -600,37 +819,68 @@ const AccountantDashboard = () => {
     setFormSubmitting(true);
 
     try {
-      const feeAmount = Number(formState.fee_amount || 0);
-      const balanceValue =
-        formState.balance !== '' ? Number(formState.balance || 0) : feeAmount;
-      const safeBalance = balanceValue < 0 ? 0 : balanceValue;
+      const feeAmount = getFeeAmountFromStructure(formState.class, formState.fee_cycle);
+      if (feeAmount <= 0) {
+        triggerToast('Fee structure missing for selected class and cycle.', 'error');
+        setFormSubmitting(false);
+        return;
+      }
       const baseData = {
         studentId: formState.studentId.trim(),
         name: formState.name.trim(),
         class: formState.class,
         section: formState.section.trim(),
+        parent_phone: formState.parent_phone.trim(),
         parent_email: formState.parent_email.trim().toLowerCase(),
+        fee_cycle: formState.fee_cycle,
         fee_amount: feeAmount,
-        balance: safeBalance,
-        due_date: formState.due_date,
-        status: formState.status || 'Pending',
+        due_date: feeStructureDraft.defaultDueDate || '',
+        status: 'Pending',
         term: settingsState.currentTerm || '',
+        session: feeStructureDraft.session || '',
       };
 
       if (editingStudentId) {
         const studentRef = doc(db, 'students', editingStudentId);
         const existingSnap = await getDoc(studentRef);
         const existingData = existingSnap.exists() ? existingSnap.data() : {};
-        const parentUid = existingData.parent_uid || (await ensureParentAccount(baseData.parent_email));
+        const parentUid =
+          existingData.parent_uid ||
+          (await ensureParentAccount(baseData.parent_email, {
+            name: existingData.parent_name || baseData.parent_email.split('@')[0],
+            phone: baseData.parent_phone,
+          }));
+        const preservedBalance = Number(existingData.balance ?? feeAmount);
+        const updatedStatus = preservedBalance <= 0 ? 'Paid' : existingData.status || 'Pending';
         await updateDoc(studentRef, {
           ...baseData,
+          balance: preservedBalance,
+          status: updatedStatus,
           parent_uid: parentUid || existingData.parent_uid || '',
+          parent_name: existingData.parent_name || baseData.parent_email.split('@')[0],
           updated_at: serverTimestamp(),
         });
+        if (parentUid) {
+          await setDoc(
+            doc(db, 'users', parentUid),
+            {
+              email: baseData.parent_email,
+              name: baseData.parent_email.split('@')[0],
+              contactNumber: baseData.parent_phone || '',
+              role: 'parent',
+            },
+            { merge: true },
+          );
+        }
+        triggerToast('Student updated successfully.');
       } else {
-        const parentUid = await ensureParentAccount(baseData.parent_email);
+        const parentUid = await ensureParentAccount(baseData.parent_email, {
+          name: baseData.parent_email.split('@')[0],
+          phone: baseData.parent_phone,
+        });
         const newStudent = await addDoc(collection(db, 'students'), {
           ...baseData,
+          balance: feeAmount,
           parent_uid: parentUid || '',
           created_at: serverTimestamp(),
         });
@@ -642,21 +892,185 @@ const AccountantDashboard = () => {
               email: baseData.parent_email,
               name: baseData.parent_email.split('@')[0],
               role: 'parent',
+              contactNumber: baseData.parent_phone || '',
+              children: arrayUnion(newStudent.id),
             },
             { merge: true },
           );
-          await updateDoc(parentRef, {
-            children: arrayUnion(newStudent.id),
-          });
         }
+        triggerToast('Student added successfully.');
       }
 
       setIsFormOpen(false);
     } catch (error) {
       console.error('Error saving student', error);
-      alert('Unable to save student record. Please try again.');
+      triggerToast('Unable to save student record. Please try again.', 'error');
     } finally {
       setFormSubmitting(false);
+    }
+  };
+
+  const handleStoreChargeChange = (event) => {
+    const { name, value } = event.target;
+    setStoreChargeForm((prev) => ({
+      ...prev,
+      [name]: name === 'amount' ? value.replace(/[^0-9.]/g, '') : value,
+    }));
+  };
+
+  const handleAddStoreCharge = async (event) => {
+    event.preventDefault();
+    if (!storeChargeForm.studentId || !storeChargeForm.itemName.trim()) {
+      triggerToast('Please select a student and enter item details.', 'error');
+      return;
+    }
+    const amountValue = Number(storeChargeForm.amount || 0);
+    if (amountValue <= 0) {
+      triggerToast('Amount must be greater than zero.', 'error');
+      return;
+    }
+
+    const student = students.find((item) => item.id === storeChargeForm.studentId);
+    if (!student) {
+      triggerToast('Selected student not found.', 'error');
+      return;
+    }
+
+    setStoreChargeSubmitting(true);
+    try {
+      const chargeDate = storeChargeForm.date || new Date().toISOString().slice(0, 10);
+      const docRef = await addDoc(collection(db, 'store_charges'), {
+        student_doc_id: student.id,
+        studentId: student.studentId || student.id,
+        student_name: student.name,
+        class: student.class || '',
+        item_name: storeChargeForm.itemName.trim(),
+        amount: amountValue,
+        charge_date: chargeDate,
+        parent_email: student.parent_email || '',
+        parent_uid: student.parent_uid || '',
+        paid: false,
+        created_at: serverTimestamp(),
+      });
+      const optimisticCharge = {
+        id: docRef.id,
+        student_doc_id: student.id,
+        studentId: student.studentId || student.id,
+        student_name: student.name,
+        class: student.class || '',
+        item_name: storeChargeForm.itemName.trim(),
+        amount: amountValue,
+        charge_date: chargeDate,
+        parent_email: student.parent_email || '',
+        parent_uid: student.parent_uid || '',
+        paid: false,
+        created_at: new Date().toISOString(),
+      };
+      setStoreCharges((prev) => [optimisticCharge, ...prev.filter((item) => item.id !== optimisticCharge.id)]);
+      setStoreChargeForm({
+        studentId: '',
+        itemName: '',
+        amount: '',
+        date: new Date().toISOString().slice(0, 10),
+      });
+      triggerToast('Store charge added.', 'success');
+    } catch (error) {
+      console.error('Store charge error', error);
+      triggerToast('Unable to add store charge. Please try again.', 'error');
+    } finally {
+      setStoreChargeSubmitting(false);
+    }
+  };
+
+  const handleTransactionFilterChange = (event) => {
+    const { name, value } = event.target;
+    setTransactionFilters((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleExportTransactions = () => {
+    const header = [
+      'Date',
+      'Student Name',
+      'Class',
+      'Amount',
+      'Mode',
+      'Transaction ID',
+      'Month',
+      'Status',
+    ];
+    const rows = filteredTransactions.map((entry) => {
+      const dateValue = entry.date?.toDate
+        ? entry.date.toDate().toLocaleString()
+        : entry.date || '';
+      return [
+        dateValue,
+        entry.student_name || '',
+        entry.class || '',
+        Number(entry.amount || 0).toFixed(2),
+        entry.mode || '',
+        entry.transaction_id || '',
+        resolveTransactionMonthLabel(entry),
+        entry.status || '',
+      ];
+    });
+    const csvContent = [header, ...rows].map((line) => line.join(',')).join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'transactions-log.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handleFeeStructureFieldChange = (event) => {
+    const { name, value } = event.target;
+    setFeeStructureDraft((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleFeeValueChange = (className, field, rawValue) => {
+    setFeeStructureDraft((prev) => ({
+      ...prev,
+      fees: {
+        ...prev.fees,
+        [className]: {
+          ...prev.fees[className],
+          [field]: rawValue.replace(/[^0-9.]/g, ''),
+        },
+      },
+    }));
+  };
+
+  const handleFeeStructureSave = async (event) => {
+    event.preventDefault();
+    setFeeStructureSaving(true);
+    try {
+      const payload = {
+        session: feeStructureDraft.session || '',
+        defaultDueDate: feeStructureDraft.defaultDueDate || '',
+        fees: {},
+        updated_at: serverTimestamp(),
+      };
+      CLASS_OPTIONS.forEach((cls) => {
+        const entry = feeStructureDraft.fees?.[cls] || {};
+        const monthly = Number(entry.monthly || 0);
+        const quarterly = Number(entry.quarterly || 0);
+        const halfYearly = Number(entry.halfYearly || quarterly * 2 || monthly * 6);
+        payload.fees[cls] = {
+          monthly,
+          quarterly,
+          halfYearly,
+        };
+      });
+      await setDoc(doc(db, 'settings', 'feestructure'), payload, { merge: true });
+      triggerToast('Fee settings saved successfully.', 'success');
+    } catch (error) {
+      console.error('Error saving fee structure', error);
+      triggerToast('Unable to save fee settings. Please try again.', 'error');
+    } finally {
+      setFeeStructureSaving(false);
     }
   };
 
@@ -723,12 +1137,16 @@ const AccountantDashboard = () => {
 
   const handleMarkPaid = async (student) => {
     const amountToClear = Number(student.balance ?? student.fee_amount ?? 0);
-    if (amountToClear <= 0) return;
+    if (amountToClear <= 0) {
+      triggerToast('No outstanding balance for this student.', 'error');
+      return;
+    }
     try {
       const studentRef = doc(db, 'students', student.id);
       await updateDoc(studentRef, {
         balance: 0,
         status: 'Paid',
+        updated_at: serverTimestamp(),
       });
       await addDoc(collection(db, 'payments'), {
         studentId: student.studentId || student.id,
@@ -743,9 +1161,17 @@ const AccountantDashboard = () => {
         fee_type: 'Manual Adjustment',
         status: 'Success',
       });
+      await logTransactionEntry({
+        student,
+        amount: amountToClear,
+        mode: 'Cash',
+        transactionId: '',
+        status: 'Success',
+      });
+      triggerToast('Payment recorded successfully.', 'success');
     } catch (error) {
       console.error('Error marking paid', error);
-      alert('Unable to update record.');
+      triggerToast('Unable to update record.', 'error');
     }
   };
 
@@ -874,8 +1300,11 @@ const AccountantDashboard = () => {
           {[
             { id: 'overview', label: 'Overview' },
             { id: 'records', label: 'Student Payment Records' },
+            { id: 'fee-settings', label: 'Fee Settings' },
+            { id: 'store-charges', label: 'Store Charges' },
+            { id: 'transactions', label: 'Transactions Log' },
             { id: 'reminders', label: 'Reminders & Notifications' },
-            { id: 'settings', label: 'Settings' },
+            { id: 'settings', label: 'Automation Settings' },
           ].map((tab) => (
             <button
               key={tab.id}
@@ -1145,6 +1574,298 @@ const AccountantDashboard = () => {
           </section>
         )}
 
+        {activeTab === 'fee-settings' && (
+          <section className="mt-8 space-y-6">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-col gap-2">
+                <h2 className="text-lg font-semibold text-slate-900">Fee Structure</h2>
+                <p className="text-sm text-slate-500">
+                  Manage tuition fee slabs, billing cycles, and the default due date for reminders.
+                </p>
+              </div>
+              <form className="mt-6 space-y-6" onSubmit={handleFeeStructureSave}>
+                <div className="grid gap-4 md:grid-cols-3">
+                  <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                    Session
+                    <select
+                      name="session"
+                      value={feeStructureDraft.session}
+                      onChange={handleFeeStructureFieldChange}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    >
+                      <option value="">Select session</option>
+                      {sessionOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                    Default Due Date
+                    <input
+                      type="date"
+                      name="defaultDueDate"
+                      value={feeStructureDraft.defaultDueDate || ''}
+                      onChange={handleFeeStructureFieldChange}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    />
+                  </label>
+                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                    <p className="font-medium text-slate-900">Fee Cycle Notes</p>
+                    <p className="mt-1">Half-yearly dues are auto-calculated from quarterly fees.</p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Class</th>
+                        <th className="px-4 py-3 text-left">Monthly Fee (₹)</th>
+                        <th className="px-4 py-3 text-left">Quarterly Fee (₹)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {CLASS_OPTIONS.map((item) => (
+                        <tr key={item}>
+                          <td className="px-4 py-3 font-medium text-slate-700">{item}</td>
+                          <td className="px-4 py-3">
+                            <input
+                              value={feeStructureDraft.fees?.[item]?.monthly ?? ''}
+                              onChange={(event) => handleFeeValueChange(item, 'monthly', event.target.value)}
+                              placeholder="0"
+                              inputMode="decimal"
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              value={feeStructureDraft.fees?.[item]?.quarterly ?? ''}
+                              onChange={(event) => handleFeeValueChange(item, 'quarterly', event.target.value)}
+                              placeholder="0"
+                              inputMode="decimal"
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                            />
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={feeStructureSaving}
+                    className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {feeStructureSaving ? 'Saving…' : 'Save Fee Settings'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'store-charges' && (
+          <section className="mt-8 space-y-6">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-col gap-2">
+                <h2 className="text-lg font-semibold text-slate-900">Store Charges</h2>
+                <p className="text-sm text-slate-500">Add uniforms, books, and other purchases to student accounts.</p>
+              </div>
+              <form className="mt-6 grid gap-4 md:grid-cols-4" onSubmit={handleAddStoreCharge}>
+                <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                  Student
+                  <select
+                    name="studentId"
+                    value={storeChargeForm.studentId}
+                    onChange={handleStoreChargeChange}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  >
+                    <option value="">Select student</option>
+                    {students.map((student) => (
+                      <option key={student.id} value={student.id}>
+                        {student.name} · {student.class}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                  Item Name
+                  <input
+                    name="itemName"
+                    value={storeChargeForm.itemName}
+                    onChange={handleStoreChargeChange}
+                    placeholder="Sports Kit"
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                  Amount (₹)
+                  <input
+                    name="amount"
+                    value={storeChargeForm.amount}
+                    onChange={handleStoreChargeChange}
+                    placeholder="0"
+                    inputMode="decimal"
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                  Date
+                  <input
+                    type="date"
+                    name="date"
+                    value={storeChargeForm.date}
+                    onChange={handleStoreChargeChange}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  />
+                </label>
+                <div className="md:col-span-4 flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={storeChargeSubmitting}
+                    className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {storeChargeSubmitting ? 'Adding…' : 'Add Charge'}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="text-base font-semibold text-slate-900">Recent Charges</h3>
+              <div className="mt-4 overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Date</th>
+                      <th className="px-4 py-3 text-left">Student</th>
+                      <th className="px-4 py-3 text-left">Item</th>
+                      <th className="px-4 py-3 text-left">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {storeCharges.map((charge) => {
+                      const dateLabel = charge.charge_date
+                        ? new Date(charge.charge_date).toLocaleDateString()
+                        : charge.created_at?.toDate
+                          ? charge.created_at.toDate().toLocaleDateString()
+                          : charge.created_at
+                            ? new Date(charge.created_at).toLocaleDateString()
+                            : '-';
+                      return (
+                        <tr key={charge.id}>
+                          <td className="px-4 py-3 text-slate-600">{dateLabel}</td>
+                          <td className="px-4 py-3 text-slate-700">{charge.student_name}</td>
+                          <td className="px-4 py-3 text-slate-700">{charge.item_name}</td>
+                          <td className="px-4 py-3 text-slate-900">₹{Number(charge.amount || 0).toLocaleString('en-IN')}</td>
+                        </tr>
+                      );
+                    })}
+                    {storeCharges.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="px-4 py-10 text-center text-sm text-slate-500">
+                          No store charges recorded yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'transactions' && (
+          <section className="mt-8 space-y-6">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Transactions Log</h2>
+                  <p className="text-sm text-slate-500">
+                    Central ledger of all online and manual fee collections.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <select
+                    name="month"
+                    value={transactionFilters.month}
+                    onChange={handleTransactionFilterChange}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  >
+                    <option value="All">All Months</option>
+                    {transactionMonthOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    name="mode"
+                    value={transactionFilters.mode}
+                    onChange={handleTransactionFilterChange}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  >
+                    <option value="All">All Modes</option>
+                    <option value="Cash">Cash</option>
+                    <option value="Online">Online</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleExportTransactions}
+                    className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
+                  >
+                    Export to Excel
+                  </button>
+                </div>
+              </div>
+              <div className="mt-6 overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Date</th>
+                      <th className="px-4 py-3 text-left">Student</th>
+                      <th className="px-4 py-3 text-left">Class</th>
+                      <th className="px-4 py-3 text-left">Amount</th>
+                      <th className="px-4 py-3 text-left">Mode</th>
+                      <th className="px-4 py-3 text-left">Transaction ID</th>
+                      <th className="px-4 py-3 text-left">Month</th>
+                      <th className="px-4 py-3 text-left">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredTransactions.map((entry) => {
+                      const dateValue = entry.date?.toDate
+                        ? entry.date.toDate().toLocaleString()
+                        : entry.date || '-';
+                      return (
+                        <tr key={entry.id}>
+                          <td className="px-4 py-3 text-slate-600">{dateValue}</td>
+                          <td className="px-4 py-3 text-slate-700">{entry.student_name}</td>
+                          <td className="px-4 py-3 text-slate-700">{entry.class}</td>
+                          <td className="px-4 py-3 text-slate-900">₹{Number(entry.amount || 0).toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3 text-slate-700">{entry.mode || '-'}</td>
+                          <td className="px-4 py-3 text-slate-700">{entry.transaction_id || '—'}</td>
+                          <td className="px-4 py-3 text-slate-700">{resolveTransactionMonthLabel(entry)}</td>
+                          <td className="px-4 py-3 text-slate-700">{entry.status || '-'}</td>
+                        </tr>
+                      );
+                    })}
+                    {filteredTransactions.length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
+                          No transactions recorded for the selected filters.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        )}
+
         {activeTab === 'reminders' && (
           <section className="mt-8 space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1230,6 +1951,20 @@ const AccountantDashboard = () => {
           payments={historyContext.entries}
           onClose={() => setHistoryContext({ open: false, student: null, entries: [] })}
         />
+      )}
+
+      {toast && (
+        <div
+          className={`fixed bottom-6 right-6 z-50 rounded-2xl px-4 py-3 text-sm shadow-lg transition ${
+            toast.tone === 'error'
+              ? 'bg-rose-500 text-white'
+              : toast.tone === 'warning'
+                ? 'bg-amber-500 text-white'
+                : 'bg-emerald-500 text-white'
+          }`}
+        >
+          {toast.message}
+        </div>
       )}
     </div>
   );
