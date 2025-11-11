@@ -1,9 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import Head from 'next/head';
 import { useRouter } from 'next/router';
-import { signInWithEmailAndPassword } from 'firebase/auth';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
-import Layout from '../components/Layout';
-import Card from '../components/Card';
 import { auth, db } from '../lib/firebase';
 
 const LoginPage = () => {
@@ -12,93 +11,188 @@ const LoginPage = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    const handleRoleRedirect = async (firebaseUser) => {
+      try {
+        const userDoc = await getDoc(doc(db, 'users', firebaseUser.uid));
+        if (!active) return;
+
+        if (!userDoc.exists()) {
+          alert('Role not assigned.');
+          await signOut(auth);
+          setCheckingAuth(false);
+          return;
+        }
+
+        const { role } = userDoc.data();
+
+        if (role === 'accountant') {
+          await router.replace('/accountant');
+          return;
+        }
+
+        if (role === 'parent') {
+          await router.replace('/parent');
+          return;
+        }
+
+        alert('Role not assigned.');
+        await signOut(auth);
+        setCheckingAuth(false);
+      } catch (err) {
+        console.error(err);
+        if (!active) return;
+        setError('Unable to verify account. Please try again.');
+        setCheckingAuth(false);
+      }
+    };
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!active) {
+        return;
+      }
+
+      if (!user) {
+        setCheckingAuth(false);
+        return;
+      }
+
+      setCheckingAuth(true);
+      handleRoleRedirect(user);
+    });
+
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [router]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    setLoading(true);
     setError('');
+    setLoading(true);
 
     try {
-      const credential = await signInWithEmailAndPassword(auth, email, password);
-      const userDoc = await getDoc(doc(db, 'users', credential.user.uid));
-
-      if (!userDoc.exists()) {
-        throw new Error('User profile missing. Contact school administration.');
-      }
-
-      const profile = userDoc.data();
-      if (profile.role === 'accountant') {
-        router.push('/accountant');
-      } else {
-        router.push('/parent');
-      }
+      await signInWithEmailAndPassword(auth, email, password);
     } catch (err) {
-      setError(err.message || 'Login failed.');
+      const message = err?.message?.replace('Firebase: ', '') || 'Login failed. Please check your credentials.';
+      setError(message);
     } finally {
       setLoading(false);
     }
   };
 
+  const renderSpinner = (size = 'h-5 w-5', color = 'border-white/60') => (
+    <span
+      className={`inline-block ${size} animate-spin rounded-full border-2 border-solid ${color} border-t-transparent`}
+      aria-hidden="true"
+    />
+  );
+
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center px-4 font-poppins">
+        <Head>
+          <title>EL-NODE Pay Login</title>
+          <link rel="preconnect" href="https://fonts.googleapis.com" />
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+          <link
+            href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
+            rel="stylesheet"
+          />
+        </Head>
+        <div className="flex flex-col items-center gap-4 text-cardinal">
+          {renderSpinner('h-8 w-8', 'border-cardinal')}
+          <p className="text-sm font-medium">Preparing your dashboard…</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <Layout title="Login">
-      <div className="grid lg:grid-cols-2 gap-10 items-center">
-        <div className="space-y-6">
-          <h2 className="text-3xl font-semibold text-cardinal">Welcome to EL-NODE Pay</h2>
-          <p className="text-lg text-slate-600">
-            Parents can securely pay student fees, view transaction history, and stay updated with upcoming
-            dues. Accountants manage fee records, track payments, and send reminders.
+    <div className="min-h-screen bg-white flex items-center justify-center px-4 py-16 font-poppins text-slate-800">
+      <Head>
+        <title>EL-NODE Pay Login</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </Head>
+      <div className="w-full max-w-5xl grid gap-12 md:grid-cols-2 items-center">
+        <div className="space-y-6 text-center md:text-left">
+          <h1 className="text-4xl font-semibold text-cardinal">EL-NODE Pay Login</h1>
+          <p className="text-base leading-relaxed text-slate-600">
+            Access the EL-NODE Pay platform to manage tuition payments and student balances. Accountants can review
+            student dues while parents can stay ahead on upcoming payments.
           </p>
-          <div className="grid md:grid-cols-2 gap-4 text-sm">
-            <div className="p-4 rounded-lg bg-cardinal text-white shadow">
-              <h3 className="font-semibold">For Parents</h3>
-              <p className="text-white/80 mt-2">Track dues, pay instantly with Razorpay, and download receipts.</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-cardinal/20 bg-cardinal/10 p-4 text-left shadow-sm">
+              <h2 className="text-lg font-semibold text-cardinal">For Accountants</h2>
+              <p className="mt-2 text-sm text-cardinal/80">
+                View outstanding balances and organise tuition records in one secure place.
+              </p>
             </div>
-            <div className="p-4 rounded-lg bg-cardinal/10 text-cardinal shadow">
-              <h3 className="font-semibold">For Accountants</h3>
-              <p className="mt-2 text-cardinal/80">Manage student balances, confirm payments, and send reminders.</p>
+            <div className="rounded-2xl border border-cardinal/20 bg-white p-4 text-left shadow-sm">
+              <h2 className="text-lg font-semibold text-cardinal">For Parents</h2>
+              <p className="mt-2 text-sm text-slate-600">Track your student&apos;s dues and stay updated on deadlines.</p>
             </div>
           </div>
         </div>
-        <Card title="Sign in">
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            <div>
-              <label htmlFor="email" className="block text-sm font-medium text-slate-600">
+        <div className="rounded-3xl border border-cardinal/20 bg-cardinal/5 p-8 shadow-xl">
+          <form className="space-y-5" onSubmit={handleSubmit}>
+            <div className="space-y-2">
+              <label htmlFor="email" className="text-sm font-medium text-cardinal">
                 Email address
               </label>
               <input
                 id="email"
                 type="email"
                 required
-                className="mt-1 w-full rounded-md border border-cardinal/40 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-cardinal"
+                className="w-full rounded-xl border border-cardinal/20 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/40"
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@example.com"
               />
             </div>
-            <div>
-              <label htmlFor="password" className="block text-sm font-medium text-slate-600">
+            <div className="space-y-2">
+              <label htmlFor="password" className="text-sm font-medium text-cardinal">
                 Password
               </label>
               <input
                 id="password"
                 type="password"
                 required
-                className="mt-1 w-full rounded-md border border-cardinal/40 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-cardinal"
+                className="w-full rounded-xl border border-cardinal/20 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/40"
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
+                placeholder="Enter your password"
               />
             </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
+            {error && <p className="text-sm font-medium text-red-600">{error}</p>}
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-cardinal text-white font-semibold rounded-md py-2 shadow hover:bg-cardinal/90 disabled:cursor-wait"
+              className="w-full rounded-xl bg-cardinal py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-90"
             >
-              {loading ? 'Signing in…' : 'Sign in'}
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  {renderSpinner('h-4 w-4')}
+                  Signing in…
+                </span>
+              ) : (
+                'Sign in'
+              )}
             </button>
           </form>
-        </Card>
+        </div>
       </div>
-    </Layout>
+    </div>
   );
 };
 
