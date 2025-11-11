@@ -1,287 +1,137 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
+import Head from 'next/head';
 import { useRouter } from 'next/router';
-import { onAuthStateChanged } from 'firebase/auth';
-import {
-  collection,
-  doc,
-  getDoc,
-  onSnapshot,
-  orderBy,
-  query,
-  updateDoc,
-  where
-} from 'firebase/firestore';
-import Layout from '../components/Layout';
-import Card from '../components/Card';
-import StatsGrid from '../components/StatsGrid';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
-
-const loadRazorpayScript = () =>
-  new Promise((resolve) => {
-    if (typeof window === 'undefined') {
-      resolve(false);
-      return;
-    }
-
-    if (document.getElementById('razorpay-sdk')) {
-      resolve(true);
-      return;
-    }
-
-    const script = document.createElement('script');
-    script.id = 'razorpay-sdk';
-    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-    script.onload = () => resolve(true);
-    script.onerror = () => resolve(false);
-    document.body.appendChild(script);
-  });
 
 const ParentDashboard = () => {
   const router = useRouter();
-  const [userProfile, setUserProfile] = useState(null);
-  const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [processing, setProcessing] = useState(false);
-  const [message, setMessage] = useState('');
+  const [checkingAuth, setCheckingAuth] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    let active = true;
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!active) {
+        return;
+      }
+
       if (!user) {
-        router.push('/');
+        setCheckingAuth(false);
+        router.replace('/');
         return;
       }
 
-      const profileRef = doc(db, 'users', user.uid);
-      const profileSnap = await getDoc(profileRef);
+      (async () => {
+        try {
+          const profileSnap = await getDoc(doc(db, 'users', user.uid));
+          if (!active) return;
 
-      if (!profileSnap.exists()) {
-        setMessage('Profile not found. Contact the school.');
-        setLoading(false);
-        return;
-      }
+          if (!profileSnap.exists()) {
+            alert('Role not assigned.');
+            await signOut(auth);
+            setCheckingAuth(false);
+            router.replace('/');
+            return;
+          }
 
-      const profileData = profileSnap.data();
-      if (profileData.role !== 'parent') {
-        router.push('/accountant');
-        return;
-      }
+          const { role } = profileSnap.data();
 
-      setUserProfile({ id: user.uid, email: user.email, ...profileData });
-      setLoading(false);
+          if (role === 'parent') {
+            setCheckingAuth(false);
+            return;
+          }
 
-      const txnQuery = query(
-        collection(db, 'transactions'),
-        where('user_id', '==', user.uid),
-        orderBy('date', 'desc')
-      );
+          if (role === 'accountant') {
+            router.replace('/accountant');
+            return;
+          }
 
-      const unsubscribeTxn = onSnapshot(txnQuery, (snapshot) => {
-        const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-        setTransactions(data);
-      });
-
-      return unsubscribeTxn;
+          alert('Role not assigned.');
+          await signOut(auth);
+          setCheckingAuth(false);
+          router.replace('/');
+        } catch (err) {
+          console.error(err);
+          if (!active) return;
+          setCheckingAuth(false);
+        }
+      })();
     });
 
-    return () => unsubscribe();
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, [router]);
 
-  const handlePayNow = useCallback(async () => {
-    if (!userProfile || processing) {
-      return;
-    }
-
-    setProcessing(true);
-    setMessage('');
-
-    const scriptLoaded = await loadRazorpayScript();
-    if (!scriptLoaded) {
-      setMessage('Unable to load Razorpay checkout. Check your connection.');
-      setProcessing(false);
-      return;
-    }
-
-    try {
-      const response = await fetch('/api/createOrder', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          amount: Math.max(userProfile.total_due, 0),
-          userId: userProfile.id
-        })
-      });
-
-      const data = await response.json();
-      if (!response.ok || !data.success) {
-        throw new Error(data.message || 'Unable to initiate payment.');
-      }
-
-      const options = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID || '',
-        amount: data.order.amount,
-        currency: data.order.currency,
-        name: 'The Elden Heights School',
-        description: 'School fee payment',
-        order_id: data.order.id,
-        prefill: {
-          name: userProfile.student_name || userProfile.name,
-          email: userProfile.email || auth.currentUser?.email || '',
-          contact: userProfile.contact || ''
-        },
-        handler: async (responsePayload) => {
-          try {
-            const verifyResponse = await fetch('/api/verifyPayment', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                ...responsePayload,
-                orderId: data.order.id,
-                userId: userProfile.id,
-                amount: data.order.amount
-              })
-            });
-            const verifyData = await verifyResponse.json();
-            if (!verifyResponse.ok || !verifyData.success) {
-              throw new Error(verifyData.message || 'Verification failed');
-            }
-            setMessage('Payment successful! Thank you.');
-          } catch (err) {
-            setMessage(err.message || 'Unable to verify payment.');
-          } finally {
-            setProcessing(false);
-          }
-        },
-        notes: {
-          student: userProfile.student_name,
-          class: userProfile.class
-        },
-        theme: { color: '#A31F36' }
-      };
-
-      const razorpay = new window.Razorpay(options);
-      razorpay.on('payment.failed', (event) => {
-        setMessage(event.error?.description || 'Payment failed. Please try again.');
-        setProcessing(false);
-      });
-      razorpay.open();
-    } catch (error) {
-      setMessage(error.message || 'Unable to start payment.');
-      setProcessing(false);
-    }
-  }, [processing, userProfile]);
-
-  const markClearedMessage = async () => {
-    if (!userProfile) return;
-    await updateDoc(doc(db, 'users', userProfile.id), {
-      total_due: 0
-    });
+  const handleSignOut = async () => {
+    await signOut(auth);
+    router.replace('/');
   };
 
-  if (loading) {
+  const renderSpinner = () => (
+    <span className="h-6 w-6 animate-spin rounded-full border-2 border-solid border-cardinal/60 border-t-transparent" aria-hidden="true" />
+  );
+
+  if (checkingAuth) {
     return (
-      <Layout title="Parent Dashboard">
-        <p className="text-center text-slate-600">Loading your dashboard…</p>
-      </Layout>
+      <div className="min-h-screen bg-white flex items-center justify-center px-4 font-poppins text-cardinal">
+        <Head>
+          <title>Parent Dashboard</title>
+          <link rel="preconnect" href="https://fonts.googleapis.com" />
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+          <link
+            href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
+            rel="stylesheet"
+          />
+        </Head>
+        <div className="flex flex-col items-center gap-4">
+          {renderSpinner()}
+          <p className="text-sm font-medium">Loading your portal…</p>
+        </div>
+      </div>
     );
   }
-
-  if (!userProfile) {
-    return (
-      <Layout title="Parent Dashboard">
-        <p className="text-center text-slate-600">{message || 'No profile to display.'}</p>
-      </Layout>
-    );
-  }
-
-  const stats = [
-    {
-      label: 'Pending Fee',
-      value: `₹${(userProfile.total_due || 0).toLocaleString('en-IN')}`,
-      helper: userProfile.next_due_date ? `Due by ${userProfile.next_due_date}` : 'No upcoming dues registered.'
-    },
-    {
-      label: 'Student',
-      value: userProfile.student_name || 'N/A',
-      helper: userProfile.class ? `Class ${userProfile.class}` : ''
-    },
-    {
-      label: 'Last Payment',
-      value: transactions[0]?.date || 'No payments yet',
-      helper: transactions[0]?.amount ? `₹${transactions[0].amount}` : ''
-    },
-    {
-      label: 'Status',
-      value: userProfile.total_due > 0 ? 'Payment Pending' : 'Cleared',
-      helper: userProfile.total_due > 0 ? 'Please settle dues at the earliest.' : 'Thank you for staying up to date.'
-    }
-  ];
 
   return (
-    <Layout title="Parent Dashboard">
-      <div className="space-y-8">
-        <StatsGrid stats={stats} />
-
-        <Card
-          title="Fee Summary"
-          actions={
-            <button
-              type="button"
-              onClick={handlePayNow}
-              disabled={processing || userProfile.total_due <= 0}
-              className="bg-cardinal text-white px-4 py-2 rounded-md font-semibold shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:bg-cardinal/60"
-            >
-              {processing ? 'Processing…' : userProfile.total_due > 0 ? 'Pay Now' : 'All Clear'}
-            </button>
-          }
-        >
-          <ul className="space-y-2 text-sm">
-            <li><strong>Student Name:</strong> {userProfile.student_name}</li>
-            <li><strong>Class:</strong> {userProfile.class}</li>
-            <li><strong>Parent:</strong> {userProfile.name}</li>
-            <li><strong>Contact:</strong> {userProfile.contact}</li>
-            <li><strong>Total Due:</strong> ₹{userProfile.total_due}</li>
-            <li><strong>Next Due Date:</strong> {userProfile.next_due_date || 'Not set'}</li>
-          </ul>
-          {message && <p className="text-sm text-cardinal font-medium">{message}</p>}
+    <div className="min-h-screen bg-white px-4 py-12 font-poppins text-slate-800">
+      <Head>
+        <title>Parent Dashboard</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </Head>
+      <div className="mx-auto flex w-full max-w-4xl flex-col gap-10">
+        <header className="flex flex-col gap-4 rounded-3xl border border-cardinal/20 bg-cardinal/5 p-8 shadow-lg sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-semibold text-cardinal">Welcome</h1>
+            <p className="mt-2 text-sm text-slate-600">
+              Welcome to your EL-NODE Pay parent portal.
+            </p>
+          </div>
           <button
             type="button"
-            onClick={markClearedMessage}
-            className="text-xs text-cardinal/70 underline"
+            onClick={handleSignOut}
+            className="inline-flex items-center justify-center rounded-xl border border-cardinal bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-cardinal/90"
           >
-            Mark as cleared (demo)
+            Sign out
           </button>
-        </Card>
+        </header>
 
-        <Card title="Transaction History">
-          {transactions.length === 0 ? (
-            <p className="text-sm text-slate-500">No payments recorded yet.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-cardinal/10 text-cardinal">
-                  <tr>
-                    <th className="px-4 py-2 text-left">Date</th>
-                    <th className="px-4 py-2 text-left">Amount</th>
-                    <th className="px-4 py-2 text-left">Razorpay ID</th>
-                    <th className="px-4 py-2 text-left">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {transactions.map((txn) => (
-                    <tr key={txn.id} className="border-b border-slate-100">
-                      <td className="px-4 py-2">{txn.date}</td>
-                      <td className="px-4 py-2">₹{txn.amount}</td>
-                      <td className="px-4 py-2">{txn.razorpay_id || '—'}</td>
-                      <td className="px-4 py-2 capitalize">{txn.status}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </Card>
+        <section className="rounded-3xl border border-cardinal/15 bg-white p-8 shadow-lg">
+          <h2 className="text-xl font-semibold text-cardinal">Your Payments at a Glance</h2>
+          <p className="mt-4 text-sm text-slate-600">
+            Future updates will display your student&apos;s payment history, outstanding balances, and secure payment
+            actions. Stay tuned for the latest enhancements to EL-NODE Pay.
+          </p>
+        </section>
       </div>
-    </Layout>
+    </div>
   );
 };
 

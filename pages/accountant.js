@@ -1,247 +1,190 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
+import Head from 'next/head';
 import { useRouter } from 'next/router';
-import { onAuthStateChanged } from 'firebase/auth';
-import { addDoc, collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where } from 'firebase/firestore';
-import Layout from '../components/Layout';
-import Card from '../components/Card';
-import StatsGrid from '../components/StatsGrid';
-import { auth, db, messagingPromise } from '../lib/firebase';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { collection, doc, getDoc, getDocs } from 'firebase/firestore';
+import { auth, db } from '../lib/firebase';
 
 const AccountantDashboard = () => {
   const router = useRouter();
-  const [loading, setLoading] = useState(true);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [studentsLoading, setStudentsLoading] = useState(true);
   const [students, setStudents] = useState([]);
-  const [search, setSearch] = useState('');
-  const [message, setMessage] = useState('');
-  const [currentUser, setCurrentUser] = useState(null);
-  const [sendingReminder, setSendingReminder] = useState('');
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    let unsubscribeProfile = () => {};
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
-      if (!user) {
-        router.push('/');
+    let active = true;
+
+    const fetchStudents = async () => {
+      if (!active) return;
+      setStudentsLoading(true);
+      setError('');
+
+      try {
+        const snapshot = await getDocs(collection(db, 'students'));
+        if (!active) return;
+
+        const studentRecords = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        setStudents(studentRecords);
+      } catch (err) {
+        console.error(err);
+        if (!active) return;
+        setError('Unable to load student data. Please try again later.');
+        setStudents([]);
+      } finally {
+        if (active) {
+          setStudentsLoading(false);
+        }
+      }
+    };
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!active) {
         return;
       }
-      setCurrentUser(user);
-      const profileRef = doc(db, 'users', user.uid);
-      unsubscribeProfile = onSnapshot(profileRef, (snapshot) => {
-        if (!snapshot.exists()) {
-          setMessage('Accountant profile not found.');
-          setLoading(false);
-          return;
+
+      if (!user) {
+        setCheckingAuth(false);
+        router.replace('/');
+        return;
+      }
+
+      (async () => {
+        try {
+          const profileSnap = await getDoc(doc(db, 'users', user.uid));
+          if (!active) return;
+
+          if (!profileSnap.exists()) {
+            alert('Role not assigned.');
+            await signOut(auth);
+            setCheckingAuth(false);
+            router.replace('/');
+            return;
+          }
+
+          const { role } = profileSnap.data();
+
+          if (role === 'accountant') {
+            setCheckingAuth(false);
+            fetchStudents();
+            return;
+          }
+
+          if (role === 'parent') {
+            router.replace('/parent');
+            return;
+          }
+
+          alert('Role not assigned.');
+          await signOut(auth);
+          setCheckingAuth(false);
+          router.replace('/');
+        } catch (err) {
+          console.error(err);
+          if (!active) return;
+          setError('Unable to verify your access. Please try again.');
+          setCheckingAuth(false);
+          setStudentsLoading(false);
         }
-        const profile = snapshot.data();
-        if (profile.role !== 'accountant') {
-          router.push('/parent');
-          return;
-        }
-        setLoading(false);
-      });
+      })();
     });
 
     return () => {
-      unsubscribeProfile();
-      unsubscribeAuth();
+      active = false;
+      unsubscribe();
     };
   }, [router]);
 
-  useEffect(() => {
-    const studentsQuery = query(collection(db, 'users'), where('role', '==', 'parent'));
-    const unsubscribeStudents = onSnapshot(studentsQuery, (snapshot) => {
-      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-      data.sort((a, b) => (a.student_name || '').localeCompare(b.student_name || ''));
-      setStudents(data);
-    });
-
-    return () => unsubscribeStudents();
-  }, []);
-
-  const filteredStudents = useMemo(() => {
-    const term = search.trim().toLowerCase();
-    if (!term) return students;
-    return students.filter((student) => {
-      return (
-        student.student_name?.toLowerCase().includes(term) ||
-        student.name?.toLowerCase().includes(term) ||
-        student.student_id?.toLowerCase().includes(term)
-      );
-    });
-  }, [search, students]);
-
-  const totals = useMemo(() => {
-    const collected = students.reduce((sum, student) => sum + (student.collected_amount || 0), 0);
-    const pending = students.reduce((sum, student) => sum + (student.total_due || 0), 0);
-    return {
-      collected,
-      pending,
-      students: students.length
-    };
-  }, [students]);
-
-  const handleDueUpdate = async (studentId, amount) => {
-    try {
-      await updateDoc(doc(db, 'users', studentId), {
-        total_due: Number(amount)
-      });
-      setMessage('Due amount updated.');
-    } catch (error) {
-      setMessage(error.message || 'Unable to update due.');
-    }
+  const handleSignOut = async () => {
+    await signOut(auth);
+    router.replace('/');
   };
 
-  const handleMarkReceived = async (student) => {
-    try {
-      await addDoc(collection(db, 'transactions'), {
-        user_id: student.id,
-        amount: student.total_due,
-        date: new Date().toISOString(),
-        razorpay_id: 'manual',
-        status: 'received',
-        created_at: serverTimestamp()
-      });
-      await updateDoc(doc(db, 'users', student.id), {
-        total_due: 0,
-        collected_amount: (student.collected_amount || 0) + student.total_due
-      });
-      setMessage(`Marked payment received for ${student.student_name}.`);
-    } catch (error) {
-      setMessage(error.message || 'Unable to mark payment received.');
-    }
-  };
+  const renderSpinner = () => (
+    <span className="h-6 w-6 animate-spin rounded-full border-2 border-solid border-cardinal/60 border-t-transparent" aria-hidden="true" />
+  );
 
-  const handleSendReminder = async (student) => {
-    try {
-      setSendingReminder(student.id);
-      const messaging = await messagingPromise;
-      if (!messaging) {
-        setMessage('Reminder service not supported in this browser.');
-        setSendingReminder('');
-        return;
-      }
-      // Placeholder stub for sending reminder
-      console.info('Reminder sent to', student.contact);
-      setMessage(`Reminder queued for ${student.student_name}.`);
-    } catch (error) {
-      setMessage(error.message || 'Unable to send reminder.');
-    } finally {
-      setSendingReminder('');
-    }
-  };
-
-  if (loading) {
+  if (checkingAuth) {
     return (
-      <Layout title="Accountant Dashboard">
-        <p className="text-center text-slate-600">Loading accountant tools…</p>
-      </Layout>
+      <div className="min-h-screen bg-white flex items-center justify-center px-4 font-poppins text-cardinal">
+        <Head>
+          <title>Accountant Dashboard</title>
+          <link rel="preconnect" href="https://fonts.googleapis.com" />
+          <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+          <link
+            href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
+            rel="stylesheet"
+          />
+        </Head>
+        <div className="flex flex-col items-center gap-4">
+          {renderSpinner()}
+          <p className="text-sm font-medium">Checking account access…</p>
+        </div>
+      </div>
     );
   }
 
-  const stats = [
-    {
-      label: 'Students',
-      value: totals.students,
-      helper: 'Active parent accounts'
-    },
-    {
-      label: 'Total Collected',
-      value: `₹${totals.collected.toLocaleString('en-IN')}`,
-      helper: 'Updated from transactions'
-    },
-    {
-      label: 'Total Pending',
-      value: `₹${totals.pending.toLocaleString('en-IN')}`,
-      helper: 'Outstanding dues'
-    },
-    {
-      label: 'Signed in as',
-      value: currentUser?.email || 'Accountant',
-      helper: 'Firebase authentication'
-    }
-  ];
-
   return (
-    <Layout title="Accountant Dashboard">
-      <div className="space-y-8">
-        <StatsGrid stats={stats} />
-
-        <Card title="Student Overview">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <input
-              type="search"
-              placeholder="Search by student name or ID"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              className="w-full md:w-80 rounded-md border border-cardinal/40 px-4 py-2 focus:outline-none focus:ring-2 focus:ring-cardinal"
-            />
-            {message && <p className="text-sm text-cardinal font-medium">{message}</p>}
+    <div className="min-h-screen bg-white px-4 py-12 font-poppins text-slate-800">
+      <Head>
+        <title>Accountant Dashboard</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </Head>
+      <div className="mx-auto flex w-full max-w-6xl flex-col gap-10">
+        <header className="flex flex-col gap-4 rounded-3xl border border-cardinal/20 bg-cardinal/5 p-8 shadow-lg sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-semibold text-cardinal">Accountant Dashboard</h1>
+            <p className="mt-2 text-sm text-slate-600">
+              Review student balances and upcoming payment dates from the central ledger.
+            </p>
           </div>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="inline-flex items-center justify-center rounded-xl border border-cardinal bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-cardinal/90"
+          >
+            Sign out
+          </button>
+        </header>
 
-          <div className="overflow-x-auto mt-6">
-            <table className="min-w-full text-sm">
-              <thead className="bg-cardinal/10 text-cardinal">
-                <tr>
-                  <th className="px-4 py-2 text-left">Student</th>
-                  <th className="px-4 py-2 text-left">Class</th>
-                  <th className="px-4 py-2 text-left">Total Due</th>
-                  <th className="px-4 py-2 text-left">Next Due Date</th>
-                  <th className="px-4 py-2 text-left">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredStudents.map((student) => (
-                  <tr key={student.id} className="border-b border-slate-100">
-                    <td className="px-4 py-2">
-                      <p className="font-medium text-slate-800">{student.student_name}</p>
-                      <p className="text-xs text-slate-500">Parent: {student.name}</p>
-                      {student.student_id && (
-                        <p className="text-xs text-slate-400">ID: {student.student_id}</p>
-                      )}
-                    </td>
-                    <td className="px-4 py-2">{student.class || 'N/A'}</td>
-                    <td className="px-4 py-2">
-                      <input
-                        type="number"
-                        min="0"
-                        defaultValue={student.total_due || 0}
-                        className="w-28 rounded-md border border-cardinal/40 px-2 py-1 text-right"
-                        onBlur={(event) => handleDueUpdate(student.id, event.target.value)}
-                      />
-                    </td>
-                    <td className="px-4 py-2">{student.next_due_date || 'Not set'}</td>
-                    <td className="px-4 py-2">
-                      <div className="flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleMarkReceived(student)}
-                          className="bg-cardinal text-white px-3 py-1 rounded-md text-xs font-semibold hover:bg-cardinal/90"
-                        >
-                          Mark Received
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleSendReminder(student)}
-                          className="border border-cardinal text-cardinal px-3 py-1 rounded-md text-xs font-semibold hover:bg-cardinal/10"
-                        >
-                          {sendingReminder === student.id ? 'Sending…' : 'Send Reminder'}
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {filteredStudents.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-slate-500">
-                      No students found. Try a different search term.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+        <section className="rounded-3xl border border-cardinal/15 bg-white p-8 shadow-lg">
+          <div className="mb-6 flex items-center justify-between">
+            <h2 className="text-xl font-semibold text-cardinal">Student Accounts</h2>
+            {studentsLoading && renderSpinner()}
           </div>
-        </Card>
+          {error && <p className="mb-4 text-sm font-medium text-red-600">{error}</p>}
+          {!studentsLoading && students.length === 0 ? (
+            <p className="text-sm text-slate-600">No student data found.</p>
+          ) : (
+            <div className="grid gap-6 md:grid-cols-2">
+              {students.map((student) => (
+                <article
+                  key={student.id}
+                  className="rounded-2xl border border-cardinal/15 bg-cardinal/5 p-6 shadow-sm transition hover:border-cardinal/40"
+                >
+                  <h3 className="text-lg font-semibold text-cardinal">{student.name || student.student_name || 'Student'}</h3>
+                  <dl className="mt-4 space-y-2 text-sm text-slate-600">
+                    <div className="flex items-center justify-between">
+                      <dt className="font-medium text-cardinal">Total Due</dt>
+                      <dd>₹{Number(student.total_due || 0).toLocaleString('en-IN')}</dd>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <dt className="font-medium text-cardinal">Next Due Date</dt>
+                      <dd>{student.next_due_date || 'Not set'}</dd>
+                    </div>
+                  </dl>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       </div>
-    </Layout>
+    </div>
   );
 };
 
