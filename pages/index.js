@@ -124,56 +124,73 @@ const LoginPage = () => {
           rel="stylesheet"
         />
       </Head>
-      <div className="w-full max-w-md space-y-8">
-        <div className="text-center">
-          <h1 className="text-4xl font-semibold text-cardinal">EL-NODE Pay</h1>
-          <p className="mt-2 text-sm text-slate-500">Sign in to continue.</p>
+      <div className="w-full max-w-5xl grid gap-12 md:grid-cols-2 items-center">
+        <div className="space-y-6 text-center md:text-left">
+          <h1 className="text-4xl font-semibold text-cardinal">EL-NODE Pay Login</h1>
+          <p className="text-base leading-relaxed text-slate-600">
+            Access the EL-NODE Pay platform to manage tuition payments and student balances. Accountants can review
+            student dues while parents can stay ahead on upcoming payments.
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-cardinal/20 bg-cardinal/10 p-4 text-left shadow-sm">
+              <h2 className="text-lg font-semibold text-cardinal">For Accountants</h2>
+              <p className="mt-2 text-sm text-cardinal/80">
+                View outstanding balances and organise tuition records in one secure place.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-cardinal/20 bg-white p-4 text-left shadow-sm">
+              <h2 className="text-lg font-semibold text-cardinal">For Parents</h2>
+              <p className="mt-2 text-sm text-slate-600">Track your student&apos;s dues and stay updated on deadlines.</p>
+            </div>
+          </div>
         </div>
-        <form className="space-y-5 rounded-3xl border border-cardinal/20 bg-cardinal/5 p-6 shadow-xl" onSubmit={handleSubmit}>
-          <div className="space-y-2">
-            <label htmlFor="email" className="text-sm font-medium text-cardinal">
-              Email address
-            </label>
-            <input
-              id="email"
-              type="email"
-              required
-              className="w-full rounded-xl border border-cardinal/20 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/40"
-              value={email}
-              onChange={(event) => setEmail(event.target.value)}
-              placeholder="you@example.com"
-            />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="password" className="text-sm font-medium text-cardinal">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              className="w-full rounded-xl border border-cardinal/20 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/40"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder="Enter your password"
-            />
-          </div>
-          {error && <p className="text-sm font-medium text-red-600">{error}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-xl bg-cardinal py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-90"
-          >
-            {loading ? (
-              <span className="flex items-center justify-center gap-2">
-                {renderSpinner('h-4 w-4')}
-                Signing in…
-              </span>
-            ) : (
-              'Sign in'
-            )}
-          </button>
-        </form>
+        <div className="rounded-3xl border border-cardinal/20 bg-cardinal/5 p-8 shadow-xl">
+          <form className="space-y-5" onSubmit={handleSubmit}>
+            <div className="space-y-2">
+              <label htmlFor="email" className="text-sm font-medium text-cardinal">
+                Email address
+              </label>
+              <input
+                id="email"
+                type="email"
+                required
+                className="w-full rounded-xl border border-cardinal/20 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/40"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@example.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="password" className="text-sm font-medium text-cardinal">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                required
+                className="w-full rounded-xl border border-cardinal/20 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/40"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Enter your password"
+              />
+            </div>
+            {error && <p className="text-sm font-medium text-red-600">{error}</p>}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-xl bg-cardinal py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-90"
+            >
+              {loading ? (
+                <span className="flex items-center justify-center gap-2">
+                  {renderSpinner('h-4 w-4')}
+                  Signing in…
+                </span>
+              ) : (
+                'Sign in'
+              )}
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   );
