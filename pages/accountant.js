@@ -9,8 +9,10 @@ import {
 } from 'firebase/auth';
 import {
   addDoc,
+  arrayRemove,
   arrayUnion,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -39,10 +41,14 @@ import { auth, db } from '../lib/firebase';
 
 ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend, Title);
 
-const CLASS_OPTIONS = ['Nursery', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+const CLASS_OPTIONS = ['Nursery', 'Kg1', 'Kg2', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
 const SESSION_OPTIONS = ['2023-24', '2024-25', '2025-26', '2026-27', '2027-28'];
-const FEE_CYCLE_OPTIONS = ['Monthly', 'Quarterly', 'Half-Yearly'];
 const STATUS_OPTIONS = ['All', 'Paid', 'Pending', 'Overdue'];
+const REQUEST_CYCLE_OPTIONS = [
+  { id: 'Monthly', label: 'Monthly' },
+  { id: 'Quarterly', label: 'Quarterly' },
+  { id: 'Half-Yearly', label: '6 Months' },
+];
 
 const emptyStudentForm = {
   studentId: '',
@@ -162,25 +168,9 @@ const StudentFormModal = ({
             placeholder="parent@example.com"
           />
         </label>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Fee Cycle
-          <select
-            name="fee_cycle"
-            value={formState.fee_cycle}
-            onChange={onChange}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-          >
-            {FEE_CYCLE_OPTIONS.map((cycle) => (
-              <option key={cycle} value={cycle}>
-                {cycle}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
         <p className="font-medium text-slate-900">Summary</p>
-        <p className="mt-1">Fee cycle: {formState.fee_cycle}</p>
         <p className="mt-1">Due date: {defaultDueDate || 'Not configured'}</p>
         <p className="mt-1 font-semibold text-slate-900">
           Tuition fee payable: ₹{Number(calculatedFee || 0).toLocaleString('en-IN')}
@@ -200,6 +190,174 @@ const StudentFormModal = ({
           className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? 'Saving…' : isEditing ? 'Save changes' : 'Add student'}
+        </button>
+      </div>
+    </form>
+  </Modal>
+);
+
+const FeeRequestModal = ({
+  student,
+  formState,
+  cycleOptions,
+  amounts,
+  onFieldChange,
+  onSubmit,
+  onClose,
+  isSubmitting,
+}) => (
+  <Modal title={`Create Fee Request · ${student?.name || ''}`} onClose={onClose}>
+    <form onSubmit={onSubmit} className="space-y-5">
+      <div className="grid gap-4 md:grid-cols-2">
+        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+          Billing Cycle
+          <select
+            name="cycle"
+            value={formState.cycle}
+            onChange={(event) => onFieldChange(event.target.name, event.target.value)}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          >
+            {cycleOptions.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+          Due Date
+          <input
+            type="date"
+            name="dueDate"
+            value={formState.dueDate}
+            onChange={(event) => onFieldChange(event.target.name, event.target.value)}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+          Custom Fee (optional)
+          <input
+            name="customAmount"
+            value={formState.customAmount}
+            onChange={(event) => onFieldChange(event.target.name, event.target.value)}
+            placeholder="0"
+            inputMode="decimal"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+          Custom Fee Note
+          <input
+            name="customNote"
+            value={formState.customNote}
+            onChange={(event) => onFieldChange(event.target.name, event.target.value)}
+            placeholder="Reason for custom amount"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+          Others Amount (optional)
+          <input
+            name="othersAmount"
+            value={formState.othersAmount}
+            onChange={(event) => onFieldChange(event.target.name, event.target.value)}
+            placeholder="0"
+            inputMode="decimal"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+          Others Name (optional)
+          <input
+            name="othersLabel"
+            value={formState.othersLabel}
+            onChange={(event) => onFieldChange(event.target.name, event.target.value)}
+            placeholder="Lab fee, picnic…"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+          Store Charges
+          <select
+            name="includeStore"
+            value={formState.includeStore ? 'yes' : 'no'}
+            onChange={(event) => onFieldChange('includeStore', event.target.value === 'yes')}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          >
+            <option value="no">No</option>
+            <option value="yes">Yes</option>
+          </select>
+        </label>
+      </div>
+      {formState.includeStore && (
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+            Store Item Name
+            <input
+              name="storeItem"
+              value={formState.storeItem}
+              onChange={(event) => onFieldChange(event.target.name, event.target.value)}
+              placeholder="Uniform, books…"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            />
+          </label>
+          <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+            Store Amount
+            <input
+              name="storeAmount"
+              value={formState.storeAmount}
+              onChange={(event) => onFieldChange(event.target.name, event.target.value)}
+              placeholder="0"
+              inputMode="decimal"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            />
+          </label>
+        </div>
+      )}
+      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+        <p className="font-medium text-slate-900">Breakdown</p>
+        <ul className="mt-2 space-y-1">
+          <li className="flex justify-between">
+            <span>{cycleOptions.find((item) => item.id === formState.cycle)?.label || 'Tuition'}</span>
+            <span>₹{amounts.base.toLocaleString('en-IN')}</span>
+          </li>
+          {amounts.custom > 0 && (
+            <li className="flex justify-between">
+              <span>{formState.customNote.trim() || 'Custom Fee'}</span>
+              <span>₹{amounts.custom.toLocaleString('en-IN')}</span>
+            </li>
+          )}
+          {amounts.others > 0 && (
+            <li className="flex justify-between">
+              <span>{formState.othersLabel.trim() || 'Others'}</span>
+              <span>₹{amounts.others.toLocaleString('en-IN')}</span>
+            </li>
+          )}
+          {amounts.store > 0 && (
+            <li className="flex justify-between">
+              <span>{formState.storeItem.trim() || 'Store Item'}</span>
+              <span>₹{amounts.store.toLocaleString('en-IN')}</span>
+            </li>
+          )}
+        </ul>
+        <p className="mt-3 text-sm font-semibold text-slate-900">
+          Total due: ₹{amounts.total.toLocaleString('en-IN')}
+        </p>
+      </div>
+      <div className="flex items-center justify-end gap-3">
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          {isSubmitting ? 'Creating…' : 'Create Request'}
         </button>
       </div>
     </form>
@@ -309,12 +467,13 @@ const AccountantDashboard = () => {
   const [editingStudentId, setEditingStudentId] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formSubmitting, setFormSubmitting] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
+  const [activeTab, setActiveTab] = useState('students');
   const [filters, setFilters] = useState({
     class: 'All',
     status: 'All',
     term: 'All',
     search: '',
+    sort: 'name-asc',
   });
   const [historyContext, setHistoryContext] = useState({ open: false, student: null, entries: [] });
   const [settingsState, setSettingsState] = useState({
@@ -327,14 +486,19 @@ const AccountantDashboard = () => {
   const [feeStructure, setFeeStructure] = useState({ session: '', defaultDueDate: '', fees: {} });
   const [feeStructureDraft, setFeeStructureDraft] = useState({ session: '', defaultDueDate: '', fees: {} });
   const [feeStructureSaving, setFeeStructureSaving] = useState(false);
-  const [storeCharges, setStoreCharges] = useState([]);
-  const [storeChargeForm, setStoreChargeForm] = useState({
-    studentId: '',
-    itemName: '',
-    amount: '',
-    date: new Date().toISOString().slice(0, 10),
+  const [feeRequestContext, setFeeRequestContext] = useState({ open: false, student: null });
+  const [feeRequestForm, setFeeRequestForm] = useState({
+    cycle: 'Monthly',
+    dueDate: '',
+    customAmount: '',
+    customNote: '',
+    othersAmount: '',
+    othersLabel: '',
+    includeStore: false,
+    storeItem: '',
+    storeAmount: '',
   });
-  const [storeChargeSubmitting, setStoreChargeSubmitting] = useState(false);
+  const [feeRequestSubmitting, setFeeRequestSubmitting] = useState(false);
   const [transactionsLog, setTransactionsLog] = useState([]);
   const [transactionFilters, setTransactionFilters] = useState({ month: 'All', mode: 'All' });
   const [toast, setToast] = useState(null);
@@ -552,12 +716,6 @@ const AccountantDashboard = () => {
       setFeeStructureDraft(structure);
     });
 
-    const storeChargesQuery = query(collection(db, 'store_charges'), orderBy('created_at', 'desc'));
-    const unsubscribeStoreCharges = onSnapshot(storeChargesQuery, (snapshot) => {
-      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-      setStoreCharges(data);
-    });
-
     const transactionsQuery = query(collection(db, 'transactions_log'), orderBy('date', 'desc'));
     const unsubscribeTransactions = onSnapshot(transactionsQuery, (snapshot) => {
       const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
@@ -570,7 +728,6 @@ const AccountantDashboard = () => {
       unsubscribeReminders();
       unsubscribeSettings();
       unsubscribeFeeStructure();
-      unsubscribeStoreCharges();
       unsubscribeTransactions();
     };
   }, [user]);
@@ -710,18 +867,54 @@ const AccountantDashboard = () => {
     });
   }, [transactionsLog, transactionFilters]);
 
+  const feeRequestAmounts = useMemo(() => {
+    const student = feeRequestContext.student;
+    if (!student) {
+      return { base: 0, custom: 0, others: 0, store: 0, total: 0 };
+    }
+    const base = getFeeAmountFromStructure(student.class, feeRequestForm.cycle);
+    const parseAmount = (value) => {
+      const numeric = Number(value || 0);
+      return Number.isFinite(numeric) ? numeric : 0;
+    };
+    const custom = parseAmount(feeRequestForm.customAmount);
+    const others = parseAmount(feeRequestForm.othersAmount);
+    const store = feeRequestForm.includeStore ? parseAmount(feeRequestForm.storeAmount) : 0;
+    return {
+      base,
+      custom,
+      others,
+      store,
+      total: base + custom + others + store,
+    };
+  }, [feeRequestContext.student, feeRequestForm, feeStructureDraft]);
+
   const filteredStudents = useMemo(() => {
-    return students.filter((student) => {
+    const searchValue = filters.search.trim().toLowerCase();
+    const filtered = students.filter((student) => {
       const matchesClass = filters.class === 'All' || student.class === filters.class;
       const matchesStatus = filters.status === 'All' || student.status === filters.status;
-      const matchesTerm = filters.term === 'All' || (student.term || '').toLowerCase().includes(filters.term.toLowerCase());
-      const searchValue = filters.search.trim().toLowerCase();
+      const matchesTerm =
+        filters.term === 'All' || (student.term || '').toLowerCase().includes(filters.term.toLowerCase());
       const matchesSearch =
         searchValue.length === 0 ||
         student.name?.toLowerCase().includes(searchValue) ||
         student.studentId?.toLowerCase().includes(searchValue);
       return matchesClass && matchesStatus && matchesTerm && matchesSearch;
     });
+
+    const sorted = [...filtered];
+    if (filters.sort === 'class-asc') {
+      sorted.sort((a, b) => (a.class || '').localeCompare(b.class || ''));
+    } else if (filters.sort === 'balance-desc') {
+      sorted.sort(
+        (a, b) =>
+          Number(b.balance ?? b.fee_amount ?? 0) - Number(a.balance ?? a.fee_amount ?? 0),
+      );
+    } else {
+      sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    }
+    return sorted;
   }, [students, filters]);
 
   const handleFilterChange = (event) => {
@@ -747,6 +940,58 @@ const AccountantDashboard = () => {
     });
     setEditingStudentId(student.id);
     setIsFormOpen(true);
+  };
+
+  const normaliseCycleId = (value) => {
+    if (!value) return 'Monthly';
+    const match = REQUEST_CYCLE_OPTIONS.find(
+      (option) => option.id === value || option.label.toLowerCase() === `${value}`.toLowerCase(),
+    );
+    return match ? match.id : 'Monthly';
+  };
+
+  const buildFeeRequestForm = (student) => ({
+    cycle: normaliseCycleId(student?.fee_cycle),
+    dueDate: student?.due_date || feeStructureDraft.defaultDueDate || '',
+    customAmount: '',
+    customNote: '',
+    othersAmount: '',
+    othersLabel: '',
+    includeStore: false,
+    storeItem: '',
+    storeAmount: '',
+  });
+
+  const handleOpenFeeRequest = (student) => {
+    setFeeRequestContext({ open: true, student });
+    setFeeRequestForm(buildFeeRequestForm(student));
+  };
+
+  const handleCloseFeeRequest = () => {
+    setFeeRequestContext({ open: false, student: null });
+    setFeeRequestForm(buildFeeRequestForm(null));
+    setFeeRequestSubmitting(false);
+  };
+
+  const handleFeeRequestFieldChange = (name, rawValue) => {
+    setFeeRequestForm((prev) => {
+      if (name === 'includeStore') {
+        const include = Boolean(rawValue);
+        return {
+          ...prev,
+          includeStore: include,
+          ...(include
+            ? {}
+            : {
+                storeItem: '',
+                storeAmount: '',
+              }),
+        };
+      }
+      const isAmountField = ['customAmount', 'othersAmount', 'storeAmount'].includes(name);
+      const value = isAmountField ? `${rawValue}`.replace(/[^0-9.]/g, '') : rawValue;
+      return { ...prev, [name]: value };
+    });
   };
 
   const ensureParentAccount = async (email, details = {}) => {
@@ -821,7 +1066,7 @@ const AccountantDashboard = () => {
     try {
       const feeAmount = getFeeAmountFromStructure(formState.class, formState.fee_cycle);
       if (feeAmount <= 0) {
-        triggerToast('Fee structure missing for selected class and cycle.', 'error');
+        triggerToast('Fee structure missing for the selected class.', 'error');
         setFormSubmitting(false);
         return;
       }
@@ -907,78 +1152,6 @@ const AccountantDashboard = () => {
       triggerToast('Unable to save student record. Please try again.', 'error');
     } finally {
       setFormSubmitting(false);
-    }
-  };
-
-  const handleStoreChargeChange = (event) => {
-    const { name, value } = event.target;
-    setStoreChargeForm((prev) => ({
-      ...prev,
-      [name]: name === 'amount' ? value.replace(/[^0-9.]/g, '') : value,
-    }));
-  };
-
-  const handleAddStoreCharge = async (event) => {
-    event.preventDefault();
-    if (!storeChargeForm.studentId || !storeChargeForm.itemName.trim()) {
-      triggerToast('Please select a student and enter item details.', 'error');
-      return;
-    }
-    const amountValue = Number(storeChargeForm.amount || 0);
-    if (amountValue <= 0) {
-      triggerToast('Amount must be greater than zero.', 'error');
-      return;
-    }
-
-    const student = students.find((item) => item.id === storeChargeForm.studentId);
-    if (!student) {
-      triggerToast('Selected student not found.', 'error');
-      return;
-    }
-
-    setStoreChargeSubmitting(true);
-    try {
-      const chargeDate = storeChargeForm.date || new Date().toISOString().slice(0, 10);
-      const docRef = await addDoc(collection(db, 'store_charges'), {
-        student_doc_id: student.id,
-        studentId: student.studentId || student.id,
-        student_name: student.name,
-        class: student.class || '',
-        item_name: storeChargeForm.itemName.trim(),
-        amount: amountValue,
-        charge_date: chargeDate,
-        parent_email: student.parent_email || '',
-        parent_uid: student.parent_uid || '',
-        paid: false,
-        created_at: serverTimestamp(),
-      });
-      const optimisticCharge = {
-        id: docRef.id,
-        student_doc_id: student.id,
-        studentId: student.studentId || student.id,
-        student_name: student.name,
-        class: student.class || '',
-        item_name: storeChargeForm.itemName.trim(),
-        amount: amountValue,
-        charge_date: chargeDate,
-        parent_email: student.parent_email || '',
-        parent_uid: student.parent_uid || '',
-        paid: false,
-        created_at: new Date().toISOString(),
-      };
-      setStoreCharges((prev) => [optimisticCharge, ...prev.filter((item) => item.id !== optimisticCharge.id)]);
-      setStoreChargeForm({
-        studentId: '',
-        itemName: '',
-        amount: '',
-        date: new Date().toISOString().slice(0, 10),
-      });
-      triggerToast('Store charge added.', 'success');
-    } catch (error) {
-      console.error('Store charge error', error);
-      triggerToast('Unable to add store charge. Please try again.', 'error');
-    } finally {
-      setStoreChargeSubmitting(false);
     }
   };
 
@@ -1135,10 +1308,159 @@ const AccountantDashboard = () => {
     setHistoryContext({ open: true, student, entries });
   };
 
+  const handleFeeRequestSubmit = async (event) => {
+    event.preventDefault();
+    if (!feeRequestContext.student) return;
+    const student = feeRequestContext.student;
+    const baseAmount = feeRequestAmounts.base;
+    const customAmount = feeRequestAmounts.custom;
+    const othersAmount = feeRequestAmounts.others;
+    const storeAmount = feeRequestAmounts.store;
+    const totalAmount = feeRequestAmounts.total;
+    if (totalAmount <= 0) {
+      triggerToast('Enter at least one amount before creating a request.', 'error');
+      return;
+    }
+    if (feeRequestForm.includeStore && storeAmount <= 0) {
+      triggerToast('Store charges must include an amount.', 'error');
+      return;
+    }
+    const dueDateValue = feeRequestForm.dueDate || feeStructureDraft.defaultDueDate || '';
+    const cycleMeta = REQUEST_CYCLE_OPTIONS.find((item) => item.id === feeRequestForm.cycle) || {
+      id: feeRequestForm.cycle,
+      label: feeRequestForm.cycle,
+    };
+    setFeeRequestSubmitting(true);
+    try {
+      const breakdown = {};
+      if (baseAmount > 0) {
+        breakdown.tuition = {
+          label: `${cycleMeta.label} Fee`,
+          amount: baseAmount,
+          cycle: cycleMeta.label,
+        };
+      }
+      if (customAmount > 0) {
+        breakdown.custom = {
+          label: feeRequestForm.customNote.trim() || 'Custom Fee',
+          amount: customAmount,
+          note: feeRequestForm.customNote.trim(),
+        };
+      }
+      if (othersAmount > 0) {
+        breakdown.others = {
+          label: feeRequestForm.othersLabel.trim() || 'Others',
+          amount: othersAmount,
+        };
+      }
+      if (storeAmount > 0) {
+        breakdown.store = {
+          label: feeRequestForm.storeItem.trim() || 'Store Item',
+          amount: storeAmount,
+        };
+      }
+
+      await addDoc(collection(db, 'fee_requests'), {
+        student_doc_id: student.id,
+        studentId: student.studentId || student.id,
+        student_name: student.name,
+        class: student.class || '',
+        parent_email: student.parent_email || '',
+        parent_uid: student.parent_uid || '',
+        fee_cycle: cycleMeta.label,
+        cycle: cycleMeta.id,
+        base_amount: baseAmount,
+        custom_amount: customAmount,
+        extras_total: othersAmount + storeAmount,
+        amount_total: totalAmount,
+        due_date: dueDateValue,
+        breakdown,
+        status: 'Pending',
+        created_at: serverTimestamp(),
+      });
+
+      const feeBreakdown = [];
+      if (baseAmount > 0) {
+        feeBreakdown.push({ label: `${cycleMeta.label} Fee`, amount: baseAmount });
+      }
+      if (customAmount > 0) {
+        feeBreakdown.push({
+          label: feeRequestForm.customNote.trim() || 'Custom Fee',
+          amount: customAmount,
+        });
+      }
+
+      const tuitionBalance = baseAmount + customAmount;
+      await updateDoc(doc(db, 'students', student.id), {
+        fee_cycle: cycleMeta.label,
+        fee_amount: tuitionBalance,
+        balance: tuitionBalance,
+        due_date: dueDateValue,
+        fee_breakdown: feeBreakdown,
+        status: tuitionBalance > 0 ? 'Pending' : 'Paid',
+        updated_at: serverTimestamp(),
+      });
+
+      triggerToast('Fee request created successfully.', 'success');
+      handleCloseFeeRequest();
+    } catch (error) {
+      console.error('Error creating fee request', error);
+      triggerToast('Unable to create fee request. Please try again.', 'error');
+      setFeeRequestSubmitting(false);
+    }
+  };
+
+  const handleDeleteStudent = async (student) => {
+    if (!student) return;
+    const confirmDelete = window.confirm(`Delete ${student.name || 'this student'}?`);
+    if (!confirmDelete) return;
+    try {
+      await deleteDoc(doc(db, 'students', student.id));
+      if (student.parent_uid) {
+        try {
+          await updateDoc(doc(db, 'users', student.parent_uid), {
+            children: arrayRemove(student.id),
+          });
+        } catch (error) {
+          console.warn('Unable to update parent record', error);
+        }
+      }
+      triggerToast('Student removed successfully.', 'success');
+    } catch (error) {
+      console.error('Error deleting student', error);
+      triggerToast('Unable to delete student. Please try again.', 'error');
+    }
+  };
+
   const handleMarkPaid = async (student) => {
     const amountToClear = Number(student.balance ?? student.fee_amount ?? 0);
     if (amountToClear <= 0) {
       triggerToast('No outstanding balance for this student.', 'error');
+      return;
+    }
+    const modeAnswer = window
+      .prompt('Has the child paid the fees by cash or online? (Type "cash" or "online")')
+      ?.trim()
+      .toLowerCase();
+    if (!modeAnswer) {
+      triggerToast('Payment update cancelled.', 'info');
+      return;
+    }
+    if (modeAnswer !== 'cash' && modeAnswer !== 'online') {
+      triggerToast('Please enter "cash" or "online" to continue.', 'error');
+      return;
+    }
+    let transactionId = '';
+    if (modeAnswer === 'online') {
+      transactionId = window.prompt('Please enter the transaction ID.')?.trim() || '';
+      if (!transactionId) {
+        triggerToast('Transaction ID is required for online payments.', 'error');
+        return;
+      }
+    }
+    const confirmProceed = window.confirm('Are you sure?');
+    if (!confirmProceed) {
+      triggerToast('Payment update cancelled.', 'info');
       return;
     }
     try {
@@ -1155,17 +1477,18 @@ const AccountantDashboard = () => {
         parent_uid: student.parent_uid || '',
         parent_email: student.parent_email || '',
         amount: amountToClear,
-        mode: 'Cash',
+        mode: modeAnswer === 'online' ? 'Online' : 'Cash',
         date: serverTimestamp(),
         term: settingsState.currentTerm || '',
         fee_type: 'Manual Adjustment',
         status: 'Success',
+        transaction_id: transactionId,
       });
       await logTransactionEntry({
         student,
         amount: amountToClear,
-        mode: 'Cash',
-        transactionId: '',
+        mode: modeAnswer === 'online' ? 'Online' : 'Cash',
+        transactionId,
         status: 'Success',
       });
       triggerToast('Payment recorded successfully.', 'success');
@@ -1298,10 +1621,9 @@ const AccountantDashboard = () => {
       <main className="mx-auto max-w-7xl px-6 py-8">
         <nav className="flex flex-wrap gap-3">
           {[
+            { id: 'students', label: 'Students' },
             { id: 'overview', label: 'Overview' },
-            { id: 'records', label: 'Student Payment Records' },
             { id: 'fee-settings', label: 'Fee Settings' },
-            { id: 'store-charges', label: 'Store Charges' },
             { id: 'transactions', label: 'Transactions Log' },
             { id: 'reminders', label: 'Reminders & Notifications' },
             { id: 'settings', label: 'Automation Settings' },
@@ -1436,15 +1758,17 @@ const AccountantDashboard = () => {
           </section>
         )}
 
-        {activeTab === 'records' && (
+        {activeTab === 'students' && (
           <section className="mt-8 space-y-6">
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900">Student Payment Records</h2>
-                  <p className="text-sm text-slate-500">Manage student dues, history, and reminders.</p>
+                  <h2 className="text-lg font-semibold text-slate-900">Students</h2>
+                  <p className="text-sm text-slate-500">
+                    View every student, update their details, and raise fee requests in one place.
+                  </p>
                 </div>
-                <div className="grid gap-3 md:grid-cols-4">
+                <div className="grid gap-3 md:grid-cols-5">
                   <select
                     name="class"
                     value={filters.class}
@@ -1484,6 +1808,16 @@ const AccountantDashboard = () => {
                     placeholder="Search"
                     className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
                   />
+                  <select
+                    name="sort"
+                    value={filters.sort}
+                    onChange={handleFilterChange}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  >
+                    <option value="name-asc">Name (A-Z)</option>
+                    <option value="class-asc">Class</option>
+                    <option value="balance-desc">Highest Balance</option>
+                  </select>
                 </div>
               </div>
 
@@ -1529,6 +1863,13 @@ const AccountantDashboard = () => {
                             <div className="flex flex-wrap justify-end gap-2 text-xs font-medium">
                               <button
                                 type="button"
+                                onClick={() => handleOpenFeeRequest(student)}
+                                className="rounded-lg bg-cardinal px-3 py-1.5 text-white shadow-sm transition hover:bg-cardinal/90"
+                              >
+                                Create Fee Request
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => openHistory(student)}
                                 className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-600 transition hover:bg-slate-100"
                               >
@@ -1543,6 +1884,13 @@ const AccountantDashboard = () => {
                               </button>
                               <button
                                 type="button"
+                                onClick={() => handleDeleteStudent(student)}
+                                className="rounded-lg border border-rose-200 px-3 py-1.5 text-rose-600 transition hover:bg-rose-50"
+                              >
+                                Delete
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => handleSendReminder(student)}
                                 className="rounded-lg border border-cardinal px-3 py-1.5 text-cardinal transition hover:bg-cardinal/10"
                               >
@@ -1551,7 +1899,7 @@ const AccountantDashboard = () => {
                               <button
                                 type="button"
                                 onClick={() => handleMarkPaid(student)}
-                                className="rounded-lg bg-cardinal px-3 py-1.5 text-white transition hover:bg-cardinal/90"
+                                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-emerald-700 transition hover:bg-emerald-100"
                               >
                                 Mark as Paid
                               </button>
@@ -1662,117 +2010,6 @@ const AccountantDashboard = () => {
                   </button>
                 </div>
               </form>
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'store-charges' && (
-          <section className="mt-8 space-y-6">
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-2">
-                <h2 className="text-lg font-semibold text-slate-900">Store Charges</h2>
-                <p className="text-sm text-slate-500">Add uniforms, books, and other purchases to student accounts.</p>
-              </div>
-              <form className="mt-6 grid gap-4 md:grid-cols-4" onSubmit={handleAddStoreCharge}>
-                <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                  Student
-                  <select
-                    name="studentId"
-                    value={storeChargeForm.studentId}
-                    onChange={handleStoreChargeChange}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  >
-                    <option value="">Select student</option>
-                    {students.map((student) => (
-                      <option key={student.id} value={student.id}>
-                        {student.name} · {student.class}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                  Item Name
-                  <input
-                    name="itemName"
-                    value={storeChargeForm.itemName}
-                    onChange={handleStoreChargeChange}
-                    placeholder="Sports Kit"
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  />
-                </label>
-                <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                  Amount (₹)
-                  <input
-                    name="amount"
-                    value={storeChargeForm.amount}
-                    onChange={handleStoreChargeChange}
-                    placeholder="0"
-                    inputMode="decimal"
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  />
-                </label>
-                <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                  Date
-                  <input
-                    type="date"
-                    name="date"
-                    value={storeChargeForm.date}
-                    onChange={handleStoreChargeChange}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  />
-                </label>
-                <div className="md:col-span-4 flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={storeChargeSubmitting}
-                    className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {storeChargeSubmitting ? 'Adding…' : 'Add Charge'}
-                  </button>
-                </div>
-              </form>
-            </div>
-
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h3 className="text-base font-semibold text-slate-900">Recent Charges</h3>
-              <div className="mt-4 overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3 text-left">Date</th>
-                      <th className="px-4 py-3 text-left">Student</th>
-                      <th className="px-4 py-3 text-left">Item</th>
-                      <th className="px-4 py-3 text-left">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {storeCharges.map((charge) => {
-                      const dateLabel = charge.charge_date
-                        ? new Date(charge.charge_date).toLocaleDateString()
-                        : charge.created_at?.toDate
-                          ? charge.created_at.toDate().toLocaleDateString()
-                          : charge.created_at
-                            ? new Date(charge.created_at).toLocaleDateString()
-                            : '-';
-                      return (
-                        <tr key={charge.id}>
-                          <td className="px-4 py-3 text-slate-600">{dateLabel}</td>
-                          <td className="px-4 py-3 text-slate-700">{charge.student_name}</td>
-                          <td className="px-4 py-3 text-slate-700">{charge.item_name}</td>
-                          <td className="px-4 py-3 text-slate-900">₹{Number(charge.amount || 0).toLocaleString('en-IN')}</td>
-                        </tr>
-                      );
-                    })}
-                    {storeCharges.length === 0 && (
-                      <tr>
-                        <td colSpan={4} className="px-4 py-10 text-center text-sm text-slate-500">
-                          No store charges recorded yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
             </div>
           </section>
         )}
@@ -1942,6 +2179,8 @@ const AccountantDashboard = () => {
           onSubmit={handleStudentSubmit}
           onClose={() => setIsFormOpen(false)}
           isSubmitting={formSubmitting}
+          calculatedFee={calculatedFeeAmount}
+          defaultDueDate={feeStructureDraft.defaultDueDate}
         />
       )}
 
@@ -1950,6 +2189,19 @@ const AccountantDashboard = () => {
           student={historyContext.student}
           payments={historyContext.entries}
           onClose={() => setHistoryContext({ open: false, student: null, entries: [] })}
+        />
+      )}
+
+      {feeRequestContext.open && (
+        <FeeRequestModal
+          student={feeRequestContext.student}
+          formState={feeRequestForm}
+          cycleOptions={REQUEST_CYCLE_OPTIONS}
+          amounts={feeRequestAmounts}
+          onFieldChange={handleFeeRequestFieldChange}
+          onSubmit={handleFeeRequestSubmit}
+          onClose={handleCloseFeeRequest}
+          isSubmitting={feeRequestSubmitting}
         />
       )}
 
