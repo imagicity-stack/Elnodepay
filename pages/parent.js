@@ -1,136 +1,944 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import {
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+  signOut,
+} from 'firebase/auth';
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+
+const PayNowModal = ({
+  open,
+  student,
+  selections,
+  onToggle,
+  onClose,
+  onConfirm,
+  processing,
+  total,
+}) => {
+  if (!open || !student) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-8">
+      <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900">Pay fees for {student.name}</h3>
+            <p className="text-sm text-slate-500">Select the fee components you wish to pay right now.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-200"
+          >
+            Close
+          </button>
+        </div>
+        <div className="max-h-[70vh] overflow-y-auto px-6 py-4 text-sm text-slate-700">
+          <div className="space-y-4">
+            {selections.map((item, index) => (
+              <label
+                key={`${item.label}-${index}`}
+                className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="checkbox"
+                    checked={item.selected}
+                    onChange={() => onToggle(index)}
+                    className="h-4 w-4 rounded border-slate-300 text-cardinal focus:ring-cardinal"
+                  />
+                  <div>
+                    <p className="font-medium text-slate-900">{item.label}</p>
+                    <p className="text-xs text-slate-500">₹{Number(item.amount || 0).toLocaleString('en-IN')}</p>
+                  </div>
+                </div>
+                <span className="text-sm font-semibold text-slate-900">₹{Number(item.amount || 0).toLocaleString('en-IN')}</span>
+              </label>
+            ))}
+          </div>
+          <div className="mt-6 rounded-2xl border border-cardinal bg-cardinal/5 px-4 py-3 text-slate-800">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Total payable</span>
+              <span className="text-lg font-semibold text-cardinal">₹{total.toLocaleString('en-IN')}</span>
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={processing || total <= 0}
+            className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {processing ? 'Processing…' : `Pay ₹${total.toLocaleString('en-IN')}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const NotificationCard = ({ notification, onMarkRead }) => (
+  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        <p className="text-sm font-semibold text-slate-900">{notification.title}</p>
+        <p className="mt-1 text-sm text-slate-600">{notification.message}</p>
+        <p className="mt-2 text-xs text-slate-400">
+          {notification.created_at?.toDate
+            ? notification.created_at.toDate().toLocaleString()
+            : notification.created_at || ''}
+        </p>
+      </div>
+      {!notification.read && (
+        <button
+          type="button"
+          onClick={() => onMarkRead(notification.id)}
+          className="rounded-lg border border-cardinal px-3 py-1 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
+        >
+          Mark as read
+        </button>
+      )}
+    </div>
+  </div>
+);
 
 const ParentDashboard = () => {
   const router = useRouter();
-  const [checkingAuth, setCheckingAuth] = useState(true);
+  const [authChecked, setAuthChecked] = useState(false);
+  const [user, setUser] = useState(null);
+  const [profile, setProfile] = useState(null);
+  const [students, setStudents] = useState([]);
+  const [payments, setPayments] = useState([]);
+  const [notifications, setNotifications] = useState([]);
+  const [settings, setSettings] = useState({ currentTerm: '', defaultDueDate: '' });
+  const [selectedChildId, setSelectedChildId] = useState(null);
+  const [historyFilters, setHistoryFilters] = useState({ child: 'All', month: 'All', year: 'All' });
+  const [supportForm, setSupportForm] = useState({ subject: '', message: '' });
+  const [profileForm, setProfileForm] = useState({ name: '', contactNumber: '' });
+  const [supportSubmitting, setSupportSubmitting] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [paymentContext, setPaymentContext] = useState({ open: false, student: null, selections: [] });
+  const [paymentProcessing, setPaymentProcessing] = useState(false);
 
   useEffect(() => {
-    let active = true;
-
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
-      if (!active) {
-        return;
-      }
-
-      if (!user) {
-        setCheckingAuth(false);
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      if (!currentUser) {
+        setAuthChecked(true);
         router.replace('/');
         return;
       }
 
-      (async () => {
-        try {
-          const profileSnap = await getDoc(doc(db, 'users', user.uid));
-          if (!active) return;
+      const profileRef = doc(db, 'users', currentUser.uid);
+      const profileSnap = await getDoc(profileRef);
+      if (!profileSnap.exists() || profileSnap.data().role !== 'parent') {
+        setAuthChecked(true);
+        router.replace(profileSnap.data()?.role === 'accountant' ? '/accountant' : '/');
+        return;
+      }
 
-          if (!profileSnap.exists()) {
-            alert('Role not assigned.');
-            await signOut(auth);
-            setCheckingAuth(false);
-            router.replace('/');
-            return;
-          }
-
-          const { role } = profileSnap.data();
-
-          if (role === 'parent') {
-            setCheckingAuth(false);
-            return;
-          }
-
-          if (role === 'accountant') {
-            router.replace('/accountant');
-            return;
-          }
-
-          alert('Role not assigned.');
-          await signOut(auth);
-          setCheckingAuth(false);
-          router.replace('/');
-        } catch (err) {
-          console.error(err);
-          if (!active) return;
-          setCheckingAuth(false);
-        }
-      })();
+      const profileData = profileSnap.data();
+      setProfile(profileData);
+      setProfileForm({
+        name: profileData.name || currentUser.displayName || '',
+        contactNumber: profileData.contactNumber || '',
+      });
+      setUser(currentUser);
+      setAuthChecked(true);
     });
 
-    return () => {
-      active = false;
-      unsubscribe();
-    };
+    return () => unsubscribe();
   }, [router]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const studentsQuery = query(collection(db, 'students'), where('parent_email', '==', user.email));
+    const unsubscribeStudents = onSnapshot(studentsQuery, (snapshot) => {
+      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setStudents(data);
+      if (!selectedChildId && data.length > 0) {
+        setSelectedChildId(data[0].id);
+      }
+    });
+
+    const paymentsQuery = query(
+      collection(db, 'payments'),
+      where('parent_email', '==', user.email),
+      orderBy('date', 'desc'),
+    );
+    const unsubscribePayments = onSnapshot(paymentsQuery, (snapshot) => {
+      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setPayments(data);
+    });
+
+    const notificationsQuery = query(
+      collection(db, 'notifications'),
+      where('user_uid', '==', user.uid),
+      orderBy('created_at', 'desc'),
+    );
+    const unsubscribeNotifications = onSnapshot(notificationsQuery, (snapshot) => {
+      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setNotifications(data);
+    });
+
+    const settingsRef = doc(db, 'settings', 'general');
+    const unsubscribeSettings = onSnapshot(settingsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setSettings({
+          currentTerm: data.currentTerm || '',
+          defaultDueDate: data.defaultDueDate || '',
+          reminderTemplate: data.reminderTemplate,
+        });
+      }
+    });
+
+    if (typeof window !== 'undefined' && !document.getElementById('razorpay-script')) {
+      const script = document.createElement('script');
+      script.id = 'razorpay-script';
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.async = true;
+      document.body.appendChild(script);
+    }
+
+    return () => {
+      unsubscribeStudents();
+      unsubscribePayments();
+      unsubscribeNotifications();
+      unsubscribeSettings();
+    };
+  }, [user]);
+
+  const metrics = useMemo(() => {
+    const totalDue = students.reduce(
+      (sum, student) => sum + Number(student.balance ?? student.fee_amount ?? 0),
+      0,
+    );
+    const nextDueDate = students
+      .map((student) => student.due_date)
+      .filter(Boolean)
+      .map((date) => new Date(date))
+      .filter((date) => Number.isFinite(date.getTime()))
+      .sort((a, b) => a - b)[0];
+    const lastPayment = payments[0] || null;
+    return {
+      totalDue,
+      nextDueDate: nextDueDate ? nextDueDate.toLocaleDateString() : '—',
+      lastPayment,
+    };
+  }, [students, payments]);
+
+  const paymentHistory = useMemo(() => {
+    return payments.filter((payment) => {
+      const matchesChild =
+        historyFilters.child === 'All' || payment.studentId === historyFilters.child;
+      const date = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
+      if (!Number.isFinite(date.getTime())) return matchesChild && historyFilters.month === 'All' && historyFilters.year === 'All';
+      const matchesMonth =
+        historyFilters.month === 'All' ||
+        date.getMonth() + 1 === Number(historyFilters.month);
+      const matchesYear =
+        historyFilters.year === 'All' ||
+        date.getFullYear() === Number(historyFilters.year);
+      return matchesChild && matchesMonth && matchesYear;
+    });
+  }, [payments, historyFilters]);
+
+  const yearsAvailable = useMemo(() => {
+    const yearSet = new Set();
+    payments.forEach((payment) => {
+      const date = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
+      if (Number.isFinite(date.getTime())) {
+        yearSet.add(date.getFullYear());
+      }
+    });
+    return Array.from(yearSet).sort((a, b) => b - a);
+  }, [payments]);
+
+  const selectedStudent = students.find((student) => student.id === selectedChildId) || null;
+
+  const totalSelectedAmount = useMemo(() => {
+    if (!paymentContext.open) return 0;
+    return paymentContext.selections
+      .filter((item) => item.selected)
+      .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+  }, [paymentContext]);
 
   const handleSignOut = async () => {
     await signOut(auth);
     router.replace('/');
   };
 
-  const renderSpinner = () => (
-    <span className="h-6 w-6 animate-spin rounded-full border-2 border-solid border-cardinal/60 border-t-transparent" aria-hidden="true" />
-  );
+  const handleOpenPayment = (student) => {
+    const breakdown = Array.isArray(student.fee_breakdown) && student.fee_breakdown.length > 0
+      ? student.fee_breakdown
+      : [
+          {
+            label: 'Outstanding balance',
+            amount: Number(student.balance ?? student.fee_amount ?? 0),
+            selected: true,
+          },
+        ];
+    setPaymentContext({
+      open: true,
+      student,
+      selections: breakdown.map((item) => ({
+        label: item.label,
+        amount: item.amount,
+        selected: item.selected ?? true,
+      })),
+    });
+  };
 
-  if (checkingAuth) {
+  const handleToggleSelection = (index) => {
+    setPaymentContext((prev) => ({
+      ...prev,
+      selections: prev.selections.map((item, idx) =>
+        idx === index ? { ...item, selected: !item.selected } : item,
+      ),
+    }));
+  };
+
+  const handleClosePayment = () => {
+    setPaymentContext({ open: false, student: null, selections: [] });
+    setPaymentProcessing(false);
+  };
+
+  const handleProcessPayment = async () => {
+    if (!paymentContext.student || totalSelectedAmount <= 0) return;
+    if (typeof window === 'undefined' || !window.Razorpay) {
+      alert('Payment gateway is still loading. Please try again in a moment.');
+      return;
+    }
+    setPaymentProcessing(true);
+    const selectedItems = paymentContext.selections.filter((item) => item.selected);
+    try {
+      const orderResponse = await fetch('/api/createOrder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: totalSelectedAmount,
+          userId: user.uid,
+          studentId: paymentContext.student.studentId || paymentContext.student.id,
+          studentDocId: paymentContext.student.id,
+          studentName: paymentContext.student.name,
+          parentEmail: user.email,
+          breakdown: selectedItems,
+          term: settings.currentTerm || '',
+        }),
+      });
+      const orderData = await orderResponse.json();
+      if (!orderData.success) {
+        throw new Error(orderData.message || 'Unable to initiate payment');
+      }
+
+      const options = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        amount: orderData.order.amount,
+        currency: 'INR',
+        name: 'EL-NODE Pay',
+        description: `Fee payment for ${paymentContext.student.name}`,
+        order_id: orderData.order.id,
+        handler: async (response) => {
+          try {
+            const verifyResponse = await fetch('/api/verifyPayment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ...response,
+                userId: user.uid,
+                amount: totalSelectedAmount,
+                studentDocId: paymentContext.student.id,
+                studentId: paymentContext.student.studentId || paymentContext.student.id,
+                studentName: paymentContext.student.name,
+                parentEmail: user.email,
+                parentUid: user.uid,
+                className: paymentContext.student.class,
+                term: settings.currentTerm || '',
+                feeType:
+                  selectedItems.length > 1
+                    ? 'Multiple'
+                    : selectedItems[0]?.label || 'Tuition',
+                breakdown: selectedItems,
+                paymentMode: 'Online',
+              }),
+            });
+            const verifyData = await verifyResponse.json();
+            if (!verifyData.success) {
+              throw new Error(verifyData.message || 'Payment verification failed');
+            }
+            alert('Payment successful!');
+            handleClosePayment();
+          } catch (error) {
+            console.error(error);
+            alert(error.message || 'Unable to verify payment. Please contact support.');
+          } finally {
+            setPaymentProcessing(false);
+          }
+        },
+        prefill: {
+          name: profileForm.name || profile?.name || '',
+          email: user.email,
+          contact: profileForm.contactNumber || '',
+        },
+        notes: {
+          parent_uid: user.uid,
+          student_id: paymentContext.student.studentId || paymentContext.student.id,
+        },
+        theme: {
+          color: '#A31F36',
+        },
+        modal: {
+          ondismiss: () => {
+            setPaymentProcessing(false);
+          },
+        },
+      };
+      const razorpay = new window.Razorpay(options);
+      razorpay.open();
+    } catch (error) {
+      console.error(error);
+      alert(error.message || 'Unable to start payment. Please try again.');
+      setPaymentProcessing(false);
+    }
+  };
+
+  const handleSupportSubmit = async (event) => {
+    event.preventDefault();
+    if (!supportForm.subject || !supportForm.message) return;
+    setSupportSubmitting(true);
+    try {
+      await addDoc(collection(db, 'support_tickets'), {
+        parent_uid: user.uid,
+        parent_email: user.email,
+        subject: supportForm.subject,
+        message: supportForm.message,
+        status: 'Open',
+        created_at: serverTimestamp(),
+      });
+      setSupportForm({ subject: '', message: '' });
+      alert('Support request submitted. Our team will reach out soon.');
+    } catch (error) {
+      console.error(error);
+      alert('Unable to submit request. Please try again.');
+    } finally {
+      setSupportSubmitting(false);
+    }
+  };
+
+  const handleProfileSave = async (event) => {
+    event.preventDefault();
+    setProfileSaving(true);
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        name: profileForm.name,
+        contactNumber: profileForm.contactNumber,
+        updated_at: serverTimestamp(),
+      });
+      alert('Profile updated successfully.');
+    } catch (error) {
+      console.error(error);
+      alert('Unable to update profile.');
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const handleNotificationRead = async (notificationId) => {
+    try {
+      await updateDoc(doc(db, 'notifications', notificationId), { read: true });
+    } catch (error) {
+      console.error('Unable to mark notification as read', error);
+    }
+  };
+
+  const handleDownloadReceipt = (payment) => {
+    if (typeof window === 'undefined') return;
+    const win = window.open('', '_blank', 'width=600,height=800');
+    if (!win) return;
+    const date = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
+    win.document.write(`
+      <html>
+        <head>
+          <title>Payment Receipt</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 24px; color: #1f2937; }
+            h1 { color: #A31F36; }
+            table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+            td { padding: 8px; border-bottom: 1px solid #e2e8f0; }
+            .total { font-weight: bold; font-size: 18px; }
+          </style>
+        </head>
+        <body>
+          <h1>Payment Receipt</h1>
+          <p>Thank you for your payment. Below are the details.</p>
+          <table>
+            <tr><td>Student</td><td>${payment.student_name}</td></tr>
+            <tr><td>Class</td><td>${payment.class || '-'}</td></tr>
+            <tr><td>Amount</td><td>₹${Number(payment.amount || 0).toLocaleString('en-IN')}</td></tr>
+            <tr><td>Date</td><td>${date.toLocaleString()}</td></tr>
+            <tr><td>Mode</td><td>${payment.mode || 'Online'}</td></tr>
+            <tr><td>Status</td><td>${payment.status}</td></tr>
+            <tr><td>Transaction ID</td><td>${payment.razorpay_payment_id || 'N/A'}</td></tr>
+          </table>
+          <p class="total">Total Paid: ₹${Number(payment.amount || 0).toLocaleString('en-IN')}</p>
+          <p>— EL-NODE Pay</p>
+        </body>
+      </html>
+    `);
+    win.document.close();
+    win.print();
+  };
+
+  const handleResetPassword = async () => {
+    try {
+      await sendPasswordResetEmail(auth, user.email);
+      alert('Password reset email sent.');
+    } catch (error) {
+      console.error(error);
+      alert('Unable to send reset email.');
+    }
+  };
+
+  if (!authChecked) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center px-4 font-poppins text-cardinal">
+      <div className="flex min-h-screen items-center justify-center bg-white text-cardinal">
         <Head>
           <title>Parent Dashboard</title>
-          <link rel="preconnect" href="https://fonts.googleapis.com" />
-          <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-          <link
-            href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
-            rel="stylesheet"
-          />
         </Head>
-        <div className="flex flex-col items-center gap-4">
-          {renderSpinner()}
-          <p className="text-sm font-medium">Loading your portal…</p>
-        </div>
+        <span className="h-8 w-8 animate-spin rounded-full border-2 border-cardinal/40 border-t-cardinal" />
       </div>
     );
   }
 
+  if (!user) {
+    return null;
+  }
+
   return (
-    <div className="min-h-screen bg-white px-4 py-12 font-poppins text-slate-800">
+    <div className="min-h-screen bg-slate-50">
       <Head>
-        <title>Parent Dashboard</title>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
+        <title>Parent Dashboard · EL-NODE Pay</title>
       </Head>
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-10">
-        <header className="flex flex-col gap-4 rounded-3xl border border-cardinal/20 bg-cardinal/5 p-8 shadow-lg sm:flex-row sm:items-center sm:justify-between">
+      <header className="border-b border-slate-200 bg-white">
+        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-3xl font-semibold text-cardinal">Welcome</h1>
-            <p className="mt-2 text-sm text-slate-600">
-              Welcome to your EL-NODE Pay parent portal.
+            <h1 className="text-2xl font-semibold text-slate-900">Parent Dashboard</h1>
+            <p className="text-sm text-slate-600">
+              Manage your children’s fee payments, track history, and stay on top of reminders.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={handleSignOut}
-            className="inline-flex items-center justify-center rounded-xl border border-cardinal bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-cardinal/90"
-          >
-            Sign out
-          </button>
-        </header>
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => students.length > 0 && handleOpenPayment(students[0])}
+              disabled={metrics.totalDue <= 0}
+              className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {metrics.totalDue > 0 ? 'Pay Outstanding Balance' : 'All Clear'}
+            </button>
+            <button
+              type="button"
+              onClick={handleSignOut}
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+            >
+              Sign Out
+            </button>
+          </div>
+        </div>
+      </header>
 
-        <section className="rounded-3xl border border-cardinal/15 bg-white p-8 shadow-lg">
-          <h2 className="text-xl font-semibold text-cardinal">Your Payments at a Glance</h2>
-          <p className="mt-4 text-sm text-slate-600">
-            Future updates will display your student&apos;s payment history, outstanding balances, and secure payment
-            actions. Stay tuned for the latest enhancements to EL-NODE Pay.
-          </p>
+      <main className="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-8">
+        <section className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-medium text-slate-500">Total Fees Due</h3>
+            <p className="mt-3 text-2xl font-semibold text-cardinal">
+              ₹{metrics.totalDue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              {metrics.totalDue > 0 ? 'Pay soon to avoid penalties.' : 'No outstanding dues!'}
+            </p>
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-medium text-slate-500">Next Due Date</h3>
+            <p className="mt-3 text-2xl font-semibold text-slate-900">{metrics.nextDueDate}</p>
+            <p className="mt-2 text-xs text-slate-500">Based on scheduled invoices.</p>
+          </div>
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h3 className="text-sm font-medium text-slate-500">Last Payment</h3>
+            <p className="mt-3 text-2xl font-semibold text-slate-900">
+              {metrics.lastPayment
+                ? `₹${Number(metrics.lastPayment.amount || 0).toLocaleString('en-IN')}`
+                : '—'}
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              {metrics.lastPayment
+                ? metrics.lastPayment.date?.toDate
+                  ? metrics.lastPayment.date.toDate().toLocaleString()
+                  : new Date(metrics.lastPayment.date).toLocaleString()
+                : 'No payments yet.'}
+            </p>
+          </div>
         </section>
-      </div>
+
+        <section className="space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Your Children</h2>
+              <p className="text-sm text-slate-500">Select a profile to review due amounts and pay instantly.</p>
+            </div>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            {students.map((student) => (
+              <div
+                key={student.id}
+                className={`rounded-3xl border ${
+                  selectedChildId === student.id ? 'border-cardinal bg-cardinal/5' : 'border-slate-200 bg-white'
+                } p-6 shadow-sm transition`}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900">{student.name}</h3>
+                    <p className="text-sm text-slate-500">Class {student.class}</p>
+                  </div>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      student.status === 'Paid'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : student.status === 'Overdue'
+                        ? 'bg-rose-100 text-rose-700'
+                        : 'bg-amber-100 text-amber-700'
+                    }`}
+                  >
+                    {student.status}
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-2 text-sm text-slate-600">
+                  <p>Due amount: ₹{Number(student.balance ?? student.fee_amount ?? 0).toLocaleString('en-IN')}</p>
+                  <p>Due date: {student.due_date || 'Not scheduled'}</p>
+                </div>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleOpenPayment(student)}
+                    className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
+                  >
+                    Pay Now
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedChildId(student.id)}
+                    className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
+                  >
+                    View Details
+                  </button>
+                </div>
+              </div>
+            ))}
+            {students.length === 0 && (
+              <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
+                No student profiles are linked to this account yet.
+              </div>
+            )}
+          </div>
+
+          {selectedStudent && (
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <h3 className="text-base font-semibold text-slate-900">{selectedStudent.name} · Details</h3>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Fee Overview</p>
+                  <p className="mt-2">Total fee: ₹{Number(selectedStudent.fee_amount || 0).toLocaleString('en-IN')}</p>
+                  <p className="mt-1">Balance: ₹{Number(selectedStudent.balance ?? 0).toLocaleString('en-IN')}</p>
+                  <p className="mt-1">Due date: {selectedStudent.due_date || '—'}</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Fee Breakdown</p>
+                  <ul className="mt-2 space-y-2">
+                    {(Array.isArray(selectedStudent.fee_breakdown) && selectedStudent.fee_breakdown.length > 0
+                      ? selectedStudent.fee_breakdown
+                      : [
+                          {
+                            label: 'Term Fee',
+                            amount: Number(selectedStudent.balance ?? selectedStudent.fee_amount ?? 0),
+                          },
+                        ]
+                    ).map((item, index) => (
+                      <li key={`${selectedStudent.id}-fee-${index}`} className="flex justify-between text-sm">
+                        <span>{item.label}</span>
+                        <span>₹{Number(item.amount || 0).toLocaleString('en-IN')}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">Payment History</h2>
+              <p className="text-sm text-slate-500">Download receipts and filter by student or timeframe.</p>
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              <select
+                value={historyFilters.child}
+                onChange={(event) =>
+                  setHistoryFilters((prev) => ({ ...prev, child: event.target.value }))
+                }
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              >
+                <option value="All">All Children</option>
+                {students.map((student) => (
+                  <option key={student.id} value={student.studentId || student.id}>
+                    {student.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={historyFilters.month}
+                onChange={(event) =>
+                  setHistoryFilters((prev) => ({ ...prev, month: event.target.value }))
+                }
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              >
+                <option value="All">All Months</option>
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((month) => (
+                  <option key={month} value={month}>
+                    {new Date(0, month - 1).toLocaleString('en-IN', { month: 'short' })}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={historyFilters.year}
+                onChange={(event) =>
+                  setHistoryFilters((prev) => ({ ...prev, year: event.target.value }))
+                }
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              >
+                <option value="All">All Years</option>
+                {yearsAvailable.map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="mt-6 overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 text-left">Date</th>
+                  <th className="px-4 py-3 text-left">Child</th>
+                  <th className="px-4 py-3 text-left">Amount</th>
+                  <th className="px-4 py-3 text-left">Mode</th>
+                  <th className="px-4 py-3 text-left">Status</th>
+                  <th className="px-4 py-3 text-left">Receipt</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {paymentHistory.map((payment) => {
+                  const date = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
+                  return (
+                    <tr key={payment.id} className="hover:bg-slate-50/80">
+                      <td className="px-4 py-3">{Number.isFinite(date.getTime()) ? date.toLocaleString() : '—'}</td>
+                      <td className="px-4 py-3">{payment.student_name}</td>
+                      <td className="px-4 py-3">₹{Number(payment.amount || 0).toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3">{payment.mode || 'Online'}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                            payment.status === 'Success'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-rose-100 text-rose-700'
+                          }`}
+                        >
+                          {payment.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadReceipt(payment)}
+                          className="rounded-lg border border-cardinal px-3 py-1.5 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
+                        >
+                          Download
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {paymentHistory.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
+                      No payments match the selected filters.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section className="grid gap-6 md:grid-cols-2">
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-900">Notifications</h2>
+            <div className="mt-4 space-y-3">
+              {notifications.length === 0 && (
+                <p className="text-sm text-slate-500">No notifications at the moment.</p>
+              )}
+              {notifications.map((notification) => (
+                <NotificationCard
+                  key={notification.id}
+                  notification={notification}
+                  onMarkRead={handleNotificationRead}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-900">Profile</h2>
+            <form className="mt-4 space-y-4" onSubmit={handleProfileSave}>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Full name
+                <input
+                  value={profileForm.name}
+                  onChange={(event) => setProfileForm((prev) => ({ ...prev, name: event.target.value }))}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  placeholder="Your name"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Contact number
+                <input
+                  value={profileForm.contactNumber}
+                  onChange={(event) =>
+                    setProfileForm((prev) => ({ ...prev, contactNumber: event.target.value }))
+                  }
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  placeholder="9876543210"
+                />
+              </label>
+              <div className="flex items-center gap-3">
+                <button
+                  type="submit"
+                  disabled={profileSaving}
+                  className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {profileSaving ? 'Saving…' : 'Save profile'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetPassword}
+                  className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
+                >
+                  Reset password
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">Help & Support</h2>
+          <div className="mt-4 grid gap-6 md:grid-cols-2">
+            <div>
+              <p className="text-sm font-semibold text-slate-700">Frequently Asked Questions</p>
+              <ul className="mt-3 space-y-3 text-sm text-slate-600">
+                <li>
+                  <p className="font-medium text-slate-800">How do I track my payments?</p>
+                  <p className="text-slate-600">Use the payment history table above to review transactions and download receipts.</p>
+                </li>
+                <li>
+                  <p className="font-medium text-slate-800">Can I pay partially?</p>
+                  <p className="text-slate-600">Yes, select the fee items you wish to pay in the payment modal.</p>
+                </li>
+                <li>
+                  <p className="font-medium text-slate-800">Who do I contact for technical help?</p>
+                  <p className="text-slate-600">Submit the support form and our team will respond within one business day.</p>
+                </li>
+              </ul>
+              <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+                <p className="font-semibold text-slate-800">School Accounts Desk</p>
+                <p>Email: accounts@school.edu</p>
+                <p>Phone: +91 98765 43210</p>
+                <p>Timings: Mon-Fri · 9:00 AM – 5:00 PM</p>
+              </div>
+            </div>
+            <form className="space-y-4" onSubmit={handleSupportSubmit}>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Subject
+                <input
+                  value={supportForm.subject}
+                  onChange={(event) =>
+                    setSupportForm((prev) => ({ ...prev, subject: event.target.value }))
+                  }
+                  required
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Message
+                <textarea
+                  value={supportForm.message}
+                  onChange={(event) =>
+                    setSupportForm((prev) => ({ ...prev, message: event.target.value }))
+                  }
+                  required
+                  rows={4}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                />
+              </label>
+              <button
+                type="submit"
+                disabled={supportSubmitting}
+                className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {supportSubmitting ? 'Sending…' : 'Send message'}
+              </button>
+            </form>
+          </div>
+        </section>
+      </main>
+
+      <PayNowModal
+        open={paymentContext.open}
+        student={paymentContext.student}
+        selections={paymentContext.selections}
+        onToggle={handleToggleSelection}
+        onClose={handleClosePayment}
+        onConfirm={handleProcessPayment}
+        processing={paymentProcessing}
+        total={totalSelectedAmount}
+      />
     </div>
   );
 };

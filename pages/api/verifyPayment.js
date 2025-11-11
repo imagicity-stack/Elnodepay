@@ -1,5 +1,12 @@
 import crypto from 'crypto';
-import { addDoc, arrayUnion, collection, doc, getDoc, updateDoc } from 'firebase/firestore';
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  serverTimestamp,
+  updateDoc,
+} from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
 const keySecret = process.env.RAZORPAY_KEY_SECRET;
@@ -15,7 +22,23 @@ const handler = async (req, res) => {
   }
 
   try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, userId, amount } = req.body;
+    const {
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature,
+      userId,
+      amount,
+      studentDocId,
+      studentId,
+      studentName,
+      parentEmail,
+      parentUid,
+      className,
+      term,
+      feeType,
+      breakdown = [],
+      paymentMode = 'Online',
+    } = req.body;
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({ success: false, message: 'Incomplete Razorpay payload' });
@@ -32,30 +55,52 @@ const handler = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Signature mismatch' });
     }
 
-    const amountPaid = Number(amount || 0) / 100;
-    const txnRef = await addDoc(collection(db, 'transactions'), {
-      user_id: userId,
+    const amountPaid = Number(amount || 0);
+
+    const paymentDoc = await addDoc(collection(db, 'payments'), {
+      studentId: studentId || '',
+      student_name: studentName || '',
+      class: className || '',
+      parent_uid: parentUid || userId || '',
+      parent_email: parentEmail || '',
       amount: amountPaid,
-      date: new Date().toISOString(),
-      razorpay_id: razorpay_payment_id,
-      status: 'success',
-      order_id: razorpay_order_id
+      mode: paymentMode || 'Online',
+      date: serverTimestamp(),
+      term: term || '',
+      fee_type: feeType || 'Tuition',
+      breakdown,
+      razorpay_order_id,
+      razorpay_payment_id,
+      status: 'Success',
     });
 
-    const userRef = doc(db, 'users', userId);
-    const userSnap = await getDoc(userRef);
-    if (userSnap.exists()) {
-      const userData = userSnap.data();
-      const newDue = Math.max((userData.total_due || 0) - amountPaid, 0);
-      const collected = (userData.collected_amount || 0) + amountPaid;
-      await updateDoc(userRef, {
-        total_due: newDue,
-        collected_amount: collected,
-        transactions: arrayUnion(txnRef.id)
+    if (studentDocId) {
+      const studentRef = doc(db, 'students', studentDocId);
+      const studentSnap = await getDoc(studentRef);
+      if (studentSnap.exists()) {
+        const studentData = studentSnap.data();
+        const currentBalance = Number(studentData.balance ?? studentData.fee_amount ?? 0);
+        const newBalance = Math.max(currentBalance - amountPaid, 0);
+        const updatedStatus = newBalance <= 0 ? 'Paid' : studentData.status === 'Overdue' ? 'Overdue' : 'Pending';
+        await updateDoc(studentRef, {
+          balance: newBalance,
+          status: updatedStatus,
+        });
+      }
+    }
+
+    if (parentUid || userId) {
+      await addDoc(collection(db, 'notifications'), {
+        user_uid: parentUid || userId,
+        type: 'info',
+        title: 'Payment received',
+        message: `Payment of ₹${amountPaid.toFixed(2)} received for ${studentName || 'student'}.`,
+        created_at: serverTimestamp(),
+        read: false,
       });
     }
 
-    return res.status(200).json({ success: true, transactionId: txnRef.id });
+    return res.status(200).json({ success: true, paymentId: paymentDoc.id });
   } catch (error) {
     console.error('verifyPayment error', error);
     return res.status(500).json({ success: false, message: error.message || 'Unable to verify payment' });
