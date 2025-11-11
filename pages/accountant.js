@@ -9,8 +9,8 @@ import {
 } from 'firebase/auth';
 import {
   addDoc,
-  arrayUnion,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -24,25 +24,10 @@ import {
   where,
 } from 'firebase/firestore';
 import { getApps, initializeApp } from 'firebase/app';
-import {
-  ArcElement,
-  BarElement,
-  CategoryScale,
-  Chart as ChartJS,
-  Legend,
-  LinearScale,
-  Title,
-  Tooltip,
-} from 'chart.js';
-import { Bar, Pie } from 'react-chartjs-2';
 import { auth, db } from '../lib/firebase';
 
-ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend, Title);
-
-const CLASS_OPTIONS = ['Nursery', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
-const SESSION_OPTIONS = ['2023-24', '2024-25', '2025-26', '2026-27', '2027-28'];
-const FEE_CYCLE_OPTIONS = ['Monthly', 'Quarterly', 'Half-Yearly'];
-const STATUS_OPTIONS = ['All', 'Paid', 'Pending', 'Overdue'];
+const CLASS_OPTIONS = ['Nursery', 'KG1', 'KG2', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+const FEE_TYPE_OPTIONS = ['Monthly', 'Quarterly', '6 Months', 'Custom'];
 
 const emptyStudentForm = {
   studentId: '',
@@ -51,142 +36,378 @@ const emptyStudentForm = {
   section: '',
   parent_phone: '',
   parent_email: '',
-  fee_cycle: 'Monthly',
 };
 
-const statusBadgeClasses = {
-  Paid: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
-  Pending: 'bg-amber-100 text-amber-700 border border-amber-200',
-  Overdue: 'bg-rose-100 text-rose-700 border border-rose-200',
+const defaultFeeRequestForm = {
+  feeType: 'Monthly',
+  customAmount: '',
+  customNote: '',
+  othersLabel: '',
+  othersAmount: '',
+  storeEnabled: false,
+  storeItemName: '',
+  storeItemAmount: '',
 };
 
-const Modal = ({ title, children, onClose }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-8">
-    <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
+const Toast = ({ toast, onClose }) => {
+  if (!toast) return null;
+
+  return (
+    <div className="fixed bottom-6 right-6 z-50 max-w-xs rounded-2xl border border-slate-200 bg-white p-4 shadow-xl">
+      <div className="flex items-start gap-3">
+        <span
+          className={`mt-0.5 inline-flex h-2.5 w-2.5 flex-none rounded-full ${
+            toast.type === 'error' ? 'bg-red-500' : 'bg-emerald-500'
+          }`}
+        />
+        <div className="flex-1 text-sm text-slate-700">{toast.message}</div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full bg-slate-100 p-1 text-xs text-slate-500 transition hover:bg-slate-200"
+        >
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const Modal = ({ title, onClose, children, footer }) => (
+  <div className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/60 px-4 py-8">
+    <div className="relative w-full max-w-2xl overflow-hidden rounded-3xl bg-white shadow-2xl">
       <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
         <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
         <button
           type="button"
           onClick={onClose}
-          className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-200"
+          className="rounded-full bg-slate-100 px-3 py-1 text-sm font-medium text-slate-600 transition hover:bg-slate-200"
         >
           Close
         </button>
       </div>
-      <div className="max-h-[70vh] overflow-y-auto px-6 py-4">{children}</div>
+      <div className="max-h-[70vh] overflow-y-auto px-6 py-4 text-sm text-slate-700">{children}</div>
+      {footer && <div className="border-t border-slate-200 bg-slate-50 px-6 py-4">{footer}</div>}
     </div>
   </div>
 );
 
-const StudentFormModal = ({
-  isEditing,
-  formState,
-  onChange,
-  onSubmit,
-  onClose,
-  isSubmitting,
-  calculatedFee,
+const StudentFormFields = ({ formState, onChange, disabled }) => (
+  <div className="grid gap-4 sm:grid-cols-2">
+    <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+      Student ID
+      <input
+        name="studentId"
+        value={formState.studentId}
+        onChange={onChange}
+        required
+        disabled={disabled}
+        placeholder="STU-001"
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 disabled:cursor-not-allowed"
+      />
+    </label>
+    <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+      Name
+      <input
+        name="name"
+        value={formState.name}
+        onChange={onChange}
+        required
+        placeholder="Student name"
+        disabled={disabled}
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 disabled:cursor-not-allowed"
+      />
+    </label>
+    <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+      Class
+      <select
+        name="class"
+        value={formState.class}
+        onChange={onChange}
+        required
+        disabled={disabled}
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 disabled:cursor-not-allowed"
+      >
+        <option value="">Select class</option>
+        {CLASS_OPTIONS.map((item) => (
+          <option key={item} value={item}>
+            {item}
+          </option>
+        ))}
+      </select>
+    </label>
+    <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+      Section
+      <input
+        name="section"
+        value={formState.section}
+        onChange={onChange}
+        placeholder="A"
+        disabled={disabled}
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 disabled:cursor-not-allowed"
+      />
+    </label>
+    <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+      Parent&apos;s Phone
+      <input
+        name="parent_phone"
+        value={formState.parent_phone}
+        onChange={onChange}
+        placeholder="9876543210"
+        disabled={disabled}
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 disabled:cursor-not-allowed"
+      />
+    </label>
+    <label className="flex flex-col gap-2 text-sm font-medium text-slate-700 sm:col-span-2">
+      Parent&apos;s Email
+      <input
+        type="email"
+        name="parent_email"
+        value={formState.parent_email}
+        onChange={onChange}
+        placeholder="parent@example.com"
+        required
+        disabled={disabled}
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 disabled:cursor-not-allowed"
+      />
+    </label>
+  </div>
+);
+const FeeRequestModal = ({
+  context,
+  feeStructure,
   defaultDueDate,
-}) => (
-  <Modal title={isEditing ? 'Edit Student' : 'Add Student'} onClose={onClose}>
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div className="grid gap-4 md:grid-cols-2">
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Student ID
-          <input
-            name="studentId"
-            value={formState.studentId}
-            onChange={onChange}
-            required
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            placeholder="STU-001"
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Name
-          <input
-            name="name"
-            value={formState.name}
-            onChange={onChange}
-            required
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            placeholder="Student name"
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Class
-          <select
-            name="class"
-            value={formState.class}
-            onChange={onChange}
-            required
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+  onClose,
+  onSubmit,
+  submitting,
+}) => {
+  if (!context.open || !context.student) return null;
+
+  const { student, form } = context;
+  const structureForClass = feeStructure?.[student.class] || {};
+  const tuitionFee = (() => {
+    if (form.feeType === 'Custom') return 0;
+    if (!structureForClass) return 0;
+    switch (form.feeType) {
+      case 'Monthly':
+        return Number(structureForClass.monthly || 0);
+      case 'Quarterly':
+        return Number(structureForClass.quarterly || 0);
+      case '6 Months':
+        return Number(structureForClass.sixmonth || structureForClass['6month'] || 0);
+      default:
+        return 0;
+    }
+  })();
+
+  const customFee = form.feeType === 'Custom' ? Number(form.customAmount || 0) : 0;
+  const othersFee = Number(form.othersAmount || 0);
+  const storeFee = form.storeEnabled ? Number(form.storeItemAmount || 0) : 0;
+  const total = tuitionFee + customFee + othersFee + storeFee;
+
+  return (
+    <Modal title={`Create fee request · ${student.name}`} onClose={onClose}>
+      <form className="space-y-4" onSubmit={onSubmit}>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+            Fee Type
+            <select
+              name="feeType"
+              value={form.feeType}
+              onChange={(event) =>
+                context.setForm((prev) => ({ ...prev, feeType: event.target.value }))
+              }
+              className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            >
+              {FEE_TYPE_OPTIONS.map((item) => (
+                <option key={item} value={item}>
+                  {item}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600">
+            <p className="font-semibold text-slate-900">Summary</p>
+            <p className="mt-1">Class: {student.class || '—'}</p>
+            <p className="mt-1">Due date: {defaultDueDate || 'Not configured'}</p>
+            <p className="mt-1 font-semibold text-slate-900">
+              Total payable: ₹{Number(total || 0).toLocaleString('en-IN')}
+            </p>
+          </div>
+        </div>
+
+        {form.feeType === 'Custom' && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+              Custom Fee Amount (₹)
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={form.customAmount}
+                onChange={(event) =>
+                  context.setForm((prev) => ({ ...prev, customAmount: event.target.value }))
+                }
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                required
+              />
+            </label>
+            <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+              Custom Note
+              <input
+                value={form.customNote}
+                onChange={(event) =>
+                  context.setForm((prev) => ({ ...prev, customNote: event.target.value }))
+                }
+                placeholder="Ex: Annual lab charges"
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+            </label>
+          </div>
+        )}
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+            Others Label (optional)
+            <input
+              value={form.othersLabel}
+              onChange={(event) =>
+                context.setForm((prev) => ({ ...prev, othersLabel: event.target.value }))
+              }
+              placeholder="Sports Day"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            />
+          </label>
+          <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+            Others Amount (optional)
+            <input
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.othersAmount}
+              onChange={(event) =>
+                context.setForm((prev) => ({ ...prev, othersAmount: event.target.value }))
+              }
+              placeholder="0"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            />
+          </label>
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <span className="font-medium text-slate-900">Store Charge</span>
+            <button
+              type="button"
+              onClick={() =>
+                context.setForm((prev) => ({ ...prev, storeEnabled: !prev.storeEnabled }))
+              }
+              className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                form.storeEnabled
+                  ? 'border-cardinal bg-cardinal text-white'
+                  : 'border-slate-300 text-slate-600'
+              }`}
+            >
+              {form.storeEnabled ? 'Enabled' : 'Disabled'}
+            </button>
+          </div>
+          {form.storeEnabled && (
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Store Item Name
+                <input
+                  value={form.storeItemName}
+                  onChange={(event) =>
+                    context.setForm((prev) => ({ ...prev, storeItemName: event.target.value }))
+                  }
+                  placeholder="Uniform set"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  required
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Store Item Amount (₹)
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={form.storeItemAmount}
+                  onChange={(event) =>
+                    context.setForm((prev) => ({ ...prev, storeItemAmount: event.target.value }))
+                  }
+                  placeholder="0"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  required
+                />
+              </label>
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
           >
-            <option value="">Select class</option>
-            {CLASS_OPTIONS.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Section (optional)
-          <input
-            name="section"
-            value={formState.section}
-            onChange={onChange}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            placeholder="A"
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Parent Phone
-          <input
-            name="parent_phone"
-            value={formState.parent_phone}
-            onChange={onChange}
-            placeholder="9876543210"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Parent Email
-          <input
-            type="email"
-            name="parent_email"
-            value={formState.parent_email}
-            onChange={onChange}
-            required
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            placeholder="parent@example.com"
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Fee Cycle
-          <select
-            name="fee_cycle"
-            value={formState.fee_cycle}
-            onChange={onChange}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
           >
-            {FEE_CYCLE_OPTIONS.map((cycle) => (
-              <option key={cycle} value={cycle}>
-                {cycle}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-        <p className="font-medium text-slate-900">Summary</p>
-        <p className="mt-1">Fee cycle: {formState.fee_cycle}</p>
-        <p className="mt-1">Due date: {defaultDueDate || 'Not configured'}</p>
-        <p className="mt-1 font-semibold text-slate-900">
-          Tuition fee payable: ₹{Number(calculatedFee || 0).toLocaleString('en-IN')}
-        </p>
-      </div>
-      <div className="flex items-center justify-end gap-3 pt-2">
+            {submitting ? 'Creating…' : 'Create request'}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+};
+
+const HistoryModal = ({ context, onClose }) => {
+  if (!context.open || !context.student) return null;
+
+  return (
+    <Modal title={`Payment history · ${context.student.name}`} onClose={onClose}>
+      {context.loading ? (
+        <p className="text-sm text-slate-600">Loading payments…</p>
+      ) : context.entries.length === 0 ? (
+        <p className="text-sm text-slate-600">No payments recorded yet.</p>
+      ) : (
+        <div className="space-y-3">
+          {context.entries.map((payment) => (
+            <div key={payment.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-base font-semibold text-slate-900">
+                  ₹{Number(payment.amount || 0).toLocaleString('en-IN')}
+                </p>
+                <span className="rounded-full border border-slate-300 px-3 py-1 text-xs font-semibold uppercase text-slate-500">
+                  {payment.mode || 'Online'}
+                </span>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">{payment.dateLabel}</p>
+              {payment.transaction_id && (
+                <p className="mt-1 text-xs text-slate-500">Txn ID: {payment.transaction_id}</p>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+};
+
+const DeleteConfirmModal = ({ context, onClose, onConfirm, loading }) => {
+  if (!context.open || !context.student) return null;
+
+  return (
+    <Modal title="Delete student" onClose={onClose}>
+      <p className="text-sm text-slate-600">
+        Are you sure you want to delete {context.student.name}? This action cannot be undone and will remove all stored
+        student details.
+      </p>
+      <div className="mt-6 flex justify-end gap-3">
         <button
           type="button"
           onClick={onClose}
@@ -195,276 +416,135 @@ const StudentFormModal = ({
           Cancel
         </button>
         <button
-          type="submit"
-          disabled={isSubmitting}
-          className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+          type="button"
+          onClick={onConfirm}
+          disabled={loading}
+          className="rounded-xl bg-red-500 px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-70"
         >
-          {isSubmitting ? 'Saving…' : isEditing ? 'Save changes' : 'Add student'}
+          {loading ? 'Deleting…' : 'Delete'}
         </button>
       </div>
-    </form>
-  </Modal>
-);
+    </Modal>
+  );
+};
 
-const PaymentHistoryModal = ({ student, payments, onClose }) => (
-  <Modal title={`Payment history · ${student?.name || ''}`} onClose={onClose}>
-    <div className="space-y-3 text-sm">
-      {payments.length === 0 && <p className="text-slate-600">No payments recorded yet.</p>}
-      {payments.map((payment) => (
-        <div
-          key={payment.id}
-          className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700"
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="font-semibold text-slate-900">₹{payment.amount?.toLocaleString('en-IN')}</div>
-            <span className="text-xs uppercase tracking-wide text-slate-500">{payment.mode || 'Online'}</span>
-          </div>
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-            <span>{payment.fee_type || 'Tuition'}</span>
-            {payment.term && <span className="rounded-full bg-white px-2 py-0.5">{payment.term}</span>}
-            <span>
-              {payment.date?.toDate
-                ? payment.date.toDate().toLocaleString()
-                : new Date(payment.date).toLocaleString()}
-            </span>
-          </div>
-          {Array.isArray(payment.breakdown) && payment.breakdown.length > 0 && (
-            <ul className="mt-2 space-y-1 text-xs text-slate-600">
-              {payment.breakdown.map((item, idx) => (
-                <li key={`${payment.id}-fee-${idx}`} className="flex justify-between">
-                  <span>{item.label}</span>
-                  <span>₹{Number(item.amount || 0).toLocaleString('en-IN')}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      ))}
-    </div>
-  </Modal>
-);
+const MarkPaidModal = ({ context, setContext, onConfirm, loading, onClose }) => {
+  if (!context.open || !context.request) return null;
 
-const SettingsPanel = ({ settingsState, onChange, onSave, isSaving }) => (
-  <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-    <h3 className="text-lg font-semibold text-slate-900">Settings</h3>
-    <p className="mt-1 text-sm text-slate-600">
-      Configure academic term details, default due dates, and reminder templates for automated workflows.
-    </p>
-    <form className="mt-6 space-y-4" onSubmit={onSave}>
-      <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-        Current Academic Term
-        <input
-          name="currentTerm"
-          value={settingsState.currentTerm}
-          onChange={onChange}
-          placeholder="2024-2025 Term 1"
-          className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-        />
-      </label>
-      <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-        Default Due Date
-        <input
-          type="date"
-          name="defaultDueDate"
-          value={settingsState.defaultDueDate}
-          onChange={onChange}
-          className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-        />
-      </label>
-      <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-        Reminder Message Template
-        <textarea
-          name="reminderTemplate"
-          value={settingsState.reminderTemplate}
-          onChange={onChange}
-          rows={4}
-          className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-          placeholder="Dear Parent, your fee payment is due on {{due_date}}. Kindly clear the dues at the earliest."
-        />
-      </label>
-      <div className="flex justify-end">
+  const handleModeSelect = (mode) => {
+    setContext((prev) => ({ ...prev, mode, step: mode === 'Cash' ? 'confirm' : 'transaction' }));
+  };
+
+  const handleBack = () => {
+    setContext((prev) => ({ ...prev, mode: '', step: 'choice', transactionId: '' }));
+  };
+
+  const footerButtons = (
+    <div className="flex justify-between">
+      <button
+        type="button"
+        onClick={context.step === 'choice' ? onClose : handleBack}
+        className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
+      >
+        {context.step === 'choice' ? 'Close' : 'Back'}
+      </button>
+      {context.step !== 'choice' && (
         <button
-          type="submit"
-          disabled={isSaving}
-          className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+          type="button"
+          onClick={onConfirm}
+          disabled={loading || (context.mode === 'Online' && !context.transactionId)}
+          className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
         >
-          {isSaving ? 'Saving…' : 'Save settings'}
+          {loading ? 'Saving…' : 'Confirm paid'}
         </button>
-      </div>
-    </form>
-  </div>
-);
+      )}
+    </div>
+  );
 
+  return (
+    <Modal title={`Mark paid · ${context.request.student_name || context.request.studentId}`} onClose={onClose} footer={footerButtons}>
+      {context.step === 'choice' && (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-600">Has the child paid via Cash or Online?</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {['Cash', 'Online'].map((option) => (
+              <button
+                key={option}
+                type="button"
+                onClick={() => handleModeSelect(option)}
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-700 transition hover:border-cardinal hover:text-cardinal"
+              >
+                {option}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {context.step === 'confirm' && (
+        <div className="space-y-3 text-sm text-slate-600">
+          <p>
+            You are about to mark this fee request as paid via <span className="font-semibold">cash</span>. Please confirm
+            that the payment has been collected.
+          </p>
+        </div>
+      )}
+
+      {context.step === 'transaction' && (
+        <div className="space-y-4">
+          <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+            Enter Transaction ID
+            <input
+              value={context.transactionId}
+              onChange={(event) =>
+                setContext((prev) => ({ ...prev, transactionId: event.target.value }))
+              }
+              placeholder="PAY12345"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            />
+          </label>
+          <p className="text-xs text-slate-500">Please verify the transaction ID before confirming payment.</p>
+        </div>
+      )}
+    </Modal>
+  );
+};
 const AccountantDashboard = () => {
   const router = useRouter();
   const [authChecked, setAuthChecked] = useState(false);
   const [user, setUser] = useState(null);
+  const [activeTab, setActiveTab] = useState('students');
   const [students, setStudents] = useState([]);
-  const [payments, setPayments] = useState([]);
-  const [reminders, setReminders] = useState([]);
+  const [feeRequests, setFeeRequests] = useState([]);
+  const [feeStructure, setFeeStructure] = useState({});
+  const [dueDateSetting, setDueDateSetting] = useState('');
+  const [addForm, setAddForm] = useState(emptyStudentForm);
+  const [addSubmitting, setAddSubmitting] = useState(false);
+  const [editContext, setEditContext] = useState({ open: false, studentId: '', form: emptyStudentForm, submitting: false });
+  const [historyContext, setHistoryContext] = useState({ open: false, student: null, loading: false, entries: [] });
+  const [deleteContext, setDeleteContext] = useState({ open: false, student: null, loading: false });
+  const [feeRequestContext, setFeeRequestContext] = useState({
+    open: false,
+    student: null,
+    form: defaultFeeRequestForm,
+    setForm: () => {},
+    submitting: false,
+  });
+  const [markPaidContext, setMarkPaidContext] = useState({
+    open: false,
+    request: null,
+    step: 'choice',
+    mode: '',
+    transactionId: '',
+    loading: false,
+  });
   const [loadingStudents, setLoadingStudents] = useState(true);
-  const [loadingPayments, setLoadingPayments] = useState(true);
-  const [loadingReminders, setLoadingReminders] = useState(true);
-  const [formState, setFormState] = useState(emptyStudentForm);
-  const [editingStudentId, setEditingStudentId] = useState(null);
-  const [isFormOpen, setIsFormOpen] = useState(false);
-  const [formSubmitting, setFormSubmitting] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
-  const [filters, setFilters] = useState({
-    class: 'All',
-    status: 'All',
-    term: 'All',
-    search: '',
-  });
-  const [historyContext, setHistoryContext] = useState({ open: false, student: null, entries: [] });
-  const [settingsState, setSettingsState] = useState({
-    currentTerm: '',
-    defaultDueDate: '',
-    reminderTemplate: '',
-  });
-  const [savingSettings, setSavingSettings] = useState(false);
-  const [bulkSending, setBulkSending] = useState(false);
-  const [feeStructure, setFeeStructure] = useState({ session: '', defaultDueDate: '', fees: {} });
-  const [feeStructureDraft, setFeeStructureDraft] = useState({ session: '', defaultDueDate: '', fees: {} });
-  const [feeStructureSaving, setFeeStructureSaving] = useState(false);
-  const [storeCharges, setStoreCharges] = useState([]);
-  const [storeChargeForm, setStoreChargeForm] = useState({
-    studentId: '',
-    itemName: '',
-    amount: '',
-    date: new Date().toISOString().slice(0, 10),
-  });
-  const [storeChargeSubmitting, setStoreChargeSubmitting] = useState(false);
-  const [transactionsLog, setTransactionsLog] = useState([]);
-  const [transactionFilters, setTransactionFilters] = useState({ month: 'All', mode: 'All' });
+  const [searchValue, setSearchValue] = useState('');
+  const [classFilter, setClassFilter] = useState('All');
+  const [selectedStudentId, setSelectedStudentId] = useState('');
   const [toast, setToast] = useState(null);
-  const secondaryAuthRef = useRef(null);
   const toastTimerRef = useRef(null);
-
-  const normaliseFeeStructure = (data) => {
-    const rawFees = data?.fees || {};
-    const formattedFees = {};
-    CLASS_OPTIONS.forEach((cls) => {
-      const entry = rawFees[cls] || {};
-      formattedFees[cls] = {
-        monthly: entry.monthly ?? '',
-        quarterly: entry.quarterly ?? '',
-        halfYearly: entry.halfYearly ?? '',
-      };
-    });
-    return {
-      session: data?.session || '',
-      defaultDueDate: data?.defaultDueDate || '',
-      fees: formattedFees,
-    };
-  };
-
-  const getFeeAmountFromStructure = (className, cycle) => {
-    if (!className) return 0;
-    const entry = feeStructureDraft.fees?.[className] || {};
-    const monthly = Number(entry.monthly || 0);
-    const quarterly = Number(entry.quarterly || 0);
-    const halfYearly = Number(entry.halfYearly || 0);
-    switch (cycle) {
-      case 'Monthly':
-        return monthly;
-      case 'Quarterly':
-        return quarterly;
-      case 'Half-Yearly':
-        if (halfYearly) return halfYearly;
-        if (quarterly) return quarterly * 2;
-        return monthly * 6;
-      default:
-        return 0;
-    }
-  };
-
-  const getMonthMeta = (dateInput) => {
-    let dateValue;
-    if (!dateInput) {
-      dateValue = new Date();
-    } else if (dateInput?.toDate) {
-      dateValue = dateInput.toDate();
-    } else if (dateInput instanceof Date) {
-      dateValue = dateInput;
-    } else {
-      dateValue = new Date(dateInput);
-    }
-    if (!Number.isFinite(dateValue.getTime())) {
-      dateValue = new Date();
-    }
-    const key = `${dateValue.getFullYear()}-${String(dateValue.getMonth() + 1).padStart(2, '0')}`;
-    const label = dateValue.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
-    return { key, label, date: dateValue };
-  };
-
-  const parseMonthKey = (value) => {
-    if (!value) return '';
-    if (/^\d{4}-\d{2}$/.test(value)) return value;
-    const parsed = new Date(value);
-    if (Number.isFinite(parsed.getTime())) {
-      return `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
-    }
-    const parts = `${value}`.split(' ');
-    if (parts.length >= 2) {
-      const tryDate = new Date(`${parts[0]} 1, ${parts[1]}`);
-      if (Number.isFinite(tryDate.getTime())) {
-        return `${tryDate.getFullYear()}-${String(tryDate.getMonth() + 1).padStart(2, '0')}`;
-      }
-    }
-    return value;
-  };
-
-  const resolveTransactionMonthKey = (entry) => {
-    if (!entry) return '';
-    if (entry.month_key) return entry.month_key;
-    if (entry.month) return parseMonthKey(entry.month);
-    return getMonthMeta(entry.date).key;
-  };
-
-  const resolveTransactionMonthLabel = (entry) => {
-    if (!entry) return '';
-    if (entry.month_label) return entry.month_label;
-    if (entry.month) {
-      const parsed = new Date(entry.month);
-      if (Number.isFinite(parsed.getTime())) {
-        return parsed.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
-      }
-      return entry.month;
-    }
-    return getMonthMeta(entry.date).label;
-  };
-
-  const logTransactionEntry = async ({ student, amount, mode, transactionId, status }) => {
-    if (!student) return;
-    const meta = getMonthMeta();
-    try {
-      await addDoc(collection(db, 'transactions_log'), {
-        student_doc_id: student.id,
-        studentId: student.studentId || student.id,
-        student_name: student.name,
-        class: student.class,
-        amount: Number(amount || 0),
-        mode: mode || 'Online',
-        transaction_id: transactionId || '',
-        status: status || 'Success',
-        month_key: meta.key,
-        month_label: meta.label,
-        date: serverTimestamp(),
-        created_at: serverTimestamp(),
-      });
-    } catch (error) {
-      console.error('Unable to record transaction log', error);
-    }
-  };
-
-  const triggerToast = (message, tone = 'success') => {
-    if (toastTimerRef.current) {
-      clearTimeout(toastTimerRef.current);
-    }
-    setToast({ message, tone });
-    toastTimerRef.current = setTimeout(() => setToast(null), 4000);
-  };
+  const secondaryAuthRef = useRef(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -488,93 +568,6 @@ const AccountantDashboard = () => {
     return () => unsubscribe();
   }, [router]);
 
-  useEffect(() => () => {
-    if (toastTimerRef.current) {
-      clearTimeout(toastTimerRef.current);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!user) return;
-
-    const studentQuery = collection(db, 'students');
-    const unsubscribeStudents = onSnapshot(
-      studentQuery,
-      (snapshot) => {
-        const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-        setStudents(data);
-        setLoadingStudents(false);
-      },
-      () => setLoadingStudents(false),
-    );
-
-    const paymentQuery = query(collection(db, 'payments'), orderBy('date', 'desc'), limit(250));
-    const unsubscribePayments = onSnapshot(
-      paymentQuery,
-      (snapshot) => {
-        const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-        setPayments(data);
-        setLoadingPayments(false);
-      },
-      () => setLoadingPayments(false),
-    );
-
-    const remindersQuery = query(collection(db, 'reminders'), orderBy('created_at', 'desc'), limit(100));
-    const unsubscribeReminders = onSnapshot(
-      remindersQuery,
-      (snapshot) => {
-        const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-        setReminders(data);
-        setLoadingReminders(false);
-      },
-      () => setLoadingReminders(false),
-    );
-
-    const settingsRef = doc(db, 'settings', 'general');
-    const unsubscribeSettings = onSnapshot(settingsRef, (snapshot) => {
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        setSettingsState({
-          currentTerm: data.currentTerm || '',
-          defaultDueDate: data.defaultDueDate || '',
-          reminderTemplate:
-            data.reminderTemplate || 'Dear Parent, your fee payment is due on {{due_date}}. Kindly clear the dues.',
-        });
-      }
-    });
-
-    const feeStructureRef = doc(db, 'settings', 'feestructure');
-    const unsubscribeFeeStructure = onSnapshot(feeStructureRef, (snapshot) => {
-      const structure = snapshot.exists()
-        ? normaliseFeeStructure(snapshot.data())
-        : normaliseFeeStructure({});
-      setFeeStructure(structure);
-      setFeeStructureDraft(structure);
-    });
-
-    const storeChargesQuery = query(collection(db, 'store_charges'), orderBy('created_at', 'desc'));
-    const unsubscribeStoreCharges = onSnapshot(storeChargesQuery, (snapshot) => {
-      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-      setStoreCharges(data);
-    });
-
-    const transactionsQuery = query(collection(db, 'transactions_log'), orderBy('date', 'desc'));
-    const unsubscribeTransactions = onSnapshot(transactionsQuery, (snapshot) => {
-      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-      setTransactionsLog(data);
-    });
-
-    return () => {
-      unsubscribeStudents();
-      unsubscribePayments();
-      unsubscribeReminders();
-      unsubscribeSettings();
-      unsubscribeFeeStructure();
-      unsubscribeStoreCharges();
-      unsubscribeTransactions();
-    };
-  }, [user]);
-
   useEffect(() => {
     if (!secondaryAuthRef.current) {
       const parentApp = auth.app;
@@ -584,185 +577,96 @@ const AccountantDashboard = () => {
     }
   }, []);
 
-  const monthMetrics = useMemo(() => {
-    const now = new Date();
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    const startOfYear = new Date(now.getFullYear(), 0, 1);
+  useEffect(() => {
+    if (!user) return;
+    setLoadingStudents(true);
+    const studentsQuery = query(collection(db, 'students'), orderBy('name', 'asc'));
+    const unsubscribeStudents = onSnapshot(studentsQuery, (snapshot) => {
+      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setStudents(data);
+      setLoadingStudents(false);
+    });
+    return () => unsubscribeStudents();
+  }, [user]);
 
-    let monthTotal = 0;
-    let yearTotal = 0;
+  useEffect(() => {
+    if (!user) return;
+    const requestsQuery = query(collection(db, 'fee_requests'), orderBy('created_at', 'desc'));
+    const unsubscribe = onSnapshot(requestsQuery, (snapshot) => {
+      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setFeeRequests(data);
+    });
+    return () => unsubscribe();
+  }, [user]);
 
-    payments.forEach((payment) => {
-      const date = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
-      if (!Number.isFinite(date.getTime())) return;
-      if (date >= startOfYear) {
-        yearTotal += Number(payment.amount || 0);
-      }
-      if (date >= startOfMonth) {
-        monthTotal += Number(payment.amount || 0);
+  useEffect(() => {
+    if (!user) return;
+
+    const feeStructureRef = doc(db, 'settings', 'feestructure');
+    const unsubscribeStructure = onSnapshot(feeStructureRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        const { due_date, defaultDueDate, ...rest } = data;
+        setFeeStructure(rest);
+        setDueDateSetting((prev) => due_date || defaultDueDate || prev || '');
       }
     });
 
-    const pendingTotal = students
-      .filter((student) => student.status !== 'Paid')
-      .reduce((sum, student) => sum + Number(student.balance ?? student.fee_amount ?? 0), 0);
+    const generalSettingsRef = doc(db, 'settings', 'general');
+    const unsubscribeGeneral = onSnapshot(generalSettingsRef, (snapshot) => {
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        setDueDateSetting((prev) => prev || data.defaultDueDate || '');
+      }
+    });
 
-    const overdueCount = students.filter((student) => student.status === 'Overdue').length;
-
-    const upcomingCount = students.filter((student) => {
-      if (!student.due_date) return false;
-      const due = new Date(student.due_date);
-      if (!Number.isFinite(due.getTime())) return false;
-      const diff = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-      return diff >= 0 && diff <= 7;
-    }).length;
-
-    const paidCount = students.filter((student) => student.status === 'Paid').length;
-    const unpaidCount = students.length - paidCount;
-
-    const outstandingList = [...students]
-      .map((student) => ({
-        id: student.id,
-        name: student.name,
-        class: student.class,
-        balance: Number(student.balance ?? student.fee_amount ?? 0),
-        status: student.status,
-      }))
-      .sort((a, b) => b.balance - a.balance)
-      .slice(0, 10);
-
-    const revenueByCategory = payments.reduce((acc, payment) => {
-      const key = payment.fee_type || 'Tuition';
-      acc[key] = (acc[key] || 0) + Number(payment.amount || 0);
-      return acc;
-    }, {});
-
-    const monthLabels = [];
-    const monthValues = [];
-
-    for (let i = 5; i >= 0; i -= 1) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const label = date.toLocaleString('en-IN', { month: 'short' });
-      const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
-      const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
-      const sum = payments.reduce((total, payment) => {
-        const paymentDate = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
-        if (!Number.isFinite(paymentDate.getTime())) return total;
-        if (paymentDate >= monthStart && paymentDate <= monthEnd) {
-          return total + Number(payment.amount || 0);
-        }
-        return total;
-      }, 0);
-      monthLabels.push(label);
-      monthValues.push(sum);
-    }
-
-    return {
-      monthTotal,
-      yearTotal,
-      pendingTotal,
-      overdueCount,
-      upcomingCount,
-      paidCount,
-      unpaidCount,
-      outstandingList,
-      revenueByCategory,
-      monthLabels,
-      monthValues,
+    return () => {
+      unsubscribeStructure();
+      unsubscribeGeneral();
     };
-  }, [payments, students]);
+  }, [user]);
 
-  const calculatedFeeAmount = useMemo(
-    () => getFeeAmountFromStructure(formState.class, formState.fee_cycle),
-    [formState.class, formState.fee_cycle, feeStructureDraft],
-  );
-
-  const sessionOptions = useMemo(() => {
-    if (!feeStructureDraft.session || SESSION_OPTIONS.includes(feeStructureDraft.session)) {
-      return SESSION_OPTIONS;
+  useEffect(() => {
+    if (students.length === 0) {
+      setSelectedStudentId('');
+      return;
     }
-    return [...SESSION_OPTIONS, feeStructureDraft.session];
-  }, [feeStructureDraft.session]);
-
-  const transactionMonthOptions = useMemo(() => {
-    const monthMap = new Map();
-    transactionsLog.forEach((entry) => {
-      const key = resolveTransactionMonthKey(entry);
-      const label = resolveTransactionMonthLabel(entry);
-      if (key) {
-        monthMap.set(key, label || key);
+    setSelectedStudentId((current) => {
+      if (current && students.some((student) => student.id === current)) {
+        return current;
       }
+      return students[0].id;
     });
-    return Array.from(monthMap.entries())
-      .sort((a, b) => (a[0] > b[0] ? -1 : 1))
-      .map(([value, label]) => ({ value, label }));
-  }, [transactionsLog]);
+  }, [students]);
 
-  const filteredTransactions = useMemo(() => {
-    return transactionsLog.filter((entry) => {
-      const matchesMode =
-        transactionFilters.mode === 'All' || (entry.mode || 'Online') === transactionFilters.mode;
-      if (transactionFilters.month === 'All') {
-        return matchesMode;
+  useEffect(() => {
+    if (!toast) return;
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = setTimeout(() => setToast(null), 4000);
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
       }
-      const key = resolveTransactionMonthKey(entry);
-      return matchesMode && key === transactionFilters.month;
-    });
-  }, [transactionsLog, transactionFilters]);
+    };
+  }, [toast]);
 
-  const filteredStudents = useMemo(() => {
-    return students.filter((student) => {
-      const matchesClass = filters.class === 'All' || student.class === filters.class;
-      const matchesStatus = filters.status === 'All' || student.status === filters.status;
-      const matchesTerm = filters.term === 'All' || (student.term || '').toLowerCase().includes(filters.term.toLowerCase());
-      const searchValue = filters.search.trim().toLowerCase();
-      const matchesSearch =
-        searchValue.length === 0 ||
-        student.name?.toLowerCase().includes(searchValue) ||
-        student.studentId?.toLowerCase().includes(searchValue);
-      return matchesClass && matchesStatus && matchesTerm && matchesSearch;
-    });
-  }, [students, filters]);
-
-  const handleFilterChange = (event) => {
-    const { name, value } = event.target;
-    setFilters((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleOpenAddStudent = () => {
-    setFormState({ ...emptyStudentForm, fee_cycle: 'Monthly' });
-    setEditingStudentId(null);
-    setIsFormOpen(true);
-  };
-
-  const handleEditStudent = (student) => {
-    setFormState({
-      studentId: student.studentId || '',
-      name: student.name || '',
-      class: student.class || '',
-      section: student.section || '',
-      parent_phone: student.parent_phone || '',
-      parent_email: student.parent_email || '',
-      fee_cycle: student.fee_cycle || 'Monthly',
-    });
-    setEditingStudentId(student.id);
-    setIsFormOpen(true);
+  const triggerToast = (message, type = 'success') => {
+    setToast({ message, type });
   };
 
   const ensureParentAccount = async (email, details = {}) => {
     if (!email) return null;
-    const parentQuery = query(collection(db, 'users'), where('email', '==', email), limit(1));
+    const trimmedEmail = email.trim().toLowerCase();
+    const parentQuery = query(collection(db, 'users'), where('email', '==', trimmedEmail), limit(1));
     const existing = await getDocs(parentQuery);
     if (!existing.empty) {
       const existingId = existing.docs[0].id;
-      if (details.name || details.phone) {
-        const updates = {};
-        if (details.name) updates.name = details.name;
-        if (details.phone) updates.contactNumber = details.phone;
-        if (Object.keys(updates).length > 0) {
-          await setDoc(doc(db, 'users', existingId), updates, { merge: true });
-        }
-      }
+      const updates = { role: 'parent' };
+      if (details.name) updates.name = details.name;
+      if (details.phone) updates.contactNumber = details.phone;
+      await setDoc(doc(db, 'users', existingId), updates, { merge: true });
       return existingId;
     }
 
@@ -773,10 +677,10 @@ const AccountantDashboard = () => {
     try {
       const defaultPassword = 'elnparent123';
       const parentAuth = secondaryAuthRef.current;
-      const userCredential = await createUserWithEmailAndPassword(parentAuth, email, defaultPassword);
+      const userCredential = await createUserWithEmailAndPassword(parentAuth, trimmedEmail, defaultPassword);
       await setDoc(doc(db, 'users', userCredential.user.uid), {
-        email,
-        name: details.name || email.split('@')[0],
+        email: trimmedEmail,
+        name: details.name || trimmedEmail.split('@')[0],
         role: 'parent',
         contactNumber: details.phone || '',
         created_at: serverTimestamp(),
@@ -784,17 +688,13 @@ const AccountantDashboard = () => {
       return userCredential.user.uid;
     } catch (error) {
       if (error?.code === 'auth/email-already-in-use') {
-        const checkAgain = await getDocs(parentQuery);
-        if (!checkAgain.empty) {
-          const existingId = checkAgain.docs[0].id;
-          if (details.name || details.phone) {
-            const updates = {};
-            if (details.name) updates.name = details.name;
-            if (details.phone) updates.contactNumber = details.phone;
-            if (Object.keys(updates).length > 0) {
-              await setDoc(doc(db, 'users', existingId), updates, { merge: true });
-            }
-          }
+        const existingAgain = await getDocs(parentQuery);
+        if (!existingAgain.empty) {
+          const existingId = existingAgain.docs[0].id;
+          const updates = { role: 'parent' };
+          if (details.name) updates.name = details.name;
+          if (details.phone) updates.contactNumber = details.phone;
+          await setDoc(doc(db, 'users', existingId), updates, { merge: true });
           return existingId;
         }
       }
@@ -803,436 +703,307 @@ const AccountantDashboard = () => {
     }
   };
 
-  const handleFormChange = (event) => {
+  const handleAddFormChange = (event) => {
     const { name, value } = event.target;
-    setFormState((prev) => ({
+    setAddForm((prev) => ({
       ...prev,
-      [name]:
-        name === 'parent_phone'
-          ? value.replace(/[^0-9+]/g, '')
-          : value,
+      [name]: name === 'parent_phone' ? value.replace(/[^0-9+]/g, '') : value,
     }));
   };
 
-  const handleStudentSubmit = async (event) => {
+  const resetAddForm = () => {
+    setAddForm(emptyStudentForm);
+  };
+
+  const handleAddStudent = async (event) => {
     event.preventDefault();
-    setFormSubmitting(true);
+    setAddSubmitting(true);
 
     try {
-      const feeAmount = getFeeAmountFromStructure(formState.class, formState.fee_cycle);
-      if (feeAmount <= 0) {
-        triggerToast('Fee structure missing for selected class and cycle.', 'error');
-        setFormSubmitting(false);
+      const studentId = addForm.studentId.trim();
+      const name = addForm.name.trim();
+      const className = addForm.class.trim();
+      const parentEmail = addForm.parent_email.trim().toLowerCase();
+      if (!studentId || !name || !className || !parentEmail) {
+        triggerToast('All required fields must be filled.', 'error');
+        setAddSubmitting(false);
         return;
       }
-      const baseData = {
-        studentId: formState.studentId.trim(),
-        name: formState.name.trim(),
-        class: formState.class,
-        section: formState.section.trim(),
-        parent_phone: formState.parent_phone.trim(),
-        parent_email: formState.parent_email.trim().toLowerCase(),
-        fee_cycle: formState.fee_cycle,
-        fee_amount: feeAmount,
-        due_date: feeStructureDraft.defaultDueDate || '',
-        status: 'Pending',
-        term: settingsState.currentTerm || '',
-        session: feeStructureDraft.session || '',
-      };
 
-      if (editingStudentId) {
-        const studentRef = doc(db, 'students', editingStudentId);
-        const existingSnap = await getDoc(studentRef);
-        const existingData = existingSnap.exists() ? existingSnap.data() : {};
-        const parentUid =
-          existingData.parent_uid ||
-          (await ensureParentAccount(baseData.parent_email, {
-            name: existingData.parent_name || baseData.parent_email.split('@')[0],
-            phone: baseData.parent_phone,
-          }));
-        const preservedBalance = Number(existingData.balance ?? feeAmount);
-        const updatedStatus = preservedBalance <= 0 ? 'Paid' : existingData.status || 'Pending';
-        await updateDoc(studentRef, {
-          ...baseData,
-          balance: preservedBalance,
-          status: updatedStatus,
-          parent_uid: parentUid || existingData.parent_uid || '',
-          parent_name: existingData.parent_name || baseData.parent_email.split('@')[0],
-          updated_at: serverTimestamp(),
-        });
-        if (parentUid) {
-          await setDoc(
-            doc(db, 'users', parentUid),
-            {
-              email: baseData.parent_email,
-              name: baseData.parent_email.split('@')[0],
-              contactNumber: baseData.parent_phone || '',
-              role: 'parent',
-            },
-            { merge: true },
-          );
-        }
-        triggerToast('Student updated successfully.');
-      } else {
-        const parentUid = await ensureParentAccount(baseData.parent_email, {
-          name: baseData.parent_email.split('@')[0],
-          phone: baseData.parent_phone,
-        });
-        const newStudent = await addDoc(collection(db, 'students'), {
-          ...baseData,
-          balance: feeAmount,
-          parent_uid: parentUid || '',
-          created_at: serverTimestamp(),
-        });
-        if (parentUid) {
-          const parentRef = doc(db, 'users', parentUid);
-          await setDoc(
-            parentRef,
-            {
-              email: baseData.parent_email,
-              name: baseData.parent_email.split('@')[0],
-              role: 'parent',
-              contactNumber: baseData.parent_phone || '',
-              children: arrayUnion(newStudent.id),
-            },
-            { merge: true },
-          );
-        }
-        triggerToast('Student added successfully.');
-      }
+      const parentUid = await ensureParentAccount(parentEmail, {
+        name: name ? `${name.split(' ')[0]}'s Parent` : parentEmail.split('@')[0],
+        phone: addForm.parent_phone,
+      });
 
-      setIsFormOpen(false);
-    } catch (error) {
-      console.error('Error saving student', error);
-      triggerToast('Unable to save student record. Please try again.', 'error');
-    } finally {
-      setFormSubmitting(false);
-    }
-  };
-
-  const handleStoreChargeChange = (event) => {
-    const { name, value } = event.target;
-    setStoreChargeForm((prev) => ({
-      ...prev,
-      [name]: name === 'amount' ? value.replace(/[^0-9.]/g, '') : value,
-    }));
-  };
-
-  const handleAddStoreCharge = async (event) => {
-    event.preventDefault();
-    if (!storeChargeForm.studentId || !storeChargeForm.itemName.trim()) {
-      triggerToast('Please select a student and enter item details.', 'error');
-      return;
-    }
-    const amountValue = Number(storeChargeForm.amount || 0);
-    if (amountValue <= 0) {
-      triggerToast('Amount must be greater than zero.', 'error');
-      return;
-    }
-
-    const student = students.find((item) => item.id === storeChargeForm.studentId);
-    if (!student) {
-      triggerToast('Selected student not found.', 'error');
-      return;
-    }
-
-    setStoreChargeSubmitting(true);
-    try {
-      const chargeDate = storeChargeForm.date || new Date().toISOString().slice(0, 10);
-      const docRef = await addDoc(collection(db, 'store_charges'), {
-        student_doc_id: student.id,
-        studentId: student.studentId || student.id,
-        student_name: student.name,
-        class: student.class || '',
-        item_name: storeChargeForm.itemName.trim(),
-        amount: amountValue,
-        charge_date: chargeDate,
-        parent_email: student.parent_email || '',
-        parent_uid: student.parent_uid || '',
-        paid: false,
+      await addDoc(collection(db, 'students'), {
+        studentId,
+        name,
+        class: className,
+        section: addForm.section.trim(),
+        parent_phone: addForm.parent_phone.trim(),
+        parent_email: parentEmail,
+        parent_uid: parentUid || '',
+        parent_name: parentEmail.split('@')[0],
         created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
       });
-      const optimisticCharge = {
-        id: docRef.id,
-        student_doc_id: student.id,
-        studentId: student.studentId || student.id,
-        student_name: student.name,
-        class: student.class || '',
-        item_name: storeChargeForm.itemName.trim(),
-        amount: amountValue,
-        charge_date: chargeDate,
-        parent_email: student.parent_email || '',
-        parent_uid: student.parent_uid || '',
-        paid: false,
-        created_at: new Date().toISOString(),
-      };
-      setStoreCharges((prev) => [optimisticCharge, ...prev.filter((item) => item.id !== optimisticCharge.id)]);
-      setStoreChargeForm({
-        studentId: '',
-        itemName: '',
-        amount: '',
-        date: new Date().toISOString().slice(0, 10),
-      });
-      triggerToast('Store charge added.', 'success');
+
+      triggerToast('Student added successfully.');
+      resetAddForm();
     } catch (error) {
-      console.error('Store charge error', error);
-      triggerToast('Unable to add store charge. Please try again.', 'error');
+      console.error('Error adding student', error);
+      triggerToast('Unable to add student. Please try again.', 'error');
     } finally {
-      setStoreChargeSubmitting(false);
+      setAddSubmitting(false);
     }
   };
-
-  const handleTransactionFilterChange = (event) => {
-    const { name, value } = event.target;
-    setTransactionFilters((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleExportTransactions = () => {
-    const header = [
-      'Date',
-      'Student Name',
-      'Class',
-      'Amount',
-      'Mode',
-      'Transaction ID',
-      'Month',
-      'Status',
-    ];
-    const rows = filteredTransactions.map((entry) => {
-      const dateValue = entry.date?.toDate
-        ? entry.date.toDate().toLocaleString()
-        : entry.date || '';
-      return [
-        dateValue,
-        entry.student_name || '',
-        entry.class || '',
-        Number(entry.amount || 0).toFixed(2),
-        entry.mode || '',
-        entry.transaction_id || '',
-        resolveTransactionMonthLabel(entry),
-        entry.status || '',
-      ];
+  const openEditModal = (student) => {
+    setEditContext({
+      open: true,
+      studentId: student.id,
+      submitting: false,
+      form: {
+        studentId: student.studentId || '',
+        name: student.name || '',
+        class: student.class || '',
+        section: student.section || '',
+        parent_phone: student.parent_phone || '',
+        parent_email: student.parent_email || '',
+      },
     });
-    const csvContent = [header, ...rows].map((line) => line.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'transactions-log.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
-  const handleFeeStructureFieldChange = (event) => {
+  const handleEditChange = (event) => {
     const { name, value } = event.target;
-    setFeeStructureDraft((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleFeeValueChange = (className, field, rawValue) => {
-    setFeeStructureDraft((prev) => ({
+    setEditContext((prev) => ({
       ...prev,
-      fees: {
-        ...prev.fees,
-        [className]: {
-          ...prev.fees[className],
-          [field]: rawValue.replace(/[^0-9.]/g, ''),
-        },
+      form: {
+        ...prev.form,
+        [name]: name === 'parent_phone' ? value.replace(/[^0-9+]/g, '') : value,
       },
     }));
   };
 
-  const handleFeeStructureSave = async (event) => {
+  const handleEditSubmit = async (event) => {
     event.preventDefault();
-    setFeeStructureSaving(true);
+    setEditContext((prev) => ({ ...prev, submitting: true }));
+
     try {
-      const payload = {
-        session: feeStructureDraft.session || '',
-        defaultDueDate: feeStructureDraft.defaultDueDate || '',
-        fees: {},
+      const studentRef = doc(db, 'students', editContext.studentId);
+      const parentEmail = editContext.form.parent_email.trim().toLowerCase();
+      const name = editContext.form.name.trim();
+      const parentUid = await ensureParentAccount(parentEmail, {
+        name: name ? `${name.split(' ')[0]}'s Parent` : parentEmail.split('@')[0],
+        phone: editContext.form.parent_phone,
+      });
+
+      await updateDoc(studentRef, {
+        studentId: editContext.form.studentId.trim(),
+        name,
+        class: editContext.form.class,
+        section: editContext.form.section.trim(),
+        parent_phone: editContext.form.parent_phone.trim(),
+        parent_email: parentEmail,
+        parent_uid: parentUid || '',
+        parent_name: parentEmail.split('@')[0],
         updated_at: serverTimestamp(),
-      };
-      CLASS_OPTIONS.forEach((cls) => {
-        const entry = feeStructureDraft.fees?.[cls] || {};
-        const monthly = Number(entry.monthly || 0);
-        const quarterly = Number(entry.quarterly || 0);
-        const halfYearly = Number(entry.halfYearly || quarterly * 2 || monthly * 6);
-        payload.fees[cls] = {
-          monthly,
-          quarterly,
-          halfYearly,
+      });
+
+      triggerToast('Student updated successfully.');
+      setEditContext({ open: false, studentId: '', form: emptyStudentForm, submitting: false });
+    } catch (error) {
+      console.error('Error updating student', error);
+      triggerToast('Unable to update student. Please try again.', 'error');
+      setEditContext((prev) => ({ ...prev, submitting: false }));
+    }
+  };
+
+  const openHistoryModal = async (student) => {
+    setHistoryContext({ open: true, student, loading: true, entries: [] });
+    try {
+      const historyQuery = query(collection(db, 'transactions_log'), where('studentId', '==', student.studentId || student.id));
+      const snapshot = await getDocs(historyQuery);
+      const entries = snapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        const dateValue = data.date?.toDate ? data.date.toDate() : new Date(data.date || Date.now());
+        return {
+          id: docSnap.id,
+          ...data,
+          dateLabel: Number.isFinite(dateValue.getTime()) ? dateValue.toLocaleString() : '—',
         };
       });
-      await setDoc(doc(db, 'settings', 'feestructure'), payload, { merge: true });
-      triggerToast('Fee settings saved successfully.', 'success');
-    } catch (error) {
-      console.error('Error saving fee structure', error);
-      triggerToast('Unable to save fee settings. Please try again.', 'error');
-    } finally {
-      setFeeStructureSaving(false);
-    }
-  };
-
-  const handleSendReminder = async (student, { silent = false } = {}) => {
-    try {
-      const parentUid = student.parent_uid || (await ensureParentAccount(student.parent_email));
-      const reminderMessage = settingsState.reminderTemplate.replace(
-        '{{due_date}}',
-        student.due_date || 'soon',
-      );
-      await addDoc(collection(db, 'reminders'), {
-        studentId: student.studentId || student.id,
-        parent_email: student.parent_email,
-        due_date: student.due_date,
-        status: 'Sent',
-        channel: 'in-app',
-        created_at: serverTimestamp(),
+      entries.sort((a, b) => {
+        const dateA = new Date(a.date || a.dateLabel || 0).getTime();
+        const dateB = new Date(b.date || b.dateLabel || 0).getTime();
+        return dateB - dateA;
       });
-      if (parentUid) {
-        await addDoc(collection(db, 'notifications'), {
-          user_uid: parentUid,
-          type: 'reminder',
-          title: 'Fee reminder',
-          message: reminderMessage,
-          created_at: serverTimestamp(),
-          read: false,
-        });
-      }
-      if (!silent) {
-        alert('Reminder queued successfully.');
-      }
+      setHistoryContext({ open: true, student, loading: false, entries });
     } catch (error) {
-      console.error('Reminder error', error);
-      if (!silent) {
-        alert('Unable to send reminder.');
-      }
+      console.error('Error fetching history', error);
+      triggerToast('Unable to load payment history.', 'error');
+      setHistoryContext({ open: true, student, loading: false, entries: [] });
     }
   };
 
-  const handleBulkReminder = async () => {
-    setBulkSending(true);
+  const openDeleteModal = (student) => {
+    setDeleteContext({ open: true, student, loading: false });
+  };
+
+  const handleDeleteStudent = async () => {
+    if (!deleteContext.student) return;
+    setDeleteContext((prev) => ({ ...prev, loading: true }));
     try {
-      const targets = students.filter((student) => student.status === 'Pending' || student.status === 'Overdue');
-      for (const student of targets) {
-        // eslint-disable-next-line no-await-in-loop
-        await handleSendReminder(student, { silent: true });
-      }
-      alert('Bulk reminders have been created.');
-    } finally {
-      setBulkSending(false);
+      await deleteDoc(doc(db, 'students', deleteContext.student.id));
+      triggerToast('Student removed successfully.');
+      setDeleteContext({ open: false, student: null, loading: false });
+    } catch (error) {
+      console.error('Error deleting student', error);
+      triggerToast('Unable to delete student. Please try again.', 'error');
+      setDeleteContext((prev) => ({ ...prev, loading: false }));
     }
   };
 
-  const openHistory = async (student) => {
-    const historyQuery = query(
-      collection(db, 'payments'),
-      where('studentId', '==', student.studentId || student.id),
-      orderBy('date', 'desc'),
-    );
-    const historySnapshot = await getDocs(historyQuery);
-    const entries = historySnapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-    setHistoryContext({ open: true, student, entries });
+  const openFeeRequestModal = (student) => {
+    setFeeRequestContext({
+      open: true,
+      student,
+      form: defaultFeeRequestForm,
+      setForm: (updater) =>
+        setFeeRequestContext((prev) => ({
+          ...prev,
+          form: typeof updater === 'function' ? updater(prev.form) : updater,
+        })),
+      submitting: false,
+    });
   };
 
-  const handleMarkPaid = async (student) => {
-    const amountToClear = Number(student.balance ?? student.fee_amount ?? 0);
-    if (amountToClear <= 0) {
-      triggerToast('No outstanding balance for this student.', 'error');
+  const handleCreateFeeRequest = async (event) => {
+    event.preventDefault();
+    if (!feeRequestContext.student) return;
+
+    setFeeRequestContext((prev) => ({ ...prev, submitting: true }));
+
+    const form = feeRequestContext.form;
+    const student = feeRequestContext.student;
+    const structureForClass = feeStructure?.[student.class] || {};
+    let tuitionFee = 0;
+    if (form.feeType === 'Monthly') tuitionFee = Number(structureForClass.monthly || 0);
+    if (form.feeType === 'Quarterly') tuitionFee = Number(structureForClass.quarterly || 0);
+    if (form.feeType === '6 Months') tuitionFee = Number(structureForClass.sixmonth || structureForClass['6month'] || 0);
+
+    if (form.feeType !== 'Custom' && tuitionFee <= 0) {
+      triggerToast('Tuition fee not configured for the selected class.', 'error');
+      setFeeRequestContext((prev) => ({ ...prev, submitting: false }));
       return;
     }
+
+    const customFee = form.feeType === 'Custom' ? Number(form.customAmount || 0) : 0;
+    if (form.feeType === 'Custom' && customFee <= 0) {
+      triggerToast('Custom amount must be greater than zero.', 'error');
+      setFeeRequestContext((prev) => ({ ...prev, submitting: false }));
+      return;
+    }
+
+    const othersFee = Number(form.othersAmount || 0);
+    const storeFee = form.storeEnabled ? Number(form.storeItemAmount || 0) : 0;
+    const total = tuitionFee + customFee + othersFee + storeFee;
+
+    const breakdown = {
+      tuition: tuitionFee,
+      custom: form.feeType === 'Custom' ? { amount: customFee, note: form.customNote } : null,
+      others: othersFee > 0 ? { amount: othersFee, label: form.othersLabel || 'Others' } : null,
+      store: storeFee > 0 ? { amount: storeFee, label: form.storeItemName || 'Store Item' } : null,
+    };
+
     try {
-      const studentRef = doc(db, 'students', student.id);
-      await updateDoc(studentRef, {
-        balance: 0,
-        status: 'Paid',
-        updated_at: serverTimestamp(),
-      });
-      await addDoc(collection(db, 'payments'), {
+      await addDoc(collection(db, 'fee_requests'), {
         studentId: student.studentId || student.id,
+        studentDocId: student.id,
         student_name: student.name,
         class: student.class,
-        parent_uid: student.parent_uid || '',
+        section: student.section || '',
         parent_email: student.parent_email || '',
-        amount: amountToClear,
-        mode: 'Cash',
-        date: serverTimestamp(),
-        term: settingsState.currentTerm || '',
-        fee_type: 'Manual Adjustment',
-        status: 'Success',
+        amount: total,
+        fee_type: form.feeType,
+        breakdown,
+        status: 'Pending',
+        due_date: dueDateSetting || '',
+        created_at: serverTimestamp(),
       });
-      await logTransactionEntry({
-        student,
-        amount: amountToClear,
-        mode: 'Cash',
-        transactionId: '',
-        status: 'Success',
+
+      triggerToast('Fee request created successfully.');
+      setFeeRequestContext({
+        open: false,
+        student: null,
+        form: defaultFeeRequestForm,
+        setForm: () => {},
+        submitting: false,
       });
-      triggerToast('Payment recorded successfully.', 'success');
     } catch (error) {
-      console.error('Error marking paid', error);
-      triggerToast('Unable to update record.', 'error');
+      console.error('Error creating fee request', error);
+      triggerToast('Unable to create fee request. Please try again.', 'error');
+      setFeeRequestContext((prev) => ({ ...prev, submitting: false }));
     }
   };
 
-  const handleGenerateCsv = () => {
-    const header = [
-      'Student ID',
-      'Name',
-      'Class',
-      'Status',
-      'Fee Amount',
-      'Balance',
-      'Due Date',
-      'Parent Email',
-    ];
-    const rows = filteredStudents.map((student) => [
-      student.studentId || student.id,
-      student.name,
-      student.class,
-      student.status,
-      Number(student.fee_amount || 0).toFixed(2),
-      Number(student.balance ?? 0).toFixed(2),
-      student.due_date || '',
-      student.parent_email || '',
-    ]);
-    const csvContent = [header, ...rows].map((line) => line.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'accountant-report.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  const closeFeeRequestModal = () => {
+    setFeeRequestContext({
+      open: false,
+      student: null,
+      form: defaultFeeRequestForm,
+      setForm: () => {},
+      submitting: false,
+    });
   };
 
-  const handleSettingsChange = (event) => {
-    const { name, value } = event.target;
-    setSettingsState((prev) => ({ ...prev, [name]: value }));
+  const openMarkPaidModal = (request) => {
+    setMarkPaidContext({ open: true, request, step: 'choice', mode: '', transactionId: '', loading: false });
   };
 
-  const handleSettingsSave = async (event) => {
-    event.preventDefault();
-    setSavingSettings(true);
+  const closeMarkPaidModal = () => {
+    setMarkPaidContext({
+      open: false,
+      request: null,
+      step: 'choice',
+      mode: '',
+      transactionId: '',
+      loading: false,
+    });
+  };
+
+  const handleMarkPaid = async () => {
+    if (!markPaidContext.request || !markPaidContext.mode) return;
+    setMarkPaidContext((prev) => ({ ...prev, loading: true }));
+
     try {
-      await setDoc(
-        doc(db, 'settings', 'general'),
-        {
-          currentTerm: settingsState.currentTerm,
-          defaultDueDate: settingsState.defaultDueDate,
-          reminderTemplate: settingsState.reminderTemplate,
-          updated_at: serverTimestamp(),
-        },
-        { merge: true },
-      );
-      alert('Settings saved.');
+      const requestRef = doc(db, 'fee_requests', markPaidContext.request.id);
+      await updateDoc(requestRef, {
+        status: 'Paid',
+        paid_at: serverTimestamp(),
+        payment_mode: markPaidContext.mode,
+        transaction_id: markPaidContext.mode === 'Cash' ? 'manual' : markPaidContext.transactionId,
+      });
+
+      const now = new Date();
+      await addDoc(collection(db, 'transactions_log'), {
+        studentId: markPaidContext.request.studentId,
+        student_name: markPaidContext.request.student_name,
+        class: markPaidContext.request.class,
+        amount: Number(markPaidContext.request.amount || 0),
+        mode: markPaidContext.mode,
+        transaction_id: markPaidContext.mode === 'Cash' ? 'manual' : markPaidContext.transactionId,
+        status: 'Paid',
+        date: now,
+        month: now.toLocaleString('default', { month: 'long' }),
+        created_at: serverTimestamp(),
+      });
+
+      triggerToast('Payment marked successfully.');
+      closeMarkPaidModal();
     } catch (error) {
-      console.error('Settings error', error);
-      alert('Unable to save settings.');
-    } finally {
-      setSavingSettings(false);
+      console.error('Error marking payment', error);
+      triggerToast('Unable to mark payment. Please try again.', 'error');
+      setMarkPaidContext((prev) => ({ ...prev, loading: false }));
     }
   };
 
@@ -1240,14 +1011,42 @@ const AccountantDashboard = () => {
     await signOut(auth);
     router.replace('/');
   };
+  const filteredStudents = useMemo(() => {
+    const search = searchValue.trim().toLowerCase();
+    return students.filter((student) => {
+      const matchesClass = classFilter === 'All' || student.class === classFilter;
+      const matchesSearch =
+        search.length === 0 ||
+        student.name?.toLowerCase().includes(search) ||
+        student.studentId?.toLowerCase().includes(search);
+      return matchesClass && matchesSearch;
+    });
+  }, [students, searchValue, classFilter]);
+
+  const selectedStudent = useMemo(() => {
+    if (!selectedStudentId) return null;
+    return students.find((student) => student.id === selectedStudentId) || null;
+  }, [students, selectedStudentId]);
+
+  const selectedStudentRequests = useMemo(() => {
+    if (!selectedStudent) return [];
+    const studentKey = selectedStudent.studentId || selectedStudent.id;
+    return feeRequests
+      .filter((request) => request.studentId === studentKey)
+      .sort((a, b) => {
+        const dateA = a.created_at?.toDate ? a.created_at.toDate().getTime() : 0;
+        const dateB = b.created_at?.toDate ? b.created_at.toDate().getTime() : 0;
+        return dateB - dateA;
+      });
+  }, [selectedStudent, feeRequests]);
 
   if (!authChecked) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white text-cardinal">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
         <Head>
-          <title>Accountant Dashboard</title>
+          <title>Accountant Dashboard · EL-NODE Pay</title>
         </Head>
-        <span className="h-8 w-8 animate-spin rounded-full border-2 border-cardinal/40 border-t-cardinal" />
+        <p className="text-sm font-medium text-slate-600">Loading dashboard…</p>
       </div>
     );
   }
@@ -1255,65 +1054,48 @@ const AccountantDashboard = () => {
   if (!user) {
     return null;
   }
-
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 font-poppins text-slate-800">
       <Head>
         <title>Accountant Dashboard · EL-NODE Pay</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
       </Head>
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
+
+      <header className="border-b border-slate-200 bg-white/70 backdrop-blur supports-[backdrop-filter]:bg-white/60">
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-4 px-4 py-5 sm:px-6">
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Accountant Dashboard</h1>
-            <p className="text-sm text-slate-600">
-              Bird’s-eye view of fee collections and student payments.
-            </p>
+            <h1 className="text-xl font-semibold text-cardinal">Accountant Dashboard</h1>
+            <p className="text-sm text-slate-500">Manage students and tuition requests effortlessly.</p>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={handleOpenAddStudent}
-              className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
-            >
-              Add Student
-            </button>
-            <button
-              type="button"
-              onClick={handleGenerateCsv}
-              className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
-            >
-              Generate Report
-            </button>
-            <button
-              type="button"
-              onClick={handleSignOut}
-              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-            >
-              Sign Out
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            className="rounded-full border border-cardinal/30 px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
+          >
+            Sign out
+          </button>
         </div>
       </header>
 
-      <main className="mx-auto max-w-7xl px-6 py-8">
-        <nav className="flex flex-wrap gap-3">
+      <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6">
+        <nav className="mb-6 flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-2">
           {[
-            { id: 'overview', label: 'Overview' },
-            { id: 'records', label: 'Student Payment Records' },
-            { id: 'fee-settings', label: 'Fee Settings' },
-            { id: 'store-charges', label: 'Store Charges' },
-            { id: 'transactions', label: 'Transactions Log' },
-            { id: 'reminders', label: 'Reminders & Notifications' },
-            { id: 'settings', label: 'Automation Settings' },
+            { id: 'students', label: 'Students' },
+            { id: 'add-student', label: 'Add Student' },
           ].map((tab) => (
             <button
               key={tab.id}
               type="button"
               onClick={() => setActiveTab(tab.id)}
-              className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+              className={`flex-1 rounded-xl px-4 py-2 text-sm font-semibold transition ${
                 activeTab === tab.id
                   ? 'bg-cardinal text-white shadow'
-                  : 'bg-white text-slate-600 shadow-sm hover:bg-cardinal/10'
+                  : 'bg-transparent text-slate-600 hover:bg-slate-100'
               }`}
             >
               {tab.label}
@@ -1321,135 +1103,56 @@ const AccountantDashboard = () => {
           ))}
         </nav>
 
-        {activeTab === 'overview' && (
-          <section className="mt-8 space-y-8">
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-medium text-slate-500">Fees Collected (This Month)</h3>
-                <p className="mt-3 text-2xl font-semibold text-slate-900">
-                  ₹{monthMetrics.monthTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                </p>
-                <p className="mt-2 text-xs text-slate-500">
-                  Year to date: ₹{monthMetrics.yearTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                </p>
+        {activeTab === 'add-student' && (
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-900">Add a new student</h2>
+            <p className="mt-1 text-sm text-slate-500">
+              Capture student information and automatically onboard parents to EL-NODE Pay.
+            </p>
+            <form className="mt-6 space-y-6" onSubmit={handleAddStudent}>
+              <StudentFormFields formState={addForm} onChange={handleAddFormChange} />
+              <div className="flex flex-wrap items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={resetAddForm}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
+                >
+                  Reset
+                </button>
+                <button
+                  type="submit"
+                  disabled={addSubmitting}
+                  className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {addSubmitting ? 'Saving…' : 'Add student'}
+                </button>
               </div>
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-medium text-slate-500">Pending Payments</h3>
-                <p className="mt-3 text-2xl font-semibold text-amber-600">
-                  ₹{monthMetrics.pendingTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                </p>
-                <p className="mt-2 text-xs text-slate-500">Overdue students: {monthMetrics.overdueCount}</p>
-              </div>
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-medium text-slate-500">Upcoming Due Dates</h3>
-                <p className="mt-3 text-2xl font-semibold text-slate-900">{monthMetrics.upcomingCount}</p>
-                <p className="mt-2 text-xs text-slate-500">
-                  Paid / Unpaid: {monthMetrics.paidCount}/{monthMetrics.unpaidCount}
-                </p>
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-base font-semibold text-slate-900">Collections (Last 6 months)</h3>
-                <Bar
-                  data={{
-                    labels: monthMetrics.monthLabels,
-                    datasets: [
-                      {
-                        label: 'Amount (₹)',
-                        data: monthMetrics.monthValues,
-                        backgroundColor: '#A31F36',
-                      },
-                    ],
-                  }}
-                  options={{
-                    responsive: true,
-                    plugins: {
-                      legend: { display: false },
-                      title: { display: false },
-                    },
-                  }}
-                />
-              </div>
-              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-base font-semibold text-slate-900">Students Paid vs Pending</h3>
-                <Pie
-                  data={{
-                    labels: ['Paid', 'Unpaid'],
-                    datasets: [
-                      {
-                        data: [monthMetrics.paidCount, monthMetrics.unpaidCount],
-                        backgroundColor: ['#047857', '#f59e0b'],
-                      },
-                    ],
-                  }}
-                  options={{
-                    plugins: {
-                      legend: { position: 'bottom' },
-                    },
-                  }}
-                />
-              </div>
-            </div>
-
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-base font-semibold text-slate-900">Outstanding Payments</h3>
-                <ul className="mt-4 space-y-3 text-sm">
-                  {monthMetrics.outstandingList.length === 0 && (
-                    <li className="text-slate-500">No outstanding balances. 🎉</li>
-                  )}
-                  {monthMetrics.outstandingList.map((item) => (
-                    <li key={item.id} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
-                      <div>
-                        <p className="font-semibold text-slate-900">{item.name}</p>
-                        <p className="text-xs text-slate-500">Class {item.class}</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-sm font-semibold text-rose-600">
-                          ₹{item.balance.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                        </p>
-                        <p className="text-xs text-slate-500">{item.status}</p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-base font-semibold text-slate-900">Revenue by Fee Category</h3>
-                <ul className="mt-4 space-y-3 text-sm">
-                  {Object.keys(monthMetrics.revenueByCategory).length === 0 && (
-                    <li className="text-slate-500">No payments recorded yet.</li>
-                  )}
-                  {Object.entries(monthMetrics.revenueByCategory).map(([category, amount]) => (
-                    <li key={category} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2">
-                      <span className="font-medium text-slate-700">{category}</span>
-                      <span className="font-semibold text-slate-900">
-                        ₹{amount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            </div>
+            </form>
           </section>
         )}
-
-        {activeTab === 'records' && (
-          <section className="mt-8 space-y-6">
+        {activeTab === 'students' && (
+          <section className="space-y-6">
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900">Student Payment Records</h2>
-                  <p className="text-sm text-slate-500">Manage student dues, history, and reminders.</p>
+                  <h2 className="text-lg font-semibold text-slate-900">Students</h2>
+                  <p className="text-sm text-slate-500">Search, filter, and manage student records.</p>
                 </div>
-                <div className="grid gap-3 md:grid-cols-4">
+                <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                  <div className="flex w-full items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 focus-within:border-cardinal focus-within:ring-2 focus-within:ring-cardinal/20 sm:w-64">
+                    <span className="mr-2 text-slate-400">🔍</span>
+                    <input
+                      type="search"
+                      placeholder="Search by name or ID"
+                      value={searchValue}
+                      onChange={(event) => setSearchValue(event.target.value)}
+                      className="w-full bg-transparent text-sm focus:outline-none"
+                    />
+                  </div>
                   <select
-                    name="class"
-                    value={filters.class}
-                    onChange={handleFilterChange}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    value={classFilter}
+                    onChange={(event) => setClassFilter(event.target.value)}
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-600 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 sm:w-auto"
                   >
                     <option value="All">All Classes</option>
                     {CLASS_OPTIONS.map((option) => (
@@ -1458,514 +1161,333 @@ const AccountantDashboard = () => {
                       </option>
                     ))}
                   </select>
-                  <select
-                    name="status"
-                    value={filters.status}
-                    onChange={handleFilterChange}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  >
-                    {STATUS_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    name="term"
-                    value={filters.term}
-                    onChange={handleFilterChange}
-                    placeholder="Term"
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  />
-                  <input
-                    name="search"
-                    value={filters.search}
-                    onChange={handleFilterChange}
-                    placeholder="Search"
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  />
                 </div>
               </div>
 
-              <div className="mt-6 overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead>
-                    <tr className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                      <th className="px-4 py-3">Student ID</th>
-                      <th className="px-4 py-3">Name</th>
-                      <th className="px-4 py-3">Class</th>
-                      <th className="px-4 py-3">Fee Amount</th>
-                      <th className="px-4 py-3">Paid</th>
-                      <th className="px-4 py-3">Balance</th>
-                      <th className="px-4 py-3">Due Date</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredStudents.map((student) => {
-                      const balance = Number(student.balance ?? student.fee_amount ?? 0);
-                      const total = Number(student.fee_amount ?? 0);
-                      const paid = Math.max(total - balance, 0);
-                      return (
-                        <tr key={student.id} className="transition hover:bg-slate-50/80">
-                          <td className="px-4 py-3 font-medium text-slate-700">{student.studentId || student.id}</td>
-                          <td className="px-4 py-3 text-slate-700">{student.name}</td>
-                          <td className="px-4 py-3 text-slate-700">{student.class}</td>
-                          <td className="px-4 py-3 text-slate-700">₹{total.toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-3 text-slate-700">₹{paid.toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-3 text-slate-700">₹{balance.toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-3 text-slate-500">{student.due_date || '-'}</td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                                statusBadgeClasses[student.status] || 'bg-slate-100 text-slate-600'
-                              }`}
-                            >
-                              {student.status || 'Pending'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex flex-wrap justify-end gap-2 text-xs font-medium">
-                              <button
-                                type="button"
-                                onClick={() => openHistory(student)}
-                                className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-600 transition hover:bg-slate-100"
-                              >
-                                View History
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleEditStudent(student)}
-                                className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-600 transition hover:bg-slate-100"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleSendReminder(student)}
-                                className="rounded-lg border border-cardinal px-3 py-1.5 text-cardinal transition hover:bg-cardinal/10"
-                              >
-                                Send Reminder
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleMarkPaid(student)}
-                                className="rounded-lg bg-cardinal px-3 py-1.5 text-white transition hover:bg-cardinal/90"
-                              >
-                                Mark as Paid
-                              </button>
-                            </div>
-                          </td>
+              {loadingStudents ? (
+                <div className="mt-8 flex justify-center">
+                  <p className="text-sm text-slate-500">Loading students…</p>
+                </div>
+              ) : filteredStudents.length === 0 ? (
+                <div className="mt-8 rounded-3xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center text-sm text-slate-500">
+                  No students found. Add a new student to get started.
+                </div>
+              ) : (
+                <>
+                  <div className="mt-6 hidden overflow-x-auto md:block">
+                    <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+                      <thead>
+                        <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                          <th className="px-4 py-3 font-semibold">Student ID</th>
+                          <th className="px-4 py-3 font-semibold">Name</th>
+                          <th className="px-4 py-3 font-semibold">Class</th>
+                          <th className="px-4 py-3 font-semibold">Section</th>
+                          <th className="px-4 py-3 font-semibold">Parent Email</th>
+                          <th className="px-4 py-3 font-semibold text-right">Actions</th>
                         </tr>
-                      );
-                    })}
-                    {filteredStudents.length === 0 && (
-                      <tr>
-                        <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-500">
-                          {loadingStudents ? 'Loading student records…' : 'No students match the current filters.'}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'fee-settings' && (
-          <section className="mt-8 space-y-6">
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-2">
-                <h2 className="text-lg font-semibold text-slate-900">Fee Structure</h2>
-                <p className="text-sm text-slate-500">
-                  Manage tuition fee slabs, billing cycles, and the default due date for reminders.
-                </p>
-              </div>
-              <form className="mt-6 space-y-6" onSubmit={handleFeeStructureSave}>
-                <div className="grid gap-4 md:grid-cols-3">
-                  <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                    Session
-                    <select
-                      name="session"
-                      value={feeStructureDraft.session}
-                      onChange={handleFeeStructureFieldChange}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                    >
-                      <option value="">Select session</option>
-                      {sessionOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                    Default Due Date
-                    <input
-                      type="date"
-                      name="defaultDueDate"
-                      value={feeStructureDraft.defaultDueDate || ''}
-                      onChange={handleFeeStructureFieldChange}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                    />
-                  </label>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                    <p className="font-medium text-slate-900">Fee Cycle Notes</p>
-                    <p className="mt-1">Half-yearly dues are auto-calculated from quarterly fees.</p>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredStudents.map((student) => (
+                          <tr
+                            key={student.id}
+                            onClick={() => setSelectedStudentId(student.id)}
+                            className={`cursor-pointer transition hover:bg-slate-50 ${
+                              selectedStudentId === student.id ? 'bg-cardinal/5' : ''
+                            }`}
+                          >
+                            <td className="px-4 py-3 font-medium text-slate-700">{student.studentId || '—'}</td>
+                            <td className="px-4 py-3 text-slate-700">{student.name || '—'}</td>
+                            <td className="px-4 py-3 text-slate-700">{student.class || '—'}</td>
+                            <td className="px-4 py-3 text-slate-700">{student.section || '—'}</td>
+                            <td className="px-4 py-3 text-slate-700">{student.parent_email || '—'}</td>
+                            <td className="px-4 py-3">
+                              <div className="flex flex-wrap justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openFeeRequestModal(student);
+                                  }}
+                                  className="rounded-full border border-cardinal/30 px-3 py-1 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
+                                >
+                                  Create Fee Request
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openHistoryModal(student);
+                                  }}
+                                  className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                                >
+                                  View History
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openEditModal(student);
+                                  }}
+                                  className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    openDeleteModal(student);
+                                  }}
+                                  className="rounded-full border border-red-200 px-3 py-1 text-xs font-semibold text-red-500 transition hover:bg-red-50"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                      <tr>
-                        <th className="px-4 py-3 text-left">Class</th>
-                        <th className="px-4 py-3 text-left">Monthly Fee (₹)</th>
-                        <th className="px-4 py-3 text-left">Quarterly Fee (₹)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {CLASS_OPTIONS.map((item) => (
-                        <tr key={item}>
-                          <td className="px-4 py-3 font-medium text-slate-700">{item}</td>
-                          <td className="px-4 py-3">
-                            <input
-                              value={feeStructureDraft.fees?.[item]?.monthly ?? ''}
-                              onChange={(event) => handleFeeValueChange(item, 'monthly', event.target.value)}
-                              placeholder="0"
-                              inputMode="decimal"
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                            />
-                          </td>
-                          <td className="px-4 py-3">
-                            <input
-                              value={feeStructureDraft.fees?.[item]?.quarterly ?? ''}
-                              onChange={(event) => handleFeeValueChange(item, 'quarterly', event.target.value)}
-                              placeholder="0"
-                              inputMode="decimal"
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={feeStructureSaving}
-                    className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {feeStructureSaving ? 'Saving…' : 'Save Fee Settings'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </section>
-        )}
 
-        {activeTab === 'store-charges' && (
-          <section className="mt-8 space-y-6">
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-2">
-                <h2 className="text-lg font-semibold text-slate-900">Store Charges</h2>
-                <p className="text-sm text-slate-500">Add uniforms, books, and other purchases to student accounts.</p>
-              </div>
-              <form className="mt-6 grid gap-4 md:grid-cols-4" onSubmit={handleAddStoreCharge}>
-                <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                  Student
-                  <select
-                    name="studentId"
-                    value={storeChargeForm.studentId}
-                    onChange={handleStoreChargeChange}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  >
-                    <option value="">Select student</option>
-                    {students.map((student) => (
-                      <option key={student.id} value={student.id}>
-                        {student.name} · {student.class}
-                      </option>
+                  <div className="mt-6 space-y-3 md:hidden">
+                    {filteredStudents.map((student) => (
+                      <div
+                        key={student.id}
+                        onClick={() => setSelectedStudentId(student.id)}
+                        className={`rounded-3xl border border-slate-200 bg-white p-4 shadow-sm transition ${
+                          selectedStudentId === student.id ? 'border-cardinal/40' : ''
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">{student.name || '—'}</p>
+                            <p className="text-xs text-slate-500">
+                              {student.studentId || '—'} · Class {student.class || '—'}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openFeeRequestModal(student);
+                            }}
+                            className="rounded-full border border-cardinal/30 px-3 py-1 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
+                          >
+                            Fee Request
+                          </button>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2 text-xs font-semibold">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openHistoryModal(student);
+                            }}
+                            className="rounded-full border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
+                          >
+                            History
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openEditModal(student);
+                            }}
+                            className="rounded-full border border-slate-200 px-3 py-1 text-slate-600 transition hover:bg-slate-100"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              openDeleteModal(student);
+                            }}
+                            className="rounded-full border border-red-200 px-3 py-1 text-red-500 transition hover:bg-red-50"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                        <p className="mt-3 text-xs text-slate-500">{student.parent_email || '—'}</p>
+                      </div>
                     ))}
-                  </select>
-                </label>
-                <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                  Item Name
-                  <input
-                    name="itemName"
-                    value={storeChargeForm.itemName}
-                    onChange={handleStoreChargeChange}
-                    placeholder="Sports Kit"
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  />
-                </label>
-                <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                  Amount (₹)
-                  <input
-                    name="amount"
-                    value={storeChargeForm.amount}
-                    onChange={handleStoreChargeChange}
-                    placeholder="0"
-                    inputMode="decimal"
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  />
-                </label>
-                <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                  Date
-                  <input
-                    type="date"
-                    name="date"
-                    value={storeChargeForm.date}
-                    onChange={handleStoreChargeChange}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  />
-                </label>
-                <div className="md:col-span-4 flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={storeChargeSubmitting}
-                    className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {storeChargeSubmitting ? 'Adding…' : 'Add Charge'}
-                  </button>
-                </div>
-              </form>
+                  </div>
+                </>
+              )}
             </div>
-
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h3 className="text-base font-semibold text-slate-900">Recent Charges</h3>
-              <div className="mt-4 overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3 text-left">Date</th>
-                      <th className="px-4 py-3 text-left">Student</th>
-                      <th className="px-4 py-3 text-left">Item</th>
-                      <th className="px-4 py-3 text-left">Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {storeCharges.map((charge) => {
-                      const dateLabel = charge.charge_date
-                        ? new Date(charge.charge_date).toLocaleDateString()
-                        : charge.created_at?.toDate
-                          ? charge.created_at.toDate().toLocaleDateString()
-                          : charge.created_at
-                            ? new Date(charge.created_at).toLocaleDateString()
-                            : '-';
-                      return (
-                        <tr key={charge.id}>
-                          <td className="px-4 py-3 text-slate-600">{dateLabel}</td>
-                          <td className="px-4 py-3 text-slate-700">{charge.student_name}</td>
-                          <td className="px-4 py-3 text-slate-700">{charge.item_name}</td>
-                          <td className="px-4 py-3 text-slate-900">₹{Number(charge.amount || 0).toLocaleString('en-IN')}</td>
-                        </tr>
-                      );
-                    })}
-                    {storeCharges.length === 0 && (
-                      <tr>
-                        <td colSpan={4} className="px-4 py-10 text-center text-sm text-slate-500">
-                          No store charges recorded yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'transactions' && (
-          <section className="mt-8 space-y-6">
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-slate-900">Transactions Log</h2>
-                  <p className="text-sm text-slate-500">
-                    Central ledger of all online and manual fee collections.
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-3">
-                  <select
-                    name="month"
-                    value={transactionFilters.month}
-                    onChange={handleTransactionFilterChange}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  >
-                    <option value="All">All Months</option>
-                    {transactionMonthOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    name="mode"
-                    value={transactionFilters.mode}
-                    onChange={handleTransactionFilterChange}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  >
-                    <option value="All">All Modes</option>
-                    <option value="Cash">Cash</option>
-                    <option value="Online">Online</option>
-                  </select>
+            {selectedStudent && (
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h3 className="text-base font-semibold text-slate-900">{selectedStudent.name || '—'}</h3>
+                    <p className="text-sm text-slate-500">
+                      ID: {selectedStudent.studentId || '—'} · Class {selectedStudent.class || '—'}
+                    </p>
+                  </div>
                   <button
                     type="button"
-                    onClick={handleExportTransactions}
-                    className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
+                    onClick={() => openFeeRequestModal(selectedStudent)}
+                    className="rounded-full border border-cardinal/30 px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
                   >
-                    Export to Excel
+                    Create Fee Request
                   </button>
                 </div>
-              </div>
-              <div className="mt-6 overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3 text-left">Date</th>
-                      <th className="px-4 py-3 text-left">Student</th>
-                      <th className="px-4 py-3 text-left">Class</th>
-                      <th className="px-4 py-3 text-left">Amount</th>
-                      <th className="px-4 py-3 text-left">Mode</th>
-                      <th className="px-4 py-3 text-left">Transaction ID</th>
-                      <th className="px-4 py-3 text-left">Month</th>
-                      <th className="px-4 py-3 text-left">Status</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredTransactions.map((entry) => {
-                      const dateValue = entry.date?.toDate
-                        ? entry.date.toDate().toLocaleString()
-                        : entry.date || '-';
+
+                <div className="mt-6 grid gap-4 md:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Contact</p>
+                    <p className="mt-2">Parent email: {selectedStudent.parent_email || '—'}</p>
+                    <p className="mt-1">Parent phone: {selectedStudent.parent_phone || '—'}</p>
+                    <p className="mt-1">Section: {selectedStudent.section || '—'}</p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Fee requests</p>
+                    <p className="mt-2">Pending: {selectedStudentRequests.filter((item) => item.status === 'Pending').length}</p>
+                    <p className="mt-1">Paid: {selectedStudentRequests.filter((item) => item.status === 'Paid').length}</p>
+                  </div>
+                </div>
+
+                <div className="mt-6 space-y-3">
+                  {selectedStudentRequests.length === 0 ? (
+                    <p className="text-sm text-slate-500">No fee requests generated yet.</p>
+                  ) : (
+                    selectedStudentRequests.map((request) => {
+                      const createdAt = request.created_at?.toDate ? request.created_at.toDate() : null;
+                      const extras = [];
+                      if (request.breakdown?.others) {
+                        extras.push({
+                          label: request.breakdown.others.label || 'Others',
+                          amount: request.breakdown.others.amount || 0,
+                        });
+                      }
+                      if (request.breakdown?.store) {
+                        extras.push({
+                          label: request.breakdown.store.label || 'Store Item',
+                          amount: request.breakdown.store.amount || 0,
+                        });
+                      }
                       return (
-                        <tr key={entry.id}>
-                          <td className="px-4 py-3 text-slate-600">{dateValue}</td>
-                          <td className="px-4 py-3 text-slate-700">{entry.student_name}</td>
-                          <td className="px-4 py-3 text-slate-700">{entry.class}</td>
-                          <td className="px-4 py-3 text-slate-900">₹{Number(entry.amount || 0).toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-3 text-slate-700">{entry.mode || '-'}</td>
-                          <td className="px-4 py-3 text-slate-700">{entry.transaction_id || '—'}</td>
-                          <td className="px-4 py-3 text-slate-700">{resolveTransactionMonthLabel(entry)}</td>
-                          <td className="px-4 py-3 text-slate-700">{entry.status || '-'}</td>
-                        </tr>
+                        <div
+                          key={request.id}
+                          className="rounded-3xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"
+                        >
+                          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                            <div>
+                              <p className="text-base font-semibold text-slate-900">
+                                ₹{Number(request.amount || 0).toLocaleString('en-IN')}
+                              </p>
+                              <p className="text-xs text-slate-500">
+                                {request.fee_type || 'Tuition'} · {createdAt ? createdAt.toLocaleString() : '—'}
+                              </p>
+                              {request.due_date && (
+                                <p className="text-xs text-slate-500">Due: {request.due_date}</p>
+                              )}
+                            </div>
+                            <span
+                              className={`inline-flex items-center justify-center rounded-full border px-3 py-1 text-xs font-semibold ${
+                                request.status === 'Paid'
+                                  ? 'border-emerald-200 bg-emerald-50 text-emerald-600'
+                                  : 'border-amber-200 bg-amber-50 text-amber-600'
+                              }`}
+                            >
+                              {request.status}
+                            </span>
+                          </div>
+
+                          <div className="mt-3 grid gap-3 md:grid-cols-2">
+                            <div>
+                              <p className="text-xs font-semibold uppercase text-slate-500">Breakdown</p>
+                              <ul className="mt-2 space-y-1 text-xs">
+                                {Number(request.breakdown?.tuition || 0) > 0 && (
+                                  <li className="flex justify-between">
+                                    <span>Tuition ({request.fee_type})</span>
+                                    <span>₹{Number(request.breakdown.tuition || 0).toLocaleString('en-IN')}</span>
+                                  </li>
+                                )}
+                                {request.breakdown?.custom && (
+                                  <li className="flex justify-between">
+                                    <span>{request.breakdown.custom.note || 'Custom fee'}</span>
+                                    <span>₹{Number(request.breakdown.custom.amount || 0).toLocaleString('en-IN')}</span>
+                                  </li>
+                                )}
+                                {extras.map((extra) => (
+                                  <li key={`${request.id}-${extra.label}`} className="flex justify-between">
+                                    <span>{extra.label}</span>
+                                    <span>₹{Number(extra.amount || 0).toLocaleString('en-IN')}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                            <div className="flex items-end justify-end">
+                              {request.status !== 'Paid' && (
+                                <button
+                                  type="button"
+                                  onClick={() => openMarkPaidModal(request)}
+                                  className="rounded-full border border-cardinal/30 px-4 py-2 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
+                                >
+                                  Mark Paid
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       );
-                    })}
-                    {filteredTransactions.length === 0 && (
-                      <tr>
-                        <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
-                          No transactions recorded for the selected filters.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'reminders' && (
-          <section className="mt-8 space-y-6">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-slate-900">Reminders & Notifications</h2>
-                <p className="text-sm text-slate-500">
-                  Track nudges sent to parents and trigger bulk reminders for pending dues.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleBulkReminder}
-                disabled={bulkSending}
-                className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {bulkSending ? 'Sending…' : 'Send Bulk Reminder'}
-              </button>
-            </div>
-            <div className="overflow-x-auto rounded-3xl border border-slate-200 bg-white shadow-sm">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3 text-left">Student</th>
-                    <th className="px-4 py-3 text-left">Parent Email</th>
-                    <th className="px-4 py-3 text-left">Due Date</th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-left">Created</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {reminders.map((reminder) => (
-                    <tr key={reminder.id}>
-                      <td className="px-4 py-3">{reminder.studentId}</td>
-                      <td className="px-4 py-3">{reminder.parent_email}</td>
-                      <td className="px-4 py-3">{reminder.due_date || '-'}</td>
-                      <td className="px-4 py-3">{reminder.status}</td>
-                      <td className="px-4 py-3 text-slate-500">
-                        {reminder.created_at?.toDate
-                          ? reminder.created_at.toDate().toLocaleString()
-                          : reminder.created_at || '-'}
-                      </td>
-                    </tr>
-                  ))}
-                  {reminders.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-10 text-center text-sm text-slate-500">
-                        {loadingReminders ? 'Loading reminders…' : 'No reminders logged yet.'}
-                      </td>
-                    </tr>
+                    })
                   )}
-                </tbody>
-              </table>
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'settings' && (
-          <section className="mt-8">
-            <SettingsPanel
-              settingsState={settingsState}
-              onChange={handleSettingsChange}
-              onSave={handleSettingsSave}
-              isSaving={savingSettings}
-            />
+                </div>
+              </div>
+            )}
           </section>
         )}
       </main>
 
-      {isFormOpen && (
-        <StudentFormModal
-          isEditing={Boolean(editingStudentId)}
-          formState={formState}
-          onChange={handleFormChange}
-          onSubmit={handleStudentSubmit}
-          onClose={() => setIsFormOpen(false)}
-          isSubmitting={formSubmitting}
-        />
+      <Toast toast={toast} onClose={() => setToast(null)} />
+      <HistoryModal context={historyContext} onClose={() => setHistoryContext({ open: false, student: null, loading: false, entries: [] })} />
+      <DeleteConfirmModal
+        context={deleteContext}
+        onClose={() => setDeleteContext({ open: false, student: null, loading: false })}
+        onConfirm={handleDeleteStudent}
+        loading={deleteContext.loading}
+      />
+      <MarkPaidModal
+        context={markPaidContext}
+        setContext={setMarkPaidContext}
+        onConfirm={handleMarkPaid}
+        loading={markPaidContext.loading}
+        onClose={closeMarkPaidModal}
+      />
+      {editContext.open && (
+        <Modal title="Edit student" onClose={() => setEditContext({ open: false, studentId: '', form: emptyStudentForm, submitting: false })}>
+          <form className="space-y-6" onSubmit={handleEditSubmit}>
+            <StudentFormFields formState={editContext.form} onChange={handleEditChange} />
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setEditContext({ open: false, studentId: '', form: emptyStudentForm, submitting: false })}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={editContext.submitting}
+                className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {editContext.submitting ? 'Saving…' : 'Save changes'}
+              </button>
+            </div>
+          </form>
+        </Modal>
       )}
-
-      {historyContext.open && (
-        <PaymentHistoryModal
-          student={historyContext.student}
-          payments={historyContext.entries}
-          onClose={() => setHistoryContext({ open: false, student: null, entries: [] })}
-        />
-      )}
-
-      {toast && (
-        <div
-          className={`fixed bottom-6 right-6 z-50 rounded-2xl px-4 py-3 text-sm shadow-lg transition ${
-            toast.tone === 'error'
-              ? 'bg-rose-500 text-white'
-              : toast.tone === 'warning'
-                ? 'bg-amber-500 text-white'
-                : 'bg-emerald-500 text-white'
-          }`}
-        >
-          {toast.message}
-        </div>
-      )}
+      <FeeRequestModal
+        context={feeRequestContext}
+        feeStructure={feeStructure}
+        defaultDueDate={dueDateSetting}
+        onClose={closeFeeRequestModal}
+        onSubmit={handleCreateFeeRequest}
+        submitting={feeRequestContext.submitting}
+      />
     </div>
   );
 };
