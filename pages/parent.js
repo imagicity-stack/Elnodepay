@@ -132,6 +132,7 @@ const ParentDashboard = () => {
   const [profile, setProfile] = useState(null);
   const [students, setStudents] = useState([]);
   const [payments, setPayments] = useState([]);
+  const [storeCharges, setStoreCharges] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [settings, setSettings] = useState({ currentTerm: '', defaultDueDate: '' });
   const [selectedChildId, setSelectedChildId] = useState(null);
@@ -204,6 +205,16 @@ const ParentDashboard = () => {
       setNotifications(data);
     });
 
+    const chargesQuery = query(
+      collection(db, 'store_charges'),
+      where('parent_email', '==', user.email),
+      orderBy('created_at', 'desc'),
+    );
+    const unsubscribeCharges = onSnapshot(chargesQuery, (snapshot) => {
+      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setStoreCharges(data);
+    });
+
     const settingsRef = doc(db, 'settings', 'general');
     const unsubscribeSettings = onSnapshot(settingsRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -229,14 +240,24 @@ const ParentDashboard = () => {
       unsubscribePayments();
       unsubscribeNotifications();
       unsubscribeSettings();
+      unsubscribeCharges();
     };
   }, [user]);
 
   const metrics = useMemo(() => {
-    const totalDue = students.reduce(
-      (sum, student) => sum + Number(student.balance ?? student.fee_amount ?? 0),
-      0,
-    );
+    const chargeMap = new Map();
+    storeCharges.forEach((charge) => {
+      if (charge.paid) return;
+      const key = charge.student_doc_id || charge.studentId;
+      if (!key) return;
+      const amount = Number(charge.amount || 0);
+      chargeMap.set(key, (chargeMap.get(key) || 0) + amount);
+    });
+    const totalDue = students.reduce((sum, student) => {
+      const tuitionDue = Number(student.balance ?? student.fee_amount ?? 0);
+      const storeDue = chargeMap.get(student.id) || 0;
+      return sum + tuitionDue + storeDue;
+    }, 0);
     const nextDueDate = students
       .map((student) => student.due_date)
       .filter(Boolean)
@@ -249,7 +270,21 @@ const ParentDashboard = () => {
       nextDueDate: nextDueDate ? nextDueDate.toLocaleDateString() : '—',
       lastPayment,
     };
-  }, [students, payments]);
+  }, [students, payments, storeCharges]);
+
+  const chargesByStudent = useMemo(() => {
+    const map = new Map();
+    storeCharges.forEach((charge) => {
+      if (charge.paid) return;
+      const key = charge.student_doc_id || charge.studentId;
+      if (!key) return;
+      if (!map.has(key)) {
+        map.set(key, []);
+      }
+      map.get(key).push(charge);
+    });
+    return map;
+  }, [storeCharges]);
 
   const paymentHistory = useMemo(() => {
     return payments.filter((payment) => {
@@ -279,6 +314,16 @@ const ParentDashboard = () => {
   }, [payments]);
 
   const selectedStudent = students.find((student) => student.id === selectedChildId) || null;
+  const selectedStudentCharges = selectedStudent
+    ? chargesByStudent.get(selectedStudent.id) || []
+    : [];
+  const selectedStudentStoreTotal = selectedStudentCharges.reduce(
+    (sum, charge) => sum + Number(charge.amount || 0),
+    0,
+  );
+  const selectedStudentTotalDue = selectedStudent
+    ? Number(selectedStudent.balance ?? selectedStudent.fee_amount ?? 0) + selectedStudentStoreTotal
+    : 0;
 
   const totalSelectedAmount = useMemo(() => {
     if (!paymentContext.open) return 0;
@@ -502,7 +547,9 @@ const ParentDashboard = () => {
             <tr><td>Date</td><td>${date.toLocaleString()}</td></tr>
             <tr><td>Mode</td><td>${payment.mode || 'Online'}</td></tr>
             <tr><td>Status</td><td>${payment.status}</td></tr>
-            <tr><td>Transaction ID</td><td>${payment.razorpay_payment_id || 'N/A'}</td></tr>
+            <tr><td>Transaction ID</td><td>${
+              payment.razorpay_payment_id || payment.transaction_id || 'N/A'
+            }</td></tr>
           </table>
           <p class="total">Total Paid: ₹${Number(payment.amount || 0).toLocaleString('en-IN')}</p>
           <p>— EL-NODE Pay</p>
@@ -612,52 +659,64 @@ const ParentDashboard = () => {
             </div>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
-            {students.map((student) => (
-              <div
-                key={student.id}
-                className={`rounded-3xl border ${
-                  selectedChildId === student.id ? 'border-cardinal bg-cardinal/5' : 'border-slate-200 bg-white'
-                } p-6 shadow-sm transition`}
-              >
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h3 className="text-lg font-semibold text-slate-900">{student.name}</h3>
-                    <p className="text-sm text-slate-500">Class {student.class}</p>
+            {students.map((student) => {
+              const chargeList = chargesByStudent.get(student.id) || [];
+              const storeChargeTotal = chargeList.reduce(
+                (sum, charge) => sum + Number(charge.amount || 0),
+                0,
+              );
+              const tuitionDue = Number(student.balance ?? student.fee_amount ?? 0);
+              const totalDue = tuitionDue + storeChargeTotal;
+              return (
+                <div
+                  key={student.id}
+                  className={`rounded-3xl border ${
+                    selectedChildId === student.id ? 'border-cardinal bg-cardinal/5' : 'border-slate-200 bg-white'
+                  } p-6 shadow-sm transition`}
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-lg font-semibold text-slate-900">{student.name}</h3>
+                      <p className="text-sm text-slate-500">Class {student.class}</p>
+                    </div>
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                        student.status === 'Paid'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : student.status === 'Overdue'
+                          ? 'bg-rose-100 text-rose-700'
+                          : 'bg-amber-100 text-amber-700'
+                      }`}
+                    >
+                      {student.status}
+                    </span>
                   </div>
-                  <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      student.status === 'Paid'
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : student.status === 'Overdue'
-                        ? 'bg-rose-100 text-rose-700'
-                        : 'bg-amber-100 text-amber-700'
-                    }`}
-                  >
-                    {student.status}
-                  </span>
+                  <div className="mt-4 grid gap-2 text-sm text-slate-600">
+                    <p>Total due: ₹{totalDue.toLocaleString('en-IN')}</p>
+                    <p>Tuition balance: ₹{tuitionDue.toLocaleString('en-IN')}</p>
+                    <p>Store charges: ₹{storeChargeTotal.toLocaleString('en-IN')}</p>
+                    <p>Fee cycle: {student.fee_cycle || 'Monthly'}</p>
+                    <p>Due date: {student.due_date || 'Not scheduled'}</p>
+                  </div>
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenPayment(student)}
+                      className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
+                    >
+                      Pay Now
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedChildId(student.id)}
+                      className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
+                    >
+                      View Details
+                    </button>
+                  </div>
                 </div>
-                <div className="mt-4 grid gap-2 text-sm text-slate-600">
-                  <p>Due amount: ₹{Number(student.balance ?? student.fee_amount ?? 0).toLocaleString('en-IN')}</p>
-                  <p>Due date: {student.due_date || 'Not scheduled'}</p>
-                </div>
-                <div className="mt-5 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenPayment(student)}
-                    className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
-                  >
-                    Pay Now
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedChildId(student.id)}
-                    className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
-                  >
-                    View Details
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
             {students.length === 0 && (
               <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
                 No student profiles are linked to this account yet.
@@ -668,11 +727,22 @@ const ParentDashboard = () => {
           {selectedStudent && (
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <h3 className="text-base font-semibold text-slate-900">{selectedStudent.name} · Details</h3>
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="mt-4 grid gap-4 md:grid-cols-3">
                 <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Fee Overview</p>
-                  <p className="mt-2">Total fee: ₹{Number(selectedStudent.fee_amount || 0).toLocaleString('en-IN')}</p>
-                  <p className="mt-1">Balance: ₹{Number(selectedStudent.balance ?? 0).toLocaleString('en-IN')}</p>
+                  <p className="mt-2">
+                    Total fee: ₹{Number(selectedStudent.fee_amount || 0).toLocaleString('en-IN')}
+                  </p>
+                  <p className="mt-1">
+                    Tuition balance: ₹{Number(selectedStudent.balance ?? 0).toLocaleString('en-IN')}
+                  </p>
+                  <p className="mt-1">
+                    Store charges due: ₹{selectedStudentStoreTotal.toLocaleString('en-IN')}
+                  </p>
+                  <p className="mt-1 font-semibold text-slate-900">
+                    Overall due: ₹{selectedStudentTotalDue.toLocaleString('en-IN')}
+                  </p>
+                  <p className="mt-1">Fee cycle: {selectedStudent.fee_cycle || 'Monthly'}</p>
                   <p className="mt-1">Due date: {selectedStudent.due_date || '—'}</p>
                 </div>
                 <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
@@ -693,6 +763,46 @@ const ParentDashboard = () => {
                       </li>
                     ))}
                   </ul>
+                </div>
+                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
+                  <p className="text-xs uppercase tracking-wide text-slate-500">Extra Charges</p>
+                  {selectedStudentCharges.length > 0 ? (
+                    <ul className="mt-2 space-y-2">
+                      {selectedStudentCharges.map((charge) => {
+                        const dateLabel = (() => {
+                          if (charge.charge_date) {
+                            const parsed = new Date(charge.charge_date);
+                            if (Number.isFinite(parsed.getTime())) {
+                              return parsed.toLocaleDateString();
+                            }
+                          }
+                          if (charge.created_at?.toDate) {
+                            return charge.created_at.toDate().toLocaleDateString();
+                          }
+                          if (charge.created_at) {
+                            const created = new Date(charge.created_at);
+                            if (Number.isFinite(created.getTime())) {
+                              return created.toLocaleDateString();
+                            }
+                          }
+                          return '—';
+                        })();
+                        return (
+                          <li key={charge.id} className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-medium text-slate-900">{charge.item_name}</p>
+                              <p className="text-xs text-slate-500">{dateLabel}</p>
+                            </div>
+                            <span className="text-sm font-semibold text-slate-900">
+                              ₹{Number(charge.amount || 0).toLocaleString('en-IN')}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : (
+                    <p className="mt-2 text-xs text-slate-500">No pending store charges.</p>
+                  )}
                 </div>
               </div>
             </div>
@@ -759,6 +869,7 @@ const ParentDashboard = () => {
                   <th className="px-4 py-3 text-left">Child</th>
                   <th className="px-4 py-3 text-left">Amount</th>
                   <th className="px-4 py-3 text-left">Mode</th>
+                  <th className="px-4 py-3 text-left">Transaction ID</th>
                   <th className="px-4 py-3 text-left">Status</th>
                   <th className="px-4 py-3 text-left">Receipt</th>
                 </tr>
@@ -772,6 +883,9 @@ const ParentDashboard = () => {
                       <td className="px-4 py-3">{payment.student_name}</td>
                       <td className="px-4 py-3">₹{Number(payment.amount || 0).toLocaleString('en-IN')}</td>
                       <td className="px-4 py-3">{payment.mode || 'Online'}</td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {payment.razorpay_payment_id || payment.transaction_id || '—'}
+                      </td>
                       <td className="px-4 py-3">
                         <span
                           className={`rounded-full px-3 py-1 text-xs font-semibold ${
@@ -797,7 +911,7 @@ const ParentDashboard = () => {
                 })}
                 {paymentHistory.length === 0 && (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
+                    <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
                       No payments match the selected filters.
                     </td>
                   </tr>
