@@ -133,7 +133,6 @@ const ParentDashboard = () => {
   const [students, setStudents] = useState([]);
   const [payments, setPayments] = useState([]);
   const [storeCharges, setStoreCharges] = useState([]);
-  const [feeRequests, setFeeRequests] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [settings, setSettings] = useState({ currentTerm: '', defaultDueDate: '' });
   const [selectedChildId, setSelectedChildId] = useState(null);
@@ -216,16 +215,6 @@ const ParentDashboard = () => {
       setStoreCharges(data);
     });
 
-    const feeRequestsQuery = query(
-      collection(db, 'fee_requests'),
-      where('parent_email', '==', user.email),
-      orderBy('created_at', 'desc'),
-    );
-    const unsubscribeFeeRequests = onSnapshot(feeRequestsQuery, (snapshot) => {
-      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-      setFeeRequests(data);
-    });
-
     const settingsRef = doc(db, 'settings', 'general');
     const unsubscribeSettings = onSnapshot(settingsRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -252,7 +241,6 @@ const ParentDashboard = () => {
       unsubscribeNotifications();
       unsubscribeSettings();
       unsubscribeCharges();
-      unsubscribeFeeRequests();
     };
   }, [user]);
 
@@ -298,41 +286,6 @@ const ParentDashboard = () => {
     return map;
   }, [storeCharges]);
 
-  const requestExtrasByStudent = useMemo(() => {
-    const map = new Map();
-    feeRequests.forEach((request) => {
-      const key = request.studentId || request.student_doc_id || request.studentDocId;
-      if (!key) return;
-      if (request.status === 'Paid') return;
-      const storeBreakdown = request.breakdown?.store;
-      const othersBreakdown = request.breakdown?.others;
-      if (!storeBreakdown && !othersBreakdown) return;
-      if (!map.has(key)) {
-        map.set(key, { store: [], others: [] });
-      }
-      const groups = map.get(key);
-      if (storeBreakdown && Number(storeBreakdown.amount || 0) > 0) {
-        groups.store.push({
-          id: `${request.id}-store`,
-          label: storeBreakdown.label || 'Store Item',
-          amount: Number(storeBreakdown.amount || 0),
-          created_at: request.created_at,
-          due_date: request.due_date,
-        });
-      }
-      if (othersBreakdown && Number(othersBreakdown.amount || 0) > 0) {
-        groups.others.push({
-          id: `${request.id}-others`,
-          label: othersBreakdown.label || 'Others',
-          amount: Number(othersBreakdown.amount || 0),
-          created_at: request.created_at,
-          due_date: request.due_date,
-        });
-      }
-    });
-    return map;
-  }, [feeRequests]);
-
   const paymentHistory = useMemo(() => {
     return payments.filter((payment) => {
       const matchesChild =
@@ -364,91 +317,13 @@ const ParentDashboard = () => {
   const selectedStudentCharges = selectedStudent
     ? chargesByStudent.get(selectedStudent.id) || []
     : [];
-  const selectedStudentRequestExtras = (() => {
-    if (!selectedStudent) return { store: [], others: [] };
-    const key = selectedStudent.studentId || selectedStudent.id;
-    return requestExtrasByStudent.get(key) || { store: [], others: [] };
-  })();
-  const legacyStoreTotal = selectedStudentCharges.reduce(
+  const selectedStudentStoreTotal = selectedStudentCharges.reduce(
     (sum, charge) => sum + Number(charge.amount || 0),
     0,
   );
-  const requestStoreTotal = selectedStudentRequestExtras.store.reduce(
-    (sum, item) => sum + Number(item.amount || 0),
-    0,
-  );
-  const selectedStudentStoreTotal = legacyStoreTotal + requestStoreTotal;
-  const selectedStudentOthersTotal = selectedStudentRequestExtras.others.reduce(
-    (sum, item) => sum + Number(item.amount || 0),
-    0,
-  );
   const selectedStudentTotalDue = selectedStudent
-    ? Number(selectedStudent.balance ?? selectedStudent.fee_amount ?? 0) +
-      selectedStudentStoreTotal +
-      selectedStudentOthersTotal
+    ? Number(selectedStudent.balance ?? selectedStudent.fee_amount ?? 0) + selectedStudentStoreTotal
     : 0;
-
-  const selectedStudentExtraGroups = useMemo(() => {
-    if (!selectedStudent) return { store: [], others: [] };
-    const groups = { store: [], others: [] };
-    const formatDate = (raw) => {
-      if (!raw) return '—';
-      if (raw.toDate) {
-        const date = raw.toDate();
-        if (Number.isFinite(date.getTime())) return date.toLocaleDateString();
-      }
-      const parsed = new Date(raw);
-      if (Number.isFinite(parsed.getTime())) return parsed.toLocaleDateString();
-      return '—';
-    };
-
-    selectedStudentCharges.forEach((charge) => {
-      const dateLabel = (() => {
-        if (charge.charge_date) {
-          const parsed = new Date(charge.charge_date);
-          if (Number.isFinite(parsed.getTime())) {
-            return parsed.toLocaleDateString();
-          }
-        }
-        if (charge.created_at?.toDate) {
-          return charge.created_at.toDate().toLocaleDateString();
-        }
-        if (charge.created_at) {
-          const created = new Date(charge.created_at);
-          if (Number.isFinite(created.getTime())) {
-            return created.toLocaleDateString();
-          }
-        }
-        return '—';
-      })();
-      groups.store.push({
-        id: `legacy-${charge.id}`,
-        label: charge.item_name || 'Store charge',
-        amount: Number(charge.amount || 0),
-        date: dateLabel,
-      });
-    });
-
-    selectedStudentRequestExtras.store.forEach((item) => {
-      groups.store.push({
-        id: item.id,
-        label: item.label,
-        amount: Number(item.amount || 0),
-        date: formatDate(item.due_date || item.created_at),
-      });
-    });
-
-    selectedStudentRequestExtras.others.forEach((item) => {
-      groups.others.push({
-        id: item.id,
-        label: item.label,
-        amount: Number(item.amount || 0),
-        date: formatDate(item.due_date || item.created_at),
-      });
-    });
-
-    return groups;
-  }, [selectedStudent, selectedStudentCharges, selectedStudentRequestExtras]);
 
   const totalSelectedAmount = useMemo(() => {
     if (!paymentContext.open) return 0;
@@ -864,9 +739,6 @@ const ParentDashboard = () => {
                   <p className="mt-1">
                     Store charges due: ₹{selectedStudentStoreTotal.toLocaleString('en-IN')}
                   </p>
-                  <p className="mt-1">
-                    Other charges due: ₹{selectedStudentOthersTotal.toLocaleString('en-IN')}
-                  </p>
                   <p className="mt-1 font-semibold text-slate-900">
                     Overall due: ₹{selectedStudentTotalDue.toLocaleString('en-IN')}
                   </p>
@@ -894,47 +766,42 @@ const ParentDashboard = () => {
                 </div>
                 <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Extra Charges</p>
-                  {selectedStudentExtraGroups.store.length > 0 || selectedStudentExtraGroups.others.length > 0 ? (
-                    <div className="mt-2 space-y-3">
-                      {selectedStudentExtraGroups.others.length > 0 && (
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Other Charges</p>
-                          <ul className="mt-2 space-y-2">
-                            {selectedStudentExtraGroups.others.map((item) => (
-                              <li key={item.id} className="flex items-start justify-between gap-3">
-                                <div>
-                                  <p className="font-medium text-slate-900">{item.label}</p>
-                                  <p className="text-xs text-slate-500">{item.date}</p>
-                                </div>
-                                <span className="text-sm font-semibold text-slate-900">
-                                  ₹{Number(item.amount || 0).toLocaleString('en-IN')}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {selectedStudentExtraGroups.store.length > 0 && (
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Store Charges</p>
-                          <ul className="mt-2 space-y-2">
-                            {selectedStudentExtraGroups.store.map((item) => (
-                              <li key={item.id} className="flex items-start justify-between gap-3">
-                                <div>
-                                  <p className="font-medium text-slate-900">{item.label}</p>
-                                  <p className="text-xs text-slate-500">{item.date}</p>
-                                </div>
-                                <span className="text-sm font-semibold text-slate-900">
-                                  ₹{Number(item.amount || 0).toLocaleString('en-IN')}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
+                  {selectedStudentCharges.length > 0 ? (
+                    <ul className="mt-2 space-y-2">
+                      {selectedStudentCharges.map((charge) => {
+                        const dateLabel = (() => {
+                          if (charge.charge_date) {
+                            const parsed = new Date(charge.charge_date);
+                            if (Number.isFinite(parsed.getTime())) {
+                              return parsed.toLocaleDateString();
+                            }
+                          }
+                          if (charge.created_at?.toDate) {
+                            return charge.created_at.toDate().toLocaleDateString();
+                          }
+                          if (charge.created_at) {
+                            const created = new Date(charge.created_at);
+                            if (Number.isFinite(created.getTime())) {
+                              return created.toLocaleDateString();
+                            }
+                          }
+                          return '—';
+                        })();
+                        return (
+                          <li key={charge.id} className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="font-medium text-slate-900">{charge.item_name}</p>
+                              <p className="text-xs text-slate-500">{dateLabel}</p>
+                            </div>
+                            <span className="text-sm font-semibold text-slate-900">
+                              ₹{Number(charge.amount || 0).toLocaleString('en-IN')}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
                   ) : (
-                    <p className="mt-2 text-xs text-slate-500">No pending extra charges.</p>
+                    <p className="mt-2 text-xs text-slate-500">No pending store charges.</p>
                   )}
                 </div>
               </div>
