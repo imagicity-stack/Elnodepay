@@ -2596,6 +2596,18 @@ const AccountantDashboard = () => {
     triggerToast(`${student.name}: ${statusList.join(', ')}`, tone);
   };
 
+  const handleSignOut = useCallback(async () => {
+    try {
+      await signOut(auth);
+    } finally {
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem('elnode-remember-me');
+        window.sessionStorage.removeItem('elnode-remember-me');
+      }
+      router.replace('/');
+    }
+  }, [router]);
+
   if (!authChecked) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white text-cardinal">
