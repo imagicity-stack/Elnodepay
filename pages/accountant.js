@@ -1043,8 +1043,11 @@ const AccountantDashboard = () => {
       const monthKey =
         entry.month_key || `${entryDate.getFullYear()}-${String(entryDate.getMonth() + 1).padStart(2, '0')}`;
       const monthLabel = entry.month_label || entryDate.toLocaleString('en-IN', { month: 'short', year: 'numeric' });
-      const existing = monthlyMap.get(monthKey) || { label: monthLabel, amount: 0 };
-      monthlyMap.set(monthKey, { label: existing.label || monthLabel, amount: existing.amount + amount });
+      const monthExisting = monthlyMap.get(monthKey) || { label: monthLabel, amount: 0 };
+      monthlyMap.set(monthKey, {
+        label: monthExisting.label || monthLabel,
+        amount: monthExisting.amount + amount,
+      });
     });
 
     const transactionDatesByStudent = new Map();
@@ -1076,10 +1079,10 @@ const AccountantDashboard = () => {
         parseDateValue(reminder.created_at) ||
         parseDateValue(reminder.sent_at) ||
         parseDateValue(reminder.date);
-      const existing = reminderMap.get(key);
-      if (!existing || (reminderDate && existing && existing > reminderDate)) {
+      const reminderExisting = reminderMap.get(key);
+      if (!reminderExisting || (reminderDate && reminderExisting && reminderExisting > reminderDate)) {
         reminderMap.set(key, reminderDate || null);
-      } else if (!existing) {
+      } else if (!reminderExisting) {
         reminderMap.set(key, reminderDate || null);
       }
       const modeRaw = (entry.mode || 'Online').toLowerCase();
@@ -2601,22 +2604,6 @@ const AccountantDashboard = () => {
                 <p className="mt-3 text-2xl font-semibold text-slate-900">{monthMetrics.upcomingCount}</p>
                 <p className="mt-2 text-xs text-slate-500">
                   Paid / Unpaid students: {monthMetrics.paidCount}/{monthMetrics.unpaidCount}
-                </p>
-                <p className="mt-2 text-xs text-slate-500">Based on {paidRequestCount} paid requests</p>
-              </div>
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-medium text-slate-500">Reminder Conversion Rate</h3>
-                <p className="mt-3 text-2xl font-semibold text-slate-900">
-                  {monthMetrics.reminderConversionRate != null
-                    ? `${monthMetrics.reminderConversionRate.toFixed(0)}%`
-                    : 'N/A'}
-                </p>
-                <p className="mt-2 text-xs text-slate-500">Tracked reminders: {monthMetrics.reminderBaseCount}</p>
-              </div>
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-medium text-slate-500">Store-Charge Revenue</h3>
-                <p className="mt-3 text-2xl font-semibold text-slate-900">
-                  ₹{monthMetrics.storeRevenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                 </p>
                 <p className="mt-2 text-xs text-slate-500">Across fee request breakdowns</p>
               </div>
