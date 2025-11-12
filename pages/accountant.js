@@ -1008,6 +1008,11 @@ const AccountantDashboard = () => {
   }, []);
 
   const monthMetrics = useMemo(() => {
+    const safeTransactions = Array.isArray(transactionsLog) ? transactionsLog : [];
+    const safeReminders = Array.isArray(reminders) ? reminders : [];
+    const safeFeeRequests = Array.isArray(feeRequests) ? feeRequests : [];
+    const safeStudents = Array.isArray(students) ? students : [];
+    const safePayments = Array.isArray(payments) ? payments : [];
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfYear = new Date(now.getFullYear(), 0, 1);
@@ -1024,7 +1029,7 @@ const AccountantDashboard = () => {
     const modeTotals = { Cash: 0, Online: 0, Other: 0 };
     const paidTransactions = [];
 
-    transactionsLog.forEach((entry) => {
+    safeTransactions.forEach((entry) => {
       const status = (entry.status || '').toLowerCase();
       if (status !== 'paid' && status !== 'success') return;
       const amount = parseAmountValue(entry.amount);
@@ -1072,7 +1077,7 @@ const AccountantDashboard = () => {
     const activeParentEmails = new Set();
 
     const reminderMap = new Map();
-    reminders.forEach((reminder) => {
+    safeReminders.forEach((reminder) => {
       const key = reminder.studentId || reminder.student_id || reminder.student_doc_id;
       if (!key) return;
       const reminderDate =
@@ -1085,19 +1090,11 @@ const AccountantDashboard = () => {
       } else if (!reminderExisting) {
         reminderMap.set(key, reminderDate || null);
       }
-      const modeRaw = (entry.mode || 'Online').toLowerCase();
-      const modeKey = modeRaw === 'cash' ? 'Cash' : modeRaw === 'online' ? 'Online' : 'Other';
-      modeTotals[modeKey] += amount;
-      const monthKey =
-        entry.month_key || `${entryDate.getFullYear()}-${String(entryDate.getMonth() + 1).padStart(2, '0')}`;
-      const monthLabel = entry.month_label || entryDate.toLocaleString('en-IN', { month: 'short', year: 'numeric' });
-      const existing = monthlyMap.get(monthKey) || { label: monthLabel, amount: 0 };
-      monthlyMap.set(monthKey, { label: existing.label || monthLabel, amount: existing.amount + amount });
     });
 
     const todayTime = today.getTime();
 
-    feeRequests.forEach((request) => {
+    safeFeeRequests.forEach((request) => {
       const status = (request.status || '').toLowerCase();
       const total = calculateFeeRequestTotal(request);
       const dueDate = parseDateValue(request.due_date);
@@ -1166,9 +1163,9 @@ const AccountantDashboard = () => {
     const monthLabels = recentEntries.map(([, value]) => value.label);
     const monthValues = recentEntries.map(([, value]) => value.amount);
 
-    const paidStudents = students.filter((student) => (student.status || '').toLowerCase() === 'paid').length;
-    const overdueStudents = students.filter((student) => (student.status || '').toLowerCase() === 'overdue').length;
-    const outstandingList = [...students]
+    const paidStudents = safeStudents.filter((student) => (student.status || '').toLowerCase() === 'paid').length;
+    const overdueStudents = safeStudents.filter((student) => (student.status || '').toLowerCase() === 'overdue').length;
+    const outstandingList = [...safeStudents]
       .map((student) => ({
         id: student.id,
         name: student.name,
@@ -1179,13 +1176,13 @@ const AccountantDashboard = () => {
       .sort((a, b) => b.balance - a.balance)
       .slice(0, 10);
 
-    const revenueByCategory = payments.reduce((acc, payment) => {
+    const revenueByCategory = safePayments.reduce((acc, payment) => {
       const key = payment.fee_type || 'Tuition';
       acc[key] = (acc[key] || 0) + parseAmountValue(payment.amount);
       return acc;
     }, {});
 
-    const unpaidStudents = students.length - paidStudents;
+    const unpaidStudents = safeStudents.length - paidStudents;
     const averageCollectionDelay = delays.length
       ? delays.reduce((sum, value) => sum + value, 0) / delays.length
       : null;
@@ -1218,7 +1215,7 @@ const AccountantDashboard = () => {
       reminderConversionRate,
       reminderBaseCount,
       storeRevenue,
-      totalStudents: students.length,
+      totalStudents: safeStudents.length,
       activeParents: activeParentEmails.size,
     };
   }, [transactionsLog, feeRequests, reminders, students, payments]);
@@ -1231,8 +1228,12 @@ const AccountantDashboard = () => {
   }, [feeStructureDraft.session]);
 
   const transactionMonthOptions = useMemo(() => {
+    const safeTransactions = Array.isArray(transactionsLog) ? transactionsLog : [];
+    if (!safeTransactions || safeTransactions.length === 0) {
+      return [];
+    }
     const monthMap = new Map();
-    transactionsLog.forEach((entry) => {
+    safeTransactions.forEach((entry) => {
       const key = resolveTransactionMonthKey(entry);
       const label = resolveTransactionMonthLabel(entry);
       if (key) {
@@ -1245,7 +1246,11 @@ const AccountantDashboard = () => {
   }, [transactionsLog]);
 
   const filteredTransactions = useMemo(() => {
-    return transactionsLog.filter((entry) => {
+    const safeTransactions = Array.isArray(transactionsLog) ? transactionsLog : [];
+    if (!safeTransactions || safeTransactions.length === 0) {
+      return [];
+    }
+    return safeTransactions.filter((entry) => {
       const matchesMode =
         transactionFilters.mode === 'All' || (entry.mode || 'Online') === transactionFilters.mode;
       if (transactionFilters.month === 'All') {
@@ -1284,8 +1289,12 @@ const AccountantDashboard = () => {
   }, [feeRequestContext.student, feeRequestForm, feeStructureDraft]);
 
   const filteredStudents = useMemo(() => {
+    const safeStudents = Array.isArray(students) ? students : [];
+    if (!safeStudents || safeStudents.length === 0) {
+      return [];
+    }
     const searchValue = filters.search.trim().toLowerCase();
-    const filtered = students.filter((student) => {
+    const filtered = safeStudents.filter((student) => {
       const matchesClass = filters.class === 'All' || student.class === filters.class;
       const matchesStatus = filters.status === 'All' || student.status === filters.status;
       const matchesTerm =
@@ -1312,9 +1321,15 @@ const AccountantDashboard = () => {
   }, [students, filters]);
 
   const feeRequestReportEntries = useMemo(() => {
+    const safeFeeRequests = Array.isArray(feeRequests) ? feeRequests : [];
+    const safeStudents = Array.isArray(students) ? students : [];
+    const safeReminders = Array.isArray(reminders) ? reminders : [];
+    if (!safeFeeRequests || safeFeeRequests.length === 0) {
+      return [];
+    }
     const studentsByDocId = new Map();
     const studentsByStudentId = new Map();
-    students.forEach((student) => {
+    safeStudents.forEach((student) => {
       studentsByDocId.set(student.id, student);
       if (student.studentId) {
         studentsByStudentId.set(student.studentId, student);
@@ -1322,7 +1337,7 @@ const AccountantDashboard = () => {
     });
 
     const reminderIndex = new Map();
-    reminders.forEach((reminder) => {
+    safeReminders.forEach((reminder) => {
       const keys = [reminder.student_doc_id, reminder.studentId, reminder.student_id]
         .map((value) => (value ? `${value}` : ''))
         .filter(Boolean);
@@ -1339,7 +1354,7 @@ const AccountantDashboard = () => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    return feeRequests.map((request) => {
+    return safeFeeRequests.map((request) => {
       const studentMatch =
         studentsByDocId.get(request.student_doc_id) ||
         (request.studentId ? studentsByStudentId.get(request.studentId) : null) ||
@@ -1417,12 +1432,16 @@ const AccountantDashboard = () => {
   }, [feeRequests, students, reminders]);
 
   const filteredReportEntries = useMemo(() => {
+    const safeEntries = Array.isArray(feeRequestReportEntries) ? feeRequestReportEntries : [];
+    if (!safeEntries || safeEntries.length === 0) {
+      return [];
+    }
     const dueFromDate = reportFilters.dueFrom ? new Date(`${reportFilters.dueFrom}T00:00:00`) : null;
     const dueToDate = reportFilters.dueTo ? new Date(`${reportFilters.dueTo}T23:59:59`) : null;
     const searchValue = reportFilters.search.trim().toLowerCase();
     const normalizedTerm = reportFilters.term.trim().toLowerCase();
 
-    const filtered = feeRequestReportEntries.filter((entry) => {
+    const filtered = safeEntries.filter((entry) => {
       const matchesClass = reportFilters.class === 'All' || entry.class === reportFilters.class;
       const matchesStatus = reportFilters.status === 'All' || entry.statusLabel === reportFilters.status;
       const cycleFilter = reportFilters.cycle === 'Half-Yearly' ? '6 Months' : reportFilters.cycle;
