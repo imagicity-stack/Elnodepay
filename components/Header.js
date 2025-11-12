@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { signOut } from 'firebase/auth';
@@ -32,9 +33,12 @@ const Header = () => {
   return (
     <header className="bg-cardinal text-white shadow">
       <div className="max-w-6xl mx-auto flex flex-col gap-4 px-4 py-6 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">The Elden Heights School – EL-NODE Pay</h1>
-          <p className="text-sm text-white/80">Secure fee management for parents and accountants.</p>
+        <div className="flex items-center gap-3">
+          <Image src="/elnode.png" alt="EL-NODE Pay logo" width={48} height={48} priority />
+          <div>
+            <h1 className="text-2xl font-semibold">The Elden Heights School – EL-NODE Pay</h1>
+            <p className="text-sm text-white/80">Secure fee management for parents and accountants.</p>
+          </div>
         </div>
         <nav className="flex items-center gap-4 text-sm font-medium">
           {navItems.map((item) => (
