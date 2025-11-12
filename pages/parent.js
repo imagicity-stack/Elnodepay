@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Head from 'next/head';
+import Image from 'next/image';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 import {
   onAuthStateChanged,
@@ -37,8 +39,8 @@ const PayNowModal = ({
       <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
           <div>
-            <h3 className="text-lg font-semibold text-slate-900">Pay fees for {student.name}</h3>
-            <p className="text-sm text-slate-500">Select the fee components you wish to pay right now.</p>
+            <h3 className="text-lg font-semibold text-slate-900">Pay fees</h3>
+            <p className="text-sm text-slate-500">Select the fee components you wish to pay right now for {student.name}.</p>
           </div>
           <button
             type="button"
@@ -145,6 +147,18 @@ const ParentDashboard = () => {
   const [paymentContext, setPaymentContext] = useState({ open: false, student: null, selections: [] });
   const [paymentProcessing, setPaymentProcessing] = useState(false);
 
+  const handleSignOut = useCallback(async () => {
+    try {
+      await signOut(auth);
+    } finally {
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem('elnode-remember-me');
+        window.sessionStorage.removeItem('elnode-remember-me');
+      }
+      router.replace('/');
+    }
+  }, [router]); // fix: define before effects to avoid init issues
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
@@ -173,6 +187,37 @@ const ParentDashboard = () => {
 
     return () => unsubscribe();
   }, [router]);
+
+  useEffect(() => {
+    if (!authChecked || !user) return;
+    if (typeof window === 'undefined') return;
+    if (window.localStorage.getItem('elnode-remember-me') === 'true') {
+      return;
+    }
+
+    const INACTIVITY_LIMIT = 4 * 60 * 1000;
+    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    let timerId;
+
+    const resetTimer = () => {
+      if (timerId) {
+        clearTimeout(timerId);
+      }
+      timerId = setTimeout(() => {
+        handleSignOut();
+      }, INACTIVITY_LIMIT);
+    };
+
+    events.forEach((event) => window.addEventListener(event, resetTimer));
+    resetTimer();
+
+    return () => {
+      if (timerId) {
+        clearTimeout(timerId);
+      }
+      events.forEach((event) => window.removeEventListener(event, resetTimer));
+    };
+  }, [authChecked, user, handleSignOut]);
 
   useEffect(() => {
     if (!user) return;
@@ -457,11 +502,6 @@ const ParentDashboard = () => {
       .reduce((sum, item) => sum + Number(item.amount || 0), 0);
   }, [paymentContext]);
 
-  const handleSignOut = async () => {
-    await signOut(auth);
-    router.replace('/');
-  };
-
   const handleOpenPayment = (student) => {
     const breakdown = Array.isArray(student.fee_breakdown) && student.fee_breakdown.length > 0
       ? student.fee_breakdown
@@ -717,11 +757,14 @@ const ParentDashboard = () => {
       </Head>
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Parent Dashboard</h1>
-            <p className="text-sm text-slate-600">
-              Manage your children’s fee payments, track history, and stay on top of reminders.
-            </p>
+          <div className="flex items-start gap-3">
+            <Image src="/elnode.png" alt="EL-NODE Pay logo" width={48} height={48} priority />
+            <div>
+              <h1 className="text-2xl font-semibold text-slate-900">Parent Dashboard</h1>
+              <p className="text-sm text-slate-600">
+                Manage your children’s fee payments, track history, and stay on top of reminders.
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -1190,4 +1233,4 @@ const ParentDashboard = () => {
   );
 };
 
-export default ParentDashboard;
+export default dynamic(() => Promise.resolve(ParentDashboard), { ssr: false }); // ssr: false to prevent prerender

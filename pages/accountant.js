@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Head from 'next/head';
+import Image from 'next/image';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 import {
   createUserWithEmailAndPassword,
@@ -742,6 +744,18 @@ const AccountantDashboard = () => {
   const secondaryAuthRef = useRef(null);
   const toastTimerRef = useRef(null);
 
+  const handleSignOut = useCallback(async () => {
+    try {
+      await signOut(auth);
+    } finally {
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem('elnode-remember-me');
+        window.sessionStorage.removeItem('elnode-remember-me');
+      }
+      router.replace('/');
+    }
+  }, [router]); // fix: define before effects to avoid init issues
+
   const closeStudentActions = () => {
     setStudentActionsContext({ open: false, student: null });
     setSelectedStudentId(null);
@@ -903,6 +917,37 @@ const AccountantDashboard = () => {
 
     return () => unsubscribe();
   }, [router]);
+
+  useEffect(() => {
+    if (!authChecked || !user) return;
+    if (typeof window === 'undefined') return;
+    if (window.localStorage.getItem('elnode-remember-me') === 'true') {
+      return;
+    }
+
+    const INACTIVITY_LIMIT = 4 * 60 * 1000;
+    const events = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    let timerId;
+
+    const resetTimer = () => {
+      if (timerId) {
+        clearTimeout(timerId);
+      }
+      timerId = setTimeout(() => {
+        handleSignOut();
+      }, INACTIVITY_LIMIT);
+    };
+
+    events.forEach((event) => window.addEventListener(event, resetTimer));
+    resetTimer();
+
+    return () => {
+      if (timerId) {
+        clearTimeout(timerId);
+      }
+      events.forEach((event) => window.removeEventListener(event, resetTimer));
+    };
+  }, [authChecked, user, handleSignOut]);
 
   useEffect(() => () => {
     if (toastTimerRef.current) {
@@ -1430,6 +1475,24 @@ const AccountantDashboard = () => {
       };
     });
   }, [feeRequests, students, reminders]);
+
+  const studentStatusIndex = useMemo(() => {
+    const index = new Map();
+    const safeEntries = Array.isArray(feeRequestReportEntries) ? feeRequestReportEntries : [];
+    safeEntries.forEach((entry) => {
+      const status = entry.statusLabel || 'Pending';
+      const keys = [entry.studentId, entry.studentName]
+        .map((value) => (value ? `${value}`.toLowerCase() : ''))
+        .filter(Boolean);
+      keys.forEach((key) => {
+        if (!index.has(key)) {
+          index.set(key, new Set());
+        }
+        index.get(key).add(status);
+      });
+    });
+    return index;
+  }, [feeRequestReportEntries]);
 
   const filteredReportEntries = useMemo(() => {
     const safeEntries = Array.isArray(feeRequestReportEntries) ? feeRequestReportEntries : [];
@@ -2507,9 +2570,30 @@ const AccountantDashboard = () => {
     }
   };
 
-  const handleSignOut = async () => {
-    await signOut(auth);
-    router.replace('/');
+  const handleCheckDues = (student) => {
+    if (!student) return;
+    const keys = [student.studentId, student.id, student.name]
+      .map((value) => (value ? `${value}`.toLowerCase() : ''))
+      .filter(Boolean);
+    const statuses = new Set();
+    keys.forEach((key) => {
+      const statusSet = studentStatusIndex.get(key);
+      if (statusSet) {
+        statusSet.forEach((status) => statuses.add(status));
+      }
+    });
+    if (statuses.size === 0) {
+      triggerToast(`No fee records found for ${student.name || 'this student'}.`, 'info');
+      return;
+    }
+    const statusList = Array.from(statuses);
+    let tone = 'success';
+    if (statusList.some((status) => status.toLowerCase() === 'overdue')) {
+      tone = 'error';
+    } else if (statusList.some((status) => status.toLowerCase() === 'pending')) {
+      tone = 'info';
+    }
+    triggerToast(`${student.name}: ${statusList.join(', ')}`, tone);
   };
 
   if (!authChecked) {
@@ -2534,11 +2618,14 @@ const AccountantDashboard = () => {
       </Head>
       <header className="border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-slate-900">Accountant Dashboard</h1>
-            <p className="text-sm text-slate-600">
-              Bird’s-eye view of fee collections and student payments.
-            </p>
+          <div className="flex items-start gap-3">
+            <Image src="/elnode.png" alt="EL-NODE Pay logo" width={48} height={48} priority />
+            <div>
+              <h1 className="text-2xl font-semibold text-slate-900">Accountant Dashboard</h1>
+              <p className="text-sm text-slate-600">
+                Bird’s-eye view of fee collections and student payments.
+              </p>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button
@@ -2819,9 +2906,6 @@ const AccountantDashboard = () => {
               <div className="mt-6">
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {filteredStudents.map((student) => {
-                    const balance = Number(student.balance ?? student.fee_amount ?? 0);
-                    const total = Number(student.fee_amount ?? 0);
-                    const paid = Math.max(total - balance, 0);
                     const isSelected = selectedStudentId === student.id;
                     return (
                       <div
@@ -2830,55 +2914,55 @@ const AccountantDashboard = () => {
                           isSelected ? 'border-cardinal ring-2 ring-cardinal/20' : 'border-slate-200'
                         } bg-white p-5 shadow-sm transition hover:shadow-md`}
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-sm font-medium text-slate-500">{student.studentId || student.id}</p>
-                            <h3 className="mt-1 text-lg font-semibold text-slate-900">{student.name}</h3>
-                            <p className="text-sm text-slate-500">
-                              Class {student.class || '—'}
-                              {student.section ? ` · Section ${student.section}` : ''}
-                            </p>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            resetMarkPaidContext();
+                            setSelectedStudentId(student.id);
+                            setStudentActionsContext({ open: true, student });
+                          }}
+                          className="w-full text-left"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-medium text-slate-500">{student.studentId || student.id}</p>
+                              <h3 className="mt-1 text-lg font-semibold text-slate-900">{student.name}</h3>
+                              <p className="text-sm text-slate-500">
+                                Class {student.class || '—'}
+                                {student.section ? ` · Section ${student.section}` : ''}
+                              </p>
+                            </div>
+                            <span
+                              className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                                statusBadgeClasses[student.status] || 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {student.status || 'Pending'}
+                            </span>
                           </div>
-                          <span
-                            className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                              statusBadgeClasses[student.status] || 'bg-slate-100 text-slate-600'
-                            }`}
-                          >
-                            {student.status || 'Pending'}
-                          </span>
-                        </div>
-                        <dl className="mt-4 grid grid-cols-3 gap-3 text-xs">
-                          <div className="rounded-2xl bg-slate-50 p-3 text-center">
-                            <dt className="text-slate-500">Fee</dt>
-                            <dd className="mt-1 text-sm font-semibold text-slate-900">
-                              ₹{total.toLocaleString('en-IN')}
-                            </dd>
+                          <div className="mt-4 space-y-2 text-xs text-slate-500">
+                            {student.parent_email && (
+                              <p>
+                                Parent email: <span className="font-medium text-slate-700">{student.parent_email}</span>
+                              </p>
+                            )}
+                            {student.parent_phone && (
+                              <p>
+                                Parent phone: <span className="font-medium text-slate-700">{student.parent_phone}</span>
+                              </p>
+                            )}
                           </div>
-                          <div className="rounded-2xl bg-slate-50 p-3 text-center">
-                            <dt className="text-slate-500">Paid</dt>
-                            <dd className="mt-1 text-sm font-semibold text-emerald-600">
-                              ₹{paid.toLocaleString('en-IN')}
-                            </dd>
-                          </div>
-                          <div className="rounded-2xl bg-slate-50 p-3 text-center">
-                            <dt className="text-slate-500">Balance</dt>
-                            <dd className="mt-1 text-sm font-semibold text-rose-600">
-                              ₹{balance.toLocaleString('en-IN')}
-                            </dd>
-                          </div>
-                        </dl>
-                        <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
-                          <span>Due: {student.due_date || 'Not set'}</span>
+                        </button>
+                        <div className="mt-4 flex justify-end">
                           <button
                             type="button"
-                            onClick={() => {
-                              resetMarkPaidContext();
-                              setSelectedStudentId(student.id);
-                              setStudentActionsContext({ open: true, student });
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleCheckDues(student);
                             }}
-                            className="rounded-full border border-cardinal px-3 py-1 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
+                            className="rounded-full border border-cardinal px-4 py-1.5 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
                           >
-                            Manage
+                            Check dues
                           </button>
                         </div>
                       </div>
@@ -3613,4 +3697,4 @@ const AccountantDashboard = () => {
   );
 };
 
-export default AccountantDashboard;
+export default dynamic(() => Promise.resolve(AccountantDashboard), { ssr: false }); // ssr: false to prevent prerender
