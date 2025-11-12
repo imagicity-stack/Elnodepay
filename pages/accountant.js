@@ -66,34 +66,37 @@ const statusBadgeClasses = {
   Overdue: 'bg-rose-100 text-rose-700 border border-rose-200',
 };
 
-const Modal = ({ title, children, onClose }) => (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-8">
-    <div className="w-full max-w-2xl rounded-2xl bg-white shadow-2xl">
-      <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-        <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-200"
-        >
-          Close
-        </button>
-      </div>
-      <div className="max-h-[70vh] overflow-y-auto px-6 py-4">{children}</div>
-    </div>
-  </div>
-);
+const SUPER_ADMIN_PASSWORD = 'yesdeletethestudent';
 
-const StudentFormModal = ({
-  isEditing,
-  formState,
-  onChange,
-  onSubmit,
-  onClose,
-  isSubmitting,
-  calculatedFee,
-  defaultDueDate,
-}) => (
+const Modal = ({ title, children, onClose, size = 'lg' }) => {
+  const maxWidthClasses = {
+    sm: 'max-w-md',
+    md: 'max-w-xl',
+    lg: 'max-w-2xl',
+    xl: 'max-w-3xl',
+  };
+  const selectedWidth = maxWidthClasses[size] || maxWidthClasses.lg;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-8">
+      <div className={`w-full ${selectedWidth} rounded-2xl bg-white shadow-2xl`}>
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+          <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-600 transition hover:bg-slate-200"
+          >
+            Close
+          </button>
+        </div>
+        <div className="max-h-[70vh] overflow-y-auto px-6 py-4">{children}</div>
+      </div>
+    </div>
+  );
+};
+
+const StudentFormModal = ({ isEditing, formState, onChange, onSubmit, onClose, isSubmitting }) => (
   <Modal title={isEditing ? 'Edit Student' : 'Add Student'} onClose={onClose}>
     <form onSubmit={onSubmit} className="space-y-4">
       <div className="grid gap-4 md:grid-cols-2">
@@ -168,13 +171,6 @@ const StudentFormModal = ({
             placeholder="parent@example.com"
           />
         </label>
-      </div>
-      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-        <p className="font-medium text-slate-900">Summary</p>
-        <p className="mt-1">Due date: {defaultDueDate || 'Not configured'}</p>
-        <p className="mt-1 font-semibold text-slate-900">
-          Tuition fee payable: ₹{Number(calculatedFee || 0).toLocaleString('en-IN')}
-        </p>
       </div>
       <div className="flex items-center justify-end gap-3 pt-2">
         <button
@@ -364,9 +360,22 @@ const FeeRequestModal = ({
   </Modal>
 );
 
-const PaymentHistoryModal = ({ student, payments, onClose }) => (
-  <Modal title={`Payment history · ${student?.name || ''}`} onClose={onClose}>
-    <div className="space-y-3 text-sm">
+const PaymentHistoryModal = ({ student, payments, onClose, onDownload }) => (
+  <Modal title={`Payment history · ${student?.name || ''}`} onClose={onClose} size="xl">
+    <div className="space-y-4 text-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-slate-600">
+          Showing all payments made by {student?.parent_email ? `the parent (${student.parent_email})` : 'this student'}.
+        </p>
+        <button
+          type="button"
+          onClick={onDownload}
+          disabled={!payments.length}
+          className="rounded-lg border border-cardinal px-3 py-1.5 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Download Report
+        </button>
+      </div>
       {payments.length === 0 && <p className="text-slate-600">No payments recorded yet.</p>}
       {payments.map((payment) => (
         <div
@@ -399,6 +408,128 @@ const PaymentHistoryModal = ({ student, payments, onClose }) => (
         </div>
       ))}
     </div>
+  </Modal>
+);
+
+const StudentActionsModal = ({
+  student,
+  onClose,
+  onCreateFeeRequest,
+  onViewHistory,
+  onEdit,
+  onDelete,
+}) => (
+  <Modal title={`Manage · ${student?.name || ''}`} onClose={onClose} size="sm">
+    <div className="space-y-3">
+      <p className="text-sm text-slate-600">
+        Choose an action for <span className="font-medium text-slate-900">{student?.name}</span>.
+      </p>
+      <div className="grid gap-2">
+        <button
+          type="button"
+          onClick={onCreateFeeRequest}
+          className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-cardinal/90"
+        >
+          Create Fee Request
+        </button>
+        <button
+          type="button"
+          onClick={onViewHistory}
+          className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+        >
+          View History
+        </button>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+        >
+          Edit Details
+        </button>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="rounded-xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50"
+        >
+          Delete Student
+        </button>
+      </div>
+    </div>
+  </Modal>
+);
+
+const DeleteStudentModal = ({
+  student,
+  step,
+  password,
+  error,
+  submitting,
+  onPasswordChange,
+  onVerifyPassword,
+  onConfirmDelete,
+  onCancel,
+}) => (
+  <Modal title={`Delete · ${student?.name || 'student'}`} onClose={onCancel} size="sm">
+    {step === 'password' ? (
+      <div className="space-y-4 text-sm">
+        <p className="text-slate-600">
+          Enter the super admin password to continue. This action cannot be undone.
+        </p>
+        <label className="flex flex-col gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Super Admin Password</span>
+          <input
+            type="password"
+            value={password}
+            onChange={onPasswordChange}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            placeholder="Enter password"
+          />
+        </label>
+        {error && <p className="text-sm text-rose-600">{error}</p>}
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onVerifyPassword}
+            disabled={submitting || !password.trim()}
+            className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Verify
+          </button>
+        </div>
+      </div>
+    ) : (
+      <div className="space-y-4 text-sm">
+        <p className="text-slate-600">
+          Are you sure you want to permanently delete all data for{' '}
+          <span className="font-semibold text-slate-900">{student?.name}</span>?
+        </p>
+        {error && <p className="text-sm text-rose-600">{error}</p>}
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
+          >
+            No
+          </button>
+          <button
+            type="button"
+            onClick={onConfirmDelete}
+            disabled={submitting}
+            className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Yes, delete
+          </button>
+        </div>
+      </div>
+    )}
   </Modal>
 );
 
@@ -467,7 +598,7 @@ const AccountantDashboard = () => {
   const [editingStudentId, setEditingStudentId] = useState(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formSubmitting, setFormSubmitting] = useState(false);
-  const [activeTab, setActiveTab] = useState('students');
+  const [activeTab, setActiveTab] = useState('overview');
   const [filters, setFilters] = useState({
     class: 'All',
     status: 'All',
@@ -501,9 +632,40 @@ const AccountantDashboard = () => {
   const [feeRequestSubmitting, setFeeRequestSubmitting] = useState(false);
   const [transactionsLog, setTransactionsLog] = useState([]);
   const [transactionFilters, setTransactionFilters] = useState({ month: 'All', mode: 'All' });
+  const [selectedStudentId, setSelectedStudentId] = useState(null);
+  const [studentActionsContext, setStudentActionsContext] = useState({ open: false, student: null });
+  const [deleteContext, setDeleteContext] = useState({
+    open: false,
+    student: null,
+    password: '',
+    step: 'password',
+    submitting: false,
+    error: '',
+  });
+  const [markPaidContext, setMarkPaidContext] = useState({
+    student: null,
+    step: 'mode',
+    mode: null,
+    transactionId: '',
+    submitting: false,
+    error: '',
+  });
   const [toast, setToast] = useState(null);
   const secondaryAuthRef = useRef(null);
   const toastTimerRef = useRef(null);
+
+  const closeStudentActions = () => {
+    setStudentActionsContext({ open: false, student: null });
+    setSelectedStudentId(null);
+  };
+
+  const resetDeleteContext = () => {
+    setDeleteContext({ open: false, student: null, password: '', step: 'password', submitting: false, error: '' });
+  };
+
+  const resetMarkPaidContext = () => {
+    setMarkPaidContext({ student: null, step: 'mode', mode: null, transactionId: '', submitting: false, error: '' });
+  };
 
   const normaliseFeeStructure = (data) => {
     const rawFees = data?.fees || {};
@@ -829,11 +991,6 @@ const AccountantDashboard = () => {
     };
   }, [payments, students]);
 
-  const calculatedFeeAmount = useMemo(
-    () => getFeeAmountFromStructure(formState.class, formState.fee_cycle),
-    [formState.class, formState.fee_cycle, feeStructureDraft],
-  );
-
   const sessionOptions = useMemo(() => {
     if (!feeStructureDraft.session || SESSION_OPTIONS.includes(feeStructureDraft.session)) {
       return SESSION_OPTIONS;
@@ -923,12 +1080,18 @@ const AccountantDashboard = () => {
   };
 
   const handleOpenAddStudent = () => {
+    closeStudentActions();
+    resetDeleteContext();
+    resetMarkPaidContext();
     setFormState({ ...emptyStudentForm, fee_cycle: 'Monthly' });
     setEditingStudentId(null);
     setIsFormOpen(true);
   };
 
   const handleEditStudent = (student) => {
+    closeStudentActions();
+    resetDeleteContext();
+    resetMarkPaidContext();
     setFormState({
       studentId: student.studentId || '',
       name: student.name || '',
@@ -963,6 +1126,8 @@ const AccountantDashboard = () => {
   });
 
   const handleOpenFeeRequest = (student) => {
+    closeStudentActions();
+    resetMarkPaidContext();
     setFeeRequestContext({ open: true, student });
     setFeeRequestForm(buildFeeRequestForm(student));
   };
@@ -1163,6 +1328,7 @@ const AccountantDashboard = () => {
   const handleExportTransactions = () => {
     const header = [
       'Date',
+      'Time',
       'Student Name',
       'Class',
       'Amount',
@@ -1172,11 +1338,17 @@ const AccountantDashboard = () => {
       'Status',
     ];
     const rows = filteredTransactions.map((entry) => {
-      const dateValue = entry.date?.toDate
-        ? entry.date.toDate().toLocaleString()
-        : entry.date || '';
+      const rawDate = entry.date?.toDate
+        ? entry.date.toDate()
+        : entry.date
+        ? new Date(entry.date)
+        : null;
+      const hasValidDate = rawDate && Number.isFinite(rawDate.getTime());
+      const dateValue = hasValidDate ? rawDate.toLocaleDateString('en-IN') : '';
+      const timeValue = hasValidDate ? rawDate.toLocaleTimeString('en-IN') : '';
       return [
         dateValue,
+        timeValue,
         entry.student_name || '',
         entry.class || '',
         Number(entry.amount || 0).toFixed(2),
@@ -1248,6 +1420,8 @@ const AccountantDashboard = () => {
   };
 
   const handleSendReminder = async (student, { silent = false } = {}) => {
+    resetMarkPaidContext();
+    closeStudentActions();
     try {
       const parentUid = student.parent_uid || (await ensureParentAccount(student.parent_email));
       const reminderMessage = settingsState.reminderTemplate.replace(
@@ -1298,6 +1472,8 @@ const AccountantDashboard = () => {
   };
 
   const openHistory = async (student) => {
+    closeStudentActions();
+    resetMarkPaidContext();
     const historyQuery = query(
       collection(db, 'payments'),
       where('studentId', '==', student.studentId || student.id),
@@ -1306,6 +1482,73 @@ const AccountantDashboard = () => {
     const historySnapshot = await getDocs(historyQuery);
     const entries = historySnapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
     setHistoryContext({ open: true, student, entries });
+  };
+
+  const handleDownloadHistoryReport = async (student, entries) => {
+    if (!student) return;
+    try {
+      const { jsPDF } = await import('jspdf');
+      const doc = new jsPDF();
+      const title = `Fee Report · ${student.name || student.studentId || 'Student'}`;
+      const studentId = student.studentId || student.id;
+      doc.setFontSize(16);
+      doc.text(title, 14, 20);
+      doc.setFontSize(11);
+      doc.text(`Student ID: ${studentId}`, 14, 30);
+      doc.text(`Class: ${student.class || '-'}`, 14, 36);
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 42);
+      let y = 52;
+      if (!entries.length) {
+        doc.text('No payments recorded yet.', 14, y);
+      } else {
+        entries.forEach((payment, index) => {
+          if (y > 270) {
+            doc.addPage();
+            y = 20;
+          }
+          doc.setFontSize(12);
+          doc.text(`Payment ${index + 1}`, 14, y);
+          y += 6;
+          doc.setFontSize(11);
+          const amountLine = `Amount: ₹${Number(payment.amount || 0).toLocaleString('en-IN')}`;
+          const modeLine = `Mode: ${payment.mode || 'Online'}`;
+          const dateValue = payment.date?.toDate
+            ? payment.date.toDate().toLocaleString()
+            : payment.date
+            ? new Date(payment.date).toLocaleString()
+            : '—';
+          doc.text(amountLine, 14, y);
+          y += 6;
+          doc.text(modeLine, 14, y);
+          y += 6;
+          doc.text(`Date: ${dateValue}`, 14, y);
+          y += 6;
+          if (payment.transaction_id) {
+            doc.text(`Transaction ID: ${payment.transaction_id}`, 14, y);
+            y += 6;
+          }
+          if (payment.breakdown && Array.isArray(payment.breakdown) && payment.breakdown.length > 0) {
+            doc.text('Breakdown:', 14, y);
+            y += 6;
+            payment.breakdown.forEach((item) => {
+              if (y > 270) {
+                doc.addPage();
+                y = 20;
+              }
+              doc.text(`• ${item.label || 'Fee'} — ₹${Number(item.amount || 0).toLocaleString('en-IN')}`, 18, y);
+              y += 6;
+            });
+          }
+          y += 4;
+        });
+      }
+      const fileSafeId = `${studentId}`.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+      doc.save(`fee-report-${fileSafeId}.pdf`);
+      triggerToast('Report downloaded successfully.', 'success');
+    } catch (error) {
+      console.error('Error generating history PDF', error);
+      triggerToast('Unable to download report. Please try again.', 'error');
+    }
   };
 
   const handleFeeRequestSubmit = async (event) => {
@@ -1410,59 +1653,94 @@ const AccountantDashboard = () => {
     }
   };
 
-  const handleDeleteStudent = async (student) => {
+  const deleteStudentRecord = async (student) => {
     if (!student) return;
-    const confirmDelete = window.confirm(`Delete ${student.name || 'this student'}?`);
-    if (!confirmDelete) return;
-    try {
-      await deleteDoc(doc(db, 'students', student.id));
-      if (student.parent_uid) {
-        try {
-          await updateDoc(doc(db, 'users', student.parent_uid), {
-            children: arrayRemove(student.id),
-          });
-        } catch (error) {
-          console.warn('Unable to update parent record', error);
-        }
+    await deleteDoc(doc(db, 'students', student.id));
+    if (student.parent_uid) {
+      try {
+        await updateDoc(doc(db, 'users', student.parent_uid), {
+          children: arrayRemove(student.id),
+        });
+      } catch (error) {
+        console.warn('Unable to update parent record', error);
       }
+    }
+  };
+
+  const requestDeleteStudent = (student) => {
+    if (!student) return;
+    closeStudentActions();
+    resetMarkPaidContext();
+    setDeleteContext({
+      open: true,
+      student,
+      password: '',
+      step: 'password',
+      submitting: false,
+      error: '',
+    });
+  };
+
+  const handleDeletePasswordChange = (event) => {
+    const { value } = event.target;
+    setDeleteContext((prev) => ({ ...prev, password: value, error: '' }));
+  };
+
+  const verifyDeletePassword = () => {
+    if (deleteContext.password.trim() !== SUPER_ADMIN_PASSWORD) {
+      setDeleteContext((prev) => ({ ...prev, error: 'Incorrect password. Please try again.' }));
+      return;
+    }
+    setDeleteContext((prev) => ({ ...prev, step: 'confirm', error: '' }));
+  };
+
+  const cancelDeleteStudent = () => {
+    resetDeleteContext();
+  };
+
+  const confirmDeleteStudent = async () => {
+    const target = deleteContext.student;
+    if (!target) return;
+    setDeleteContext((prev) => ({ ...prev, submitting: true, error: '' }));
+    try {
+      await deleteStudentRecord(target);
       triggerToast('Student removed successfully.', 'success');
+      resetDeleteContext();
+      if (selectedStudentId === target.id) {
+        setSelectedStudentId(null);
+      }
     } catch (error) {
       console.error('Error deleting student', error);
+      setDeleteContext((prev) => ({ ...prev, submitting: false, error: 'Unable to delete student. Please try again.' }));
       triggerToast('Unable to delete student. Please try again.', 'error');
     }
   };
 
-  const handleMarkPaid = async (student) => {
+  const beginMarkPaidFlow = (student) => {
+    if (!student) return;
+    if ((student.status || '').toLowerCase() === 'paid') {
+      triggerToast('Student is already marked as paid.', 'info');
+      return;
+    }
+    closeStudentActions();
+    setMarkPaidContext((prev) => {
+      if (prev.student?.id === student.id) {
+        return { student: null, step: 'mode', mode: null, transactionId: '', submitting: false, error: '' };
+      }
+      return { student, step: 'mode', mode: null, transactionId: '', submitting: false, error: '' };
+    });
+  };
+
+  const completeMarkPaid = async (student, mode, transactionId = '') => {
+    if (!student) return;
+    const normalizedMode = mode === 'Online' ? 'Online' : 'Cash';
     const amountToClear = Number(student.balance ?? student.fee_amount ?? 0);
     if (amountToClear <= 0) {
       triggerToast('No outstanding balance for this student.', 'error');
+      resetMarkPaidContext();
       return;
     }
-    const modeAnswer = window
-      .prompt('Has the child paid the fees by cash or online? (Type "cash" or "online")')
-      ?.trim()
-      .toLowerCase();
-    if (!modeAnswer) {
-      triggerToast('Payment update cancelled.', 'info');
-      return;
-    }
-    if (modeAnswer !== 'cash' && modeAnswer !== 'online') {
-      triggerToast('Please enter "cash" or "online" to continue.', 'error');
-      return;
-    }
-    let transactionId = '';
-    if (modeAnswer === 'online') {
-      transactionId = window.prompt('Please enter the transaction ID.')?.trim() || '';
-      if (!transactionId) {
-        triggerToast('Transaction ID is required for online payments.', 'error');
-        return;
-      }
-    }
-    const confirmProceed = window.confirm('Are you sure?');
-    if (!confirmProceed) {
-      triggerToast('Payment update cancelled.', 'info');
-      return;
-    }
+    setMarkPaidContext((prev) => ({ ...prev, submitting: true, error: '' }));
     try {
       const studentRef = doc(db, 'students', student.id);
       await updateDoc(studentRef, {
@@ -1477,23 +1755,25 @@ const AccountantDashboard = () => {
         parent_uid: student.parent_uid || '',
         parent_email: student.parent_email || '',
         amount: amountToClear,
-        mode: modeAnswer === 'online' ? 'Online' : 'Cash',
+        mode: normalizedMode,
         date: serverTimestamp(),
         term: settingsState.currentTerm || '',
         fee_type: 'Manual Adjustment',
         status: 'Success',
-        transaction_id: transactionId,
+        transaction_id: normalizedMode === 'Online' ? transactionId : '',
       });
       await logTransactionEntry({
         student,
         amount: amountToClear,
-        mode: modeAnswer === 'online' ? 'Online' : 'Cash',
-        transactionId,
+        mode: normalizedMode,
+        transactionId: normalizedMode === 'Online' ? transactionId : '',
         status: 'Success',
       });
       triggerToast('Payment recorded successfully.', 'success');
+      resetMarkPaidContext();
     } catch (error) {
       console.error('Error marking paid', error);
+      setMarkPaidContext((prev) => ({ ...prev, submitting: false, error: 'Unable to update record. Please try again.' }));
       triggerToast('Unable to update record.', 'error');
     }
   };
@@ -1621,11 +1901,11 @@ const AccountantDashboard = () => {
       <main className="mx-auto max-w-7xl px-6 py-8">
         <nav className="flex flex-wrap gap-3">
           {[
-            { id: 'students', label: 'Students' },
             { id: 'overview', label: 'Overview' },
+            { id: 'students', label: 'Students' },
+            { id: 'transactions', label: 'Transaction Log' },
+            { id: 'reminders', label: 'Reminders and Notification' },
             { id: 'fee-settings', label: 'Fee Settings' },
-            { id: 'transactions', label: 'Transactions Log' },
-            { id: 'reminders', label: 'Reminders & Notifications' },
             { id: 'settings', label: 'Automation Settings' },
           ].map((tab) => (
             <button
@@ -1821,102 +2101,264 @@ const AccountantDashboard = () => {
                 </div>
               </div>
 
-              <div className="mt-6 overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead>
-                    <tr className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                      <th className="px-4 py-3">Student ID</th>
-                      <th className="px-4 py-3">Name</th>
-                      <th className="px-4 py-3">Class</th>
-                      <th className="px-4 py-3">Fee Amount</th>
-                      <th className="px-4 py-3">Paid</th>
-                      <th className="px-4 py-3">Balance</th>
-                      <th className="px-4 py-3">Due Date</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {filteredStudents.map((student) => {
-                      const balance = Number(student.balance ?? student.fee_amount ?? 0);
-                      const total = Number(student.fee_amount ?? 0);
-                      const paid = Math.max(total - balance, 0);
-                      return (
-                        <tr key={student.id} className="transition hover:bg-slate-50/80">
-                          <td className="px-4 py-3 font-medium text-slate-700">{student.studentId || student.id}</td>
-                          <td className="px-4 py-3 text-slate-700">{student.name}</td>
-                          <td className="px-4 py-3 text-slate-700">{student.class}</td>
-                          <td className="px-4 py-3 text-slate-700">₹{total.toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-3 text-slate-700">₹{paid.toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-3 text-slate-700">₹{balance.toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-3 text-slate-500">{student.due_date || '-'}</td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                                statusBadgeClasses[student.status] || 'bg-slate-100 text-slate-600'
-                              }`}
-                            >
-                              {student.status || 'Pending'}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex flex-wrap justify-end gap-2 text-xs font-medium">
-                              <button
-                                type="button"
-                                onClick={() => handleOpenFeeRequest(student)}
-                                className="rounded-lg bg-cardinal px-3 py-1.5 text-white shadow-sm transition hover:bg-cardinal/90"
-                              >
-                                Create Fee Request
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openHistory(student)}
-                                className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-600 transition hover:bg-slate-100"
-                              >
-                                View History
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleEditStudent(student)}
-                                className="rounded-lg border border-slate-200 px-3 py-1.5 text-slate-600 transition hover:bg-slate-100"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteStudent(student)}
-                                className="rounded-lg border border-rose-200 px-3 py-1.5 text-rose-600 transition hover:bg-rose-50"
-                              >
-                                Delete
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleSendReminder(student)}
-                                className="rounded-lg border border-cardinal px-3 py-1.5 text-cardinal transition hover:bg-cardinal/10"
-                              >
-                                Send Reminder
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleMarkPaid(student)}
-                                className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-emerald-700 transition hover:bg-emerald-100"
-                              >
-                                Mark as Paid
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                    {filteredStudents.length === 0 && (
-                      <tr>
-                        <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-500">
-                          {loadingStudents ? 'Loading student records…' : 'No students match the current filters.'}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+              <div className="mt-6">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {filteredStudents.map((student) => {
+                    const balance = Number(student.balance ?? student.fee_amount ?? 0);
+                    const total = Number(student.fee_amount ?? 0);
+                    const paid = Math.max(total - balance, 0);
+                    const isSelected = selectedStudentId === student.id;
+                    return (
+                      <div
+                        key={student.id}
+                        className={`relative rounded-3xl border ${
+                          isSelected ? 'border-cardinal ring-2 ring-cardinal/20' : 'border-slate-200'
+                        } bg-white p-5 shadow-sm transition hover:shadow-md`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-medium text-slate-500">{student.studentId || student.id}</p>
+                            <h3 className="mt-1 text-lg font-semibold text-slate-900">{student.name}</h3>
+                            <p className="text-sm text-slate-500">
+                              Class {student.class || '—'}
+                              {student.section ? ` · Section ${student.section}` : ''}
+                            </p>
+                          </div>
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                              statusBadgeClasses[student.status] || 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {student.status || 'Pending'}
+                          </span>
+                        </div>
+                        <dl className="mt-4 grid grid-cols-3 gap-3 text-xs">
+                          <div className="rounded-2xl bg-slate-50 p-3 text-center">
+                            <dt className="text-slate-500">Fee</dt>
+                            <dd className="mt-1 text-sm font-semibold text-slate-900">
+                              ₹{total.toLocaleString('en-IN')}
+                            </dd>
+                          </div>
+                          <div className="rounded-2xl bg-slate-50 p-3 text-center">
+                            <dt className="text-slate-500">Paid</dt>
+                            <dd className="mt-1 text-sm font-semibold text-emerald-600">
+                              ₹{paid.toLocaleString('en-IN')}
+                            </dd>
+                          </div>
+                          <div className="rounded-2xl bg-slate-50 p-3 text-center">
+                            <dt className="text-slate-500">Balance</dt>
+                            <dd className="mt-1 text-sm font-semibold text-rose-600">
+                              ₹{balance.toLocaleString('en-IN')}
+                            </dd>
+                          </div>
+                        </dl>
+                        <div className="mt-4 flex items-center justify-between text-xs text-slate-500">
+                          <span>Due: {student.due_date || 'Not set'}</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              resetMarkPaidContext();
+                              setSelectedStudentId(student.id);
+                              setStudentActionsContext({ open: true, student });
+                            }}
+                            className="rounded-full border border-cardinal px-3 py-1 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
+                          >
+                            Manage
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {filteredStudents.length === 0 && (
+                  <div className="mt-6 rounded-3xl border border-dashed border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
+                    {loadingStudents ? 'Loading student records…' : 'No students match the current filters.'}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-col gap-2">
+                <h2 className="text-lg font-semibold text-slate-900">Fee Report</h2>
+                <p className="text-sm text-slate-500">
+                  Track pending, paid, and overdue payments. Update records or send reminders instantly.
+                </p>
+              </div>
+              <div className="mt-6">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                  {filteredStudents.map((student) => {
+                    const balance = Number(student.balance ?? student.fee_amount ?? 0);
+                    const total = Number(student.fee_amount ?? 0);
+                    const paid = Math.max(total - balance, 0);
+                    const isMarking = markPaidContext.student?.id === student.id;
+                    const isPaid = (student.status || '').toLowerCase() === 'paid';
+                    return (
+                      <div
+                        key={`${student.id}-fee-report`}
+                        className={`rounded-3xl border ${
+                          isMarking ? 'border-cardinal ring-2 ring-cardinal/20' : 'border-slate-200'
+                        } bg-white p-5 shadow-sm transition hover:shadow-md`}
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <h3 className="text-lg font-semibold text-slate-900">{student.name}</h3>
+                            <p className="mt-1 text-sm text-slate-500">
+                              {student.studentId || student.id} · Class {student.class || '—'}
+                            </p>
+                          </div>
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                              statusBadgeClasses[student.status] || 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {student.status || 'Pending'}
+                          </span>
+                        </div>
+                        <div className="mt-4 grid grid-cols-3 gap-3 text-xs">
+                          <div className="rounded-2xl bg-slate-50 p-3 text-center">
+                            <dt className="text-slate-500">Fee</dt>
+                            <dd className="mt-1 text-sm font-semibold text-slate-900">
+                              ₹{total.toLocaleString('en-IN')}
+                            </dd>
+                          </div>
+                          <div className="rounded-2xl bg-slate-50 p-3 text-center">
+                            <dt className="text-slate-500">Paid</dt>
+                            <dd className="mt-1 text-sm font-semibold text-emerald-600">
+                              ₹{paid.toLocaleString('en-IN')}
+                            </dd>
+                          </div>
+                          <div className="rounded-2xl bg-slate-50 p-3 text-center">
+                            <dt className="text-slate-500">Balance</dt>
+                            <dd className="mt-1 text-sm font-semibold text-rose-600">
+                              ₹{balance.toLocaleString('en-IN')}
+                            </dd>
+                          </div>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
+                          <button
+                            type="button"
+                            onClick={() => openHistory(student)}
+                            className="rounded-full border border-slate-200 px-3 py-1.5 text-slate-700 transition hover:bg-slate-100"
+                          >
+                            View History
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => beginMarkPaidFlow(student)}
+                            disabled={isPaid || markPaidContext.submitting}
+                            className={`rounded-full border px-3 py-1.5 transition ${
+                              isPaid
+                                ? 'border-slate-200 text-slate-400'
+                                : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                            } disabled:cursor-not-allowed disabled:opacity-60`}
+                          >
+                            Mark as Paid
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSendReminder(student)}
+                            disabled={markPaidContext.submitting}
+                            className="rounded-full border border-cardinal px-3 py-1.5 text-cardinal transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Send Reminder
+                          </button>
+                        </div>
+                        {isMarking && (
+                          <div className="mt-4 space-y-3 rounded-2xl border border-cardinal bg-cardinal/5 p-4 text-sm text-slate-700">
+                            {markPaidContext.step === 'mode' ? (
+                              <>
+                                <p className="font-semibold text-slate-900">What was the mode of payment?</p>
+                                <div className="flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={() => completeMarkPaid(student, 'Cash')}
+                                    disabled={markPaidContext.submitting}
+                                    className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Cash
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setMarkPaidContext((prev) => ({
+                                        ...prev,
+                                        step: 'transaction',
+                                        mode: 'Online',
+                                        transactionId: '',
+                                        error: '',
+                                      }))
+                                    }
+                                    disabled={markPaidContext.submitting}
+                                    className="rounded-lg bg-sky-600 px-4 py-2 text-xs font-semibold text-white shadow transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Online
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={resetMarkPaidContext}
+                                    disabled={markPaidContext.submitting}
+                                    className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </>
+                            ) : (
+                              <>
+                                <p className="font-semibold text-slate-900">Enter the online transaction ID.</p>
+                                <input
+                                  value={markPaidContext.transactionId}
+                                  onChange={(event) =>
+                                    setMarkPaidContext((prev) => ({
+                                      ...prev,
+                                      transactionId: event.target.value,
+                                      error: '',
+                                    }))
+                                  }
+                                  placeholder="Transaction ID"
+                                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                                />
+                                {markPaidContext.error && <p className="text-sm text-rose-600">{markPaidContext.error}</p>}
+                                <div className="flex justify-end gap-2">
+                                  <button
+                                    type="button"
+                                    onClick={resetMarkPaidContext}
+                                    disabled={markPaidContext.submitting}
+                                    className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!markPaidContext.transactionId.trim()) {
+                                        setMarkPaidContext((prev) => ({ ...prev, error: 'Transaction ID is required.' }));
+                                        return;
+                                      }
+                                      completeMarkPaid(student, 'Online', markPaidContext.transactionId.trim());
+                                    }}
+                                    disabled={markPaidContext.submitting}
+                                    className="rounded-lg bg-cardinal px-4 py-2 text-xs font-semibold text-white shadow transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    Confirm Payment
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                            {markPaidContext.submitting && (
+                              <p className="text-xs text-slate-500">Recording payment…</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {filteredStudents.length === 0 && (
+                  <div className="mt-6 rounded-3xl border border-dashed border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
+                    {loadingStudents ? 'Loading fee report…' : 'No students match the current filters.'}
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -2062,6 +2504,7 @@ const AccountantDashboard = () => {
                   <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-4 py-3 text-left">Date</th>
+                      <th className="px-4 py-3 text-left">Time</th>
                       <th className="px-4 py-3 text-left">Student</th>
                       <th className="px-4 py-3 text-left">Class</th>
                       <th className="px-4 py-3 text-left">Amount</th>
@@ -2073,12 +2516,22 @@ const AccountantDashboard = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filteredTransactions.map((entry) => {
-                      const dateValue = entry.date?.toDate
-                        ? entry.date.toDate().toLocaleString()
-                        : entry.date || '-';
+                      const rawDate = entry.date?.toDate
+                        ? entry.date.toDate()
+                        : entry.date
+                        ? new Date(entry.date)
+                        : null;
+                      const hasValidDate = rawDate && Number.isFinite(rawDate.getTime());
+                      const dateDisplay = hasValidDate
+                        ? rawDate.toLocaleDateString('en-IN')
+                        : '—';
+                      const timeDisplay = hasValidDate
+                        ? rawDate.toLocaleTimeString('en-IN')
+                        : '—';
                       return (
                         <tr key={entry.id}>
-                          <td className="px-4 py-3 text-slate-600">{dateValue}</td>
+                          <td className="px-4 py-3 text-slate-600">{dateDisplay}</td>
+                          <td className="px-4 py-3 text-slate-600">{timeDisplay}</td>
                           <td className="px-4 py-3 text-slate-700">{entry.student_name}</td>
                           <td className="px-4 py-3 text-slate-700">{entry.class}</td>
                           <td className="px-4 py-3 text-slate-900">₹{Number(entry.amount || 0).toLocaleString('en-IN')}</td>
@@ -2091,7 +2544,7 @@ const AccountantDashboard = () => {
                     })}
                     {filteredTransactions.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
+                        <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-500">
                           No transactions recorded for the selected filters.
                         </td>
                       </tr>
@@ -2107,7 +2560,7 @@ const AccountantDashboard = () => {
           <section className="mt-8 space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-semibold text-slate-900">Reminders & Notifications</h2>
+                <h2 className="text-lg font-semibold text-slate-900">Reminders and Notification</h2>
                 <p className="text-sm text-slate-500">
                   Track nudges sent to parents and trigger bulk reminders for pending dues.
                 </p>
@@ -2179,8 +2632,37 @@ const AccountantDashboard = () => {
           onSubmit={handleStudentSubmit}
           onClose={() => setIsFormOpen(false)}
           isSubmitting={formSubmitting}
-          calculatedFee={calculatedFeeAmount}
-          defaultDueDate={feeStructureDraft.defaultDueDate}
+        />
+      )}
+
+      {studentActionsContext.open && (
+        <StudentActionsModal
+          student={studentActionsContext.student}
+          onClose={closeStudentActions}
+          onCreateFeeRequest={() =>
+            studentActionsContext.student && handleOpenFeeRequest(studentActionsContext.student)
+          }
+          onViewHistory={() =>
+            studentActionsContext.student && openHistory(studentActionsContext.student)
+          }
+          onEdit={() => studentActionsContext.student && handleEditStudent(studentActionsContext.student)}
+          onDelete={() =>
+            studentActionsContext.student && requestDeleteStudent(studentActionsContext.student)
+          }
+        />
+      )}
+
+      {deleteContext.open && (
+        <DeleteStudentModal
+          student={deleteContext.student}
+          step={deleteContext.step}
+          password={deleteContext.password}
+          error={deleteContext.error}
+          submitting={deleteContext.submitting}
+          onPasswordChange={handleDeletePasswordChange}
+          onVerifyPassword={verifyDeletePassword}
+          onConfirmDelete={confirmDeleteStudent}
+          onCancel={cancelDeleteStudent}
         />
       )}
 
@@ -2189,6 +2671,9 @@ const AccountantDashboard = () => {
           student={historyContext.student}
           payments={historyContext.entries}
           onClose={() => setHistoryContext({ open: false, student: null, entries: [] })}
+          onDownload={() =>
+            handleDownloadHistoryReport(historyContext.student, historyContext.entries)
+          }
         />
       )}
 
