@@ -1453,6 +1453,7 @@ const AccountantDashboard = () => {
       return {
         id: request.id,
         studentId: studentMatch?.studentId || request.studentId || request.student_doc_id || '',
+        studentDocId: request.student_doc_id || studentMatch?.id || '',
         studentName: studentMatch?.name || request.student_name || '',
         class: studentMatch?.class || request.class || '',
         section: studentMatch?.section || request.section || '',
@@ -1475,24 +1476,6 @@ const AccountantDashboard = () => {
       };
     });
   }, [feeRequests, students, reminders]);
-
-  const studentStatusIndex = useMemo(() => {
-    const index = new Map();
-    const safeEntries = Array.isArray(feeRequestReportEntries) ? feeRequestReportEntries : [];
-    safeEntries.forEach((entry) => {
-      const status = entry.statusLabel || 'Pending';
-      const keys = [entry.studentId, entry.studentName]
-        .map((value) => (value ? `${value}`.toLowerCase() : ''))
-        .filter(Boolean);
-      keys.forEach((key) => {
-        if (!index.has(key)) {
-          index.set(key, new Set());
-        }
-        index.get(key).add(status);
-      });
-    });
-    return index;
-  }, [feeRequestReportEntries]);
 
   const filteredReportEntries = useMemo(() => {
     const safeEntries = Array.isArray(feeRequestReportEntries) ? feeRequestReportEntries : [];
@@ -2572,41 +2555,65 @@ const AccountantDashboard = () => {
 
   const handleCheckDues = (student) => {
     if (!student) return;
-    const keys = [student.studentId, student.id, student.name]
-      .map((value) => (value ? `${value}`.toLowerCase() : ''))
-      .filter(Boolean);
-    const statuses = new Set();
-    keys.forEach((key) => {
-      const statusSet = studentStatusIndex.get(key);
-      if (statusSet) {
-        statusSet.forEach((status) => statuses.add(status));
-      }
+    const safeEntries = Array.isArray(feeRequestReportEntries) ? feeRequestReportEntries : [];
+    if (!safeEntries.length) {
+      triggerToast('No fee records available yet.', 'info');
+      return;
+    }
+
+    const normalizeKey = (value) => (value ? `${value}`.trim().toLowerCase() : '');
+    const studentKeys = new Set(
+      [student.studentId, student.id, student.name, student.student_doc_id]
+        .map(normalizeKey)
+        .filter(Boolean),
+    );
+
+    const matchingEntries = safeEntries.filter((entry) => {
+      const entryKeys = [entry.studentId, entry.studentDocId, entry.studentName]
+        .map(normalizeKey)
+        .filter(Boolean);
+      return entryKeys.some((key) => studentKeys.has(key));
     });
-    if (statuses.size === 0) {
+
+    if (!matchingEntries.length) {
       triggerToast(`No fee records found for ${student.name || 'this student'}.`, 'info');
       return;
     }
-    const statusList = Array.from(statuses);
-    let tone = 'success';
-    if (statusList.some((status) => status.toLowerCase() === 'overdue')) {
-      tone = 'error';
-    } else if (statusList.some((status) => status.toLowerCase() === 'pending')) {
-      tone = 'info';
-    }
-    triggerToast(`${student.name}: ${statusList.join(', ')}`, tone);
-  };
 
-  const handleSignOut = useCallback(async () => {
-    try {
-      await signOut(auth);
-    } finally {
-      if (typeof window !== 'undefined') {
-        window.localStorage.removeItem('elnode-remember-me');
-        window.sessionStorage.removeItem('elnode-remember-me');
+    let tone = 'success';
+    const statusSet = new Set();
+    let outstandingAmount = 0;
+    matchingEntries.forEach((entry) => {
+      const status = entry.statusLabel || 'Pending';
+      statusSet.add(status);
+      const normalizedStatus = status.toLowerCase();
+      if (normalizedStatus === 'overdue') {
+        tone = 'error';
+      } else if (normalizedStatus === 'pending' && tone !== 'error') {
+        tone = 'info';
       }
-      router.replace('/');
+      const balance = Number(entry.balance || 0);
+      if (balance > 0) {
+        outstandingAmount += balance;
+      }
+    });
+
+    const statusList = Array.from(statusSet);
+    const parts = [];
+    if (outstandingAmount > 0) {
+      parts.push(`Outstanding: ₹${outstandingAmount.toLocaleString('en-IN')}`);
     }
-  }, [router]);
+    if (statusList.length > 0) {
+      parts.push(`Statuses: ${statusList.join(', ')}`);
+    }
+
+    if (!parts.length) {
+      triggerToast(`All dues cleared for ${student.name || 'this student'}.`, 'success');
+      return;
+    }
+
+    triggerToast(`${student.name || 'Student'} · ${parts.join(' · ')}`, tone);
+  };
 
   if (!authChecked) {
     return (
@@ -2933,34 +2940,25 @@ const AccountantDashboard = () => {
                             setSelectedStudentId(student.id);
                             setStudentActionsContext({ open: true, student });
                           }}
-                          className="w-full text-left"
+                          className="flex w-full flex-col gap-3 text-left"
                         >
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-medium text-slate-500">{student.studentId || student.id}</p>
-                              <h3 className="mt-1 text-lg font-semibold text-slate-900">{student.name}</h3>
-                              <p className="text-sm text-slate-500">
-                                Class {student.class || '—'}
-                                {student.section ? ` · Section ${student.section}` : ''}
-                              </p>
-                            </div>
-                            <span
-                              className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                                statusBadgeClasses[student.status] || 'bg-slate-100 text-slate-600'
-                              }`}
-                            >
-                              {student.status || 'Pending'}
-                            </span>
+                          <div>
+                            <p className="text-sm font-medium text-slate-500">{student.studentId || student.id}</p>
+                            <h3 className="mt-1 text-lg font-semibold text-slate-900">{student.name}</h3>
+                            <p className="text-sm text-slate-500">
+                              Class {student.class || '—'}
+                              {student.section ? ` · Section ${student.section}` : ''}
+                            </p>
                           </div>
-                          <div className="mt-4 space-y-2 text-xs text-slate-500">
+                          <div className="space-y-1 text-xs text-slate-500">
                             {student.parent_email && (
                               <p>
-                                Parent email: <span className="font-medium text-slate-700">{student.parent_email}</span>
+                                Email: <span className="font-medium text-slate-700">{student.parent_email}</span>
                               </p>
                             )}
                             {student.parent_phone && (
                               <p>
-                                Parent phone: <span className="font-medium text-slate-700">{student.parent_phone}</span>
+                                Phone: <span className="font-medium text-slate-700">{student.parent_phone}</span>
                               </p>
                             )}
                           </div>
@@ -2974,7 +2972,7 @@ const AccountantDashboard = () => {
                             }}
                             className="rounded-full border border-cardinal px-4 py-1.5 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
                           >
-                            Check dues
+                            Fee status
                           </button>
                         </div>
                       </div>
