@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Head from 'next/head';
 import Image from 'next/image';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 import {
   createUserWithEmailAndPassword,
@@ -742,6 +743,18 @@ const AccountantDashboard = () => {
   const [toast, setToast] = useState(null);
   const secondaryAuthRef = useRef(null);
   const toastTimerRef = useRef(null);
+
+  const handleSignOut = useCallback(async () => {
+    try {
+      await signOut(auth);
+    } finally {
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem('elnode-remember-me');
+        window.sessionStorage.removeItem('elnode-remember-me');
+      }
+      router.replace('/');
+    }
+  }, [router]); // fix: define before effects to avoid init issues
 
   const closeStudentActions = () => {
     setStudentActionsContext({ open: false, student: null });
@@ -3696,4 +3709,4 @@ const AccountantDashboard = () => {
   );
 };
 
-export default AccountantDashboard;
+export default dynamic(() => Promise.resolve(AccountantDashboard), { ssr: false }); // ssr: false to prevent prerender

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Head from 'next/head';
 import Image from 'next/image';
+import dynamic from 'next/dynamic';
 import { useRouter } from 'next/router';
 import {
   onAuthStateChanged,
@@ -145,6 +146,18 @@ const ParentDashboard = () => {
   const [profileSaving, setProfileSaving] = useState(false);
   const [paymentContext, setPaymentContext] = useState({ open: false, student: null, selections: [] });
   const [paymentProcessing, setPaymentProcessing] = useState(false);
+
+  const handleSignOut = useCallback(async () => {
+    try {
+      await signOut(auth);
+    } finally {
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem('elnode-remember-me');
+        window.sessionStorage.removeItem('elnode-remember-me');
+      }
+      router.replace('/');
+    }
+  }, [router]); // fix: define before effects to avoid init issues
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -488,18 +501,6 @@ const ParentDashboard = () => {
       .filter((item) => item.selected)
       .reduce((sum, item) => sum + Number(item.amount || 0), 0);
   }, [paymentContext]);
-
-  const handleSignOut = useCallback(async () => {
-    try {
-      await signOut(auth);
-    } finally {
-      if (typeof window !== 'undefined') {
-        window.localStorage.removeItem('elnode-remember-me');
-        window.sessionStorage.removeItem('elnode-remember-me');
-      }
-      router.replace('/');
-    }
-  }, [router]);
 
   const handleOpenPayment = (student) => {
     const breakdown = Array.isArray(student.fee_breakdown) && student.fee_breakdown.length > 0
@@ -1232,4 +1233,4 @@ const ParentDashboard = () => {
   );
 };
 
-export default ParentDashboard;
+export default dynamic(() => Promise.resolve(ParentDashboard), { ssr: false }); // ssr: false to prevent prerender
