@@ -591,6 +591,7 @@ const AccountantDashboard = () => {
   const [students, setStudents] = useState([]);
   const [payments, setPayments] = useState([]);
   const [reminders, setReminders] = useState([]);
+  const [feeRequests, setFeeRequests] = useState([]);
   const [loadingStudents, setLoadingStudents] = useState(true);
   const [loadingPayments, setLoadingPayments] = useState(true);
   const [loadingReminders, setLoadingReminders] = useState(true);
@@ -773,7 +774,9 @@ const AccountantDashboard = () => {
         amount: Number(amount || 0),
         mode: mode || 'Online',
         transaction_id: transactionId || '',
-        status: status || 'Success',
+        status: status || 'Paid',
+        parent_email: student.parent_email || '',
+        parent_uid: student.parent_uid || '',
         month_key: meta.key,
         month_label: meta.label,
         date: serverTimestamp(),
@@ -856,6 +859,19 @@ const AccountantDashboard = () => {
       () => setLoadingReminders(false),
     );
 
+    const feeRequestsQuery = query(collection(db, 'fee_requests'), orderBy('created_at', 'desc'));
+    const unsubscribeFeeRequests = onSnapshot(
+      feeRequestsQuery,
+      (snapshot) => {
+        const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        setFeeRequests(data);
+        console.log('[Sync] fee_requests snapshot received', data.length);
+      },
+      (error) => {
+        console.error('[Sync] fee_requests listener error', error);
+      },
+    );
+
     const settingsRef = doc(db, 'settings', 'general');
     const unsubscribeSettings = onSnapshot(settingsRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -888,6 +904,7 @@ const AccountantDashboard = () => {
       unsubscribeStudents();
       unsubscribePayments();
       unsubscribeReminders();
+      unsubscribeFeeRequests();
       unsubscribeSettings();
       unsubscribeFeeStructure();
       unsubscribeTransactions();
@@ -907,38 +924,183 @@ const AccountantDashboard = () => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    today.setHours(0, 0, 0, 0);
+    const upcomingThreshold = new Date(today);
+    upcomingThreshold.setDate(upcomingThreshold.getDate() + 7);
+    upcomingThreshold.setHours(23, 59, 59, 999);
+
+    const ensureDate = (value) => {
+      if (!value) return null;
+      if (value?.toDate) {
+        const parsed = value.toDate();
+        return Number.isFinite(parsed.getTime()) ? parsed : null;
+      }
+      const parsed = new Date(value);
+      return Number.isFinite(parsed.getTime()) ? parsed : null;
+    };
+
+    const parseAmountValue = (value) => {
+      const amount = Number(value || 0);
+      return Number.isFinite(amount) ? amount : 0;
+    };
+
+    const calculateRequestTotal = (request) => {
+      const directTotal = parseAmountValue(request.amount_total ?? request.amount);
+      if (directTotal > 0) return directTotal;
+      const base = parseAmountValue(request.base_amount);
+      const custom = parseAmountValue(request.custom_amount);
+      const extras = parseAmountValue(request.extras_total);
+      if (base + custom + extras > 0) return base + custom + extras;
+      const breakdown = request.breakdown && typeof request.breakdown === 'object' ? request.breakdown : {};
+      return Object.values(breakdown).reduce((sum, item) => sum + parseAmountValue(item?.amount), 0);
+    };
 
     let monthTotal = 0;
     let yearTotal = 0;
 
-    payments.forEach((payment) => {
-      const date = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
-      if (!Number.isFinite(date.getTime())) return;
-      if (date >= startOfYear) {
-        yearTotal += Number(payment.amount || 0);
+    const monthlyMap = new Map();
+    const modeTotals = { Cash: 0, Online: 0, Other: 0 };
+    const paidTransactions = [];
+
+    transactionsLog.forEach((entry) => {
+      const status = (entry.status || '').toLowerCase();
+      if (status !== 'paid' && status !== 'success') return;
+      const amount = parseAmountValue(entry.amount);
+      const entryDate = ensureDate(entry.date) || ensureDate(entry.created_at);
+      if (!entryDate) return;
+      paidTransactions.push({ ...entry, entryDate });
+      if (entryDate >= startOfYear) {
+        yearTotal += amount;
       }
-      if (date >= startOfMonth) {
-        monthTotal += Number(payment.amount || 0);
+      if (entryDate >= startOfMonth) {
+        monthTotal += amount;
+      }
+      const modeRaw = (entry.mode || 'Online').toLowerCase();
+      const modeKey = modeRaw === 'cash' ? 'Cash' : modeRaw === 'online' ? 'Online' : 'Other';
+      modeTotals[modeKey] += amount;
+      const monthKey =
+        entry.month_key || `${entryDate.getFullYear()}-${String(entryDate.getMonth() + 1).padStart(2, '0')}`;
+      const monthLabel = entry.month_label || entryDate.toLocaleString('en-IN', { month: 'short', year: 'numeric' });
+      const existing = monthlyMap.get(monthKey) || { label: monthLabel, amount: 0 };
+      monthlyMap.set(monthKey, { label: existing.label || monthLabel, amount: existing.amount + amount });
+    });
+
+    const transactionDatesByStudent = new Map();
+    paidTransactions.forEach(({ studentId, student_doc_id, entryDate }) => {
+      const key = studentId || student_doc_id;
+      if (!key || !entryDate) return;
+      if (!transactionDatesByStudent.has(key)) {
+        transactionDatesByStudent.set(key, []);
+      }
+      transactionDatesByStudent.get(key).push(entryDate);
+    });
+    transactionDatesByStudent.forEach((dates) => dates.sort((a, b) => a - b));
+
+    const pendingFees = { amount: 0, count: 0 };
+    const overdueFees = { amount: 0, count: 0 };
+    let upcomingDueCount = 0;
+    let storeRevenue = 0;
+    let paidRequests = 0;
+    let pendingRequests = 0;
+    const feeTypeMap = new Map();
+    const delays = [];
+    const activeParentEmails = new Set();
+
+    const reminderMap = new Map();
+    reminders.forEach((reminder) => {
+      const key = reminder.studentId || reminder.student_id || reminder.student_doc_id;
+      if (!key) return;
+      const reminderDate = ensureDate(reminder.created_at) || ensureDate(reminder.sent_at) || ensureDate(reminder.date);
+      const existing = reminderMap.get(key);
+      if (!existing || (reminderDate && existing && existing > reminderDate)) {
+        reminderMap.set(key, reminderDate || null);
+      } else if (!existing) {
+        reminderMap.set(key, reminderDate || null);
       }
     });
 
-    const pendingTotal = students
-      .filter((student) => student.status !== 'Paid')
-      .reduce((sum, student) => sum + Number(student.balance ?? student.fee_amount ?? 0), 0);
+    const todayTime = today.getTime();
 
-    const overdueCount = students.filter((student) => student.status === 'Overdue').length;
+    feeRequests.forEach((request) => {
+      const status = (request.status || '').toLowerCase();
+      const total = calculateRequestTotal(request);
+      const dueDate = ensureDate(request.due_date);
+      const cycleRaw = request.type || request.cycle || request.fee_cycle || 'Other';
+      const cycleKey =
+        cycleRaw === 'Half-Yearly' || cycleRaw === '6 Months'
+          ? '6 Months'
+          : cycleRaw === 'Quarterly'
+          ? 'Quarterly'
+          : cycleRaw === 'Monthly'
+          ? 'Monthly'
+          : cycleRaw || 'Other';
+      feeTypeMap.set(cycleKey, (feeTypeMap.get(cycleKey) || 0) + 1);
 
-    const upcomingCount = students.filter((student) => {
-      if (!student.due_date) return false;
-      const due = new Date(student.due_date);
-      if (!Number.isFinite(due.getTime())) return false;
-      const diff = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-      return diff >= 0 && diff <= 7;
-    }).length;
+      if (request.breakdown?.store) {
+        storeRevenue += parseAmountValue(request.breakdown.store.amount);
+      }
 
-    const paidCount = students.filter((student) => student.status === 'Paid').length;
-    const unpaidCount = students.length - paidCount;
+      if (status === 'paid') {
+        paidRequests += 1;
+      } else {
+        pendingRequests += 1;
+      }
 
+      if (status === 'pending') {
+        pendingFees.amount += total;
+        pendingFees.count += 1;
+      }
+
+      if (status !== 'paid') {
+        if (dueDate && dueDate.getTime() < todayTime) {
+          overdueFees.amount += total;
+          overdueFees.count += 1;
+        } else if (dueDate && dueDate >= today && dueDate <= upcomingThreshold) {
+          upcomingDueCount += 1;
+        }
+      }
+
+      if (status !== 'paid' && request.parent_email) {
+        activeParentEmails.add(request.parent_email);
+      }
+
+      if (status === 'paid' && dueDate) {
+        const paidDate =
+          ensureDate(request.paid_at) ||
+          ensureDate(request.payment_date) ||
+          (() => {
+            const key = request.studentId || request.student_doc_id;
+            const dates = transactionDatesByStudent.get(key) || [];
+            if (!dates.length) return null;
+            const match = dates.find((date) => !dueDate || date >= dueDate);
+            return match || dates[dates.length - 1] || null;
+          })();
+        if (paidDate) {
+          const diffDays = (paidDate.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24);
+          delays.push(diffDays < 0 ? 0 : diffDays);
+        }
+      }
+    });
+
+    const reminderBaseCount = reminderMap.size;
+    let reminderConvertedCount = 0;
+    reminderMap.forEach((reminderDate, studentKey) => {
+      const transactions = transactionDatesByStudent.get(studentKey) || [];
+      if (!transactions.length) return;
+      const hasPaymentAfterReminder = transactions.some((date) => !reminderDate || date >= reminderDate);
+      if (hasPaymentAfterReminder) {
+        reminderConvertedCount += 1;
+      }
+    });
+
+    const monthEntries = Array.from(monthlyMap.entries()).sort((a, b) => (a[0] > b[0] ? 1 : -1));
+    const recentEntries = monthEntries.slice(-6);
+    const monthLabels = recentEntries.map(([, value]) => value.label);
+    const monthValues = recentEntries.map(([, value]) => value.amount);
+
+    const paidStudents = students.filter((student) => (student.status || '').toLowerCase() === 'paid').length;
+    const overdueStudents = students.filter((student) => (student.status || '').toLowerCase() === 'overdue').length;
     const outstandingList = [...students]
       .map((student) => ({
         id: student.id,
@@ -952,44 +1114,47 @@ const AccountantDashboard = () => {
 
     const revenueByCategory = payments.reduce((acc, payment) => {
       const key = payment.fee_type || 'Tuition';
-      acc[key] = (acc[key] || 0) + Number(payment.amount || 0);
+      acc[key] = (acc[key] || 0) + parseAmountValue(payment.amount);
       return acc;
     }, {});
 
-    const monthLabels = [];
-    const monthValues = [];
+    const unpaidStudents = students.length - paidStudents;
+    const averageCollectionDelay = delays.length
+      ? delays.reduce((sum, value) => sum + value, 0) / delays.length
+      : null;
+    const reminderConversionRate =
+      reminderBaseCount > 0 ? (reminderConvertedCount / reminderBaseCount) * 100 : null;
 
-    for (let i = 5; i >= 0; i -= 1) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const label = date.toLocaleString('en-IN', { month: 'short' });
-      const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
-      const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
-      const sum = payments.reduce((total, payment) => {
-        const paymentDate = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
-        if (!Number.isFinite(paymentDate.getTime())) return total;
-        if (paymentDate >= monthStart && paymentDate <= monthEnd) {
-          return total + Number(payment.amount || 0);
-        }
-        return total;
-      }, 0);
-      monthLabels.push(label);
-      monthValues.push(sum);
-    }
+    const feeTypeDistribution = Array.from(feeTypeMap.entries())
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count);
 
     return {
       monthTotal,
       yearTotal,
-      pendingTotal,
-      overdueCount,
-      upcomingCount,
-      paidCount,
-      unpaidCount,
+      pendingTotal: pendingFees.amount,
+      pendingRequestCount: pendingFees.count,
+      overdueFeesAmount: overdueFees.amount,
+      overdueRequestCount: overdueFees.count,
+      upcomingCount: upcomingDueCount,
+      paidCount: paidStudents,
+      unpaidCount: unpaidStudents,
+      overdueCount: overdueStudents,
       outstandingList,
       revenueByCategory,
       monthLabels,
       monthValues,
+      requestStatusCounts: { paid: paidRequests, pending: pendingRequests },
+      paymentModeSplit: modeTotals,
+      feeTypeDistribution,
+      averageCollectionDelay,
+      reminderConversionRate,
+      reminderBaseCount,
+      storeRevenue,
+      totalStudents: students.length,
+      activeParents: activeParentEmails.size,
     };
-  }, [payments, students]);
+  }, [transactionsLog, feeRequests, reminders, students, payments]);
 
   const sessionOptions = useMemo(() => {
     if (!feeStructureDraft.session || SESSION_OPTIONS.includes(feeStructureDraft.session)) {
@@ -1023,6 +1188,11 @@ const AccountantDashboard = () => {
       return matchesMode && key === transactionFilters.month;
     });
   }, [transactionsLog, transactionFilters]);
+
+  const paidRequestCount = monthMetrics.requestStatusCounts?.paid || 0;
+  const pendingRequestCount = monthMetrics.requestStatusCounts?.pending || 0;
+  const paymentModeTotals = monthMetrics.paymentModeSplit || { Cash: 0, Online: 0, Other: 0 };
+  const feeTypeDistribution = monthMetrics.feeTypeDistribution || [];
 
   const feeRequestAmounts = useMemo(() => {
     const student = feeRequestContext.student;
@@ -1762,12 +1932,35 @@ const AccountantDashboard = () => {
         status: 'Success',
         transaction_id: normalizedMode === 'Online' ? transactionId : '',
       });
+      const pendingRequestsQuery = query(
+        collection(db, 'fee_requests'),
+        where('student_doc_id', '==', student.id),
+      );
+      const pendingRequestsSnapshot = await getDocs(pendingRequestsQuery);
+      const requestUpdates = [];
+      pendingRequestsSnapshot.forEach((requestDoc) => {
+        const requestStatus = (requestDoc.data().status || '').toLowerCase();
+        if (requestStatus === 'paid') return;
+        requestUpdates.push(
+          updateDoc(doc(db, 'fee_requests', requestDoc.id), {
+            status: 'Paid',
+            paid_at: serverTimestamp(),
+            payment_mode: normalizedMode,
+            transaction_id: normalizedMode === 'Online' ? transactionId : '',
+            updated_at: serverTimestamp(),
+          }),
+        );
+      });
+      if (requestUpdates.length > 0) {
+        await Promise.all(requestUpdates);
+        console.log('[Sync] Updated fee_requests status to Paid', requestUpdates.length);
+      }
       await logTransactionEntry({
         student,
         amount: amountToClear,
         mode: normalizedMode,
         transactionId: normalizedMode === 'Online' ? transactionId : '',
-        status: 'Success',
+        status: 'Paid',
       });
       triggerToast('Payment recorded successfully.', 'success');
       resetMarkPaidContext();
@@ -1925,7 +2118,7 @@ const AccountantDashboard = () => {
 
         {activeTab === 'overview' && (
           <section className="mt-8 space-y-8">
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="text-sm font-medium text-slate-500">Fees Collected (This Month)</h3>
                 <p className="mt-3 text-2xl font-semibold text-slate-900">
@@ -1936,24 +2129,69 @@ const AccountantDashboard = () => {
                 </p>
               </div>
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-medium text-slate-500">Pending Payments</h3>
+                <h3 className="text-sm font-medium text-slate-500">Pending Fees</h3>
                 <p className="mt-3 text-2xl font-semibold text-amber-600">
                   ₹{monthMetrics.pendingTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                 </p>
-                <p className="mt-2 text-xs text-slate-500">Overdue students: {monthMetrics.overdueCount}</p>
+                <p className="mt-2 text-xs text-slate-500">Pending requests: {monthMetrics.pendingRequestCount}</p>
               </div>
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-medium text-slate-500">Upcoming Due Dates</h3>
+                <h3 className="text-sm font-medium text-slate-500">Overdue Fees</h3>
+                <p className="mt-3 text-2xl font-semibold text-rose-600">
+                  ₹{monthMetrics.overdueFeesAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">Overdue requests: {monthMetrics.overdueRequestCount}</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Upcoming Due Payments</h3>
                 <p className="mt-3 text-2xl font-semibold text-slate-900">{monthMetrics.upcomingCount}</p>
                 <p className="mt-2 text-xs text-slate-500">
-                  Paid / Unpaid: {monthMetrics.paidCount}/{monthMetrics.unpaidCount}
+                  Paid / Unpaid students: {monthMetrics.paidCount}/{monthMetrics.unpaidCount}
                 </p>
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Average Collection Delay</h3>
+                <p className="mt-3 text-2xl font-semibold text-slate-900">
+                  {monthMetrics.averageCollectionDelay != null
+                    ? `${monthMetrics.averageCollectionDelay.toFixed(1)} days`
+                    : '—'}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">Based on {paidRequestCount} paid requests</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Reminder Conversion Rate</h3>
+                <p className="mt-3 text-2xl font-semibold text-slate-900">
+                  {monthMetrics.reminderConversionRate != null
+                    ? `${monthMetrics.reminderConversionRate.toFixed(0)}%`
+                    : 'N/A'}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">Tracked reminders: {monthMetrics.reminderBaseCount}</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Store-Charge Revenue</h3>
+                <p className="mt-3 text-2xl font-semibold text-slate-900">
+                  ₹{monthMetrics.storeRevenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">Across fee request breakdowns</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Total Students Registered</h3>
+                <p className="mt-3 text-2xl font-semibold text-slate-900">{monthMetrics.totalStudents}</p>
+                <p className="mt-2 text-xs text-slate-500">Overdue students: {monthMetrics.overdueCount}</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Active Parents</h3>
+                <p className="mt-3 text-2xl font-semibold text-slate-900">{monthMetrics.activeParents}</p>
+                <p className="mt-2 text-xs text-slate-500">Parents with open requests</p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-base font-semibold text-slate-900">Collections (Last 6 months)</h3>
+                <h3 className="text-base font-semibold text-slate-900">Monthly Collection Trend</h3>
                 <Bar
                   data={{
                     labels: monthMetrics.monthLabels,
@@ -1975,14 +2213,37 @@ const AccountantDashboard = () => {
                 />
               </div>
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-base font-semibold text-slate-900">Students Paid vs Pending</h3>
+                <h3 className="text-base font-semibold text-slate-900">Paid vs Pending Requests</h3>
                 <Pie
                   data={{
-                    labels: ['Paid', 'Unpaid'],
+                    labels: ['Paid', 'Pending'],
                     datasets: [
                       {
-                        data: [monthMetrics.paidCount, monthMetrics.unpaidCount],
+                        data: [paidRequestCount, pendingRequestCount],
                         backgroundColor: ['#047857', '#f59e0b'],
+                      },
+                    ],
+                  }}
+                  options={{
+                    plugins: {
+                      legend: { position: 'bottom' },
+                    },
+                  }}
+                />
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-base font-semibold text-slate-900">Payment Mode Split</h3>
+                <Pie
+                  data={{
+                    labels: ['Online', 'Cash', 'Other'],
+                    datasets: [
+                      {
+                        data: [
+                          paymentModeTotals.Online || 0,
+                          paymentModeTotals.Cash || 0,
+                          paymentModeTotals.Other || 0,
+                        ],
+                        backgroundColor: ['#2563eb', '#047857', '#f97316'],
                       },
                     ],
                   }}
@@ -1995,7 +2256,24 @@ const AccountantDashboard = () => {
               </div>
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid gap-4 xl:grid-cols-3">
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-base font-semibold text-slate-900">Fee Type Distribution</h3>
+                <ul className="mt-4 space-y-3 text-sm">
+                  {feeTypeDistribution.length === 0 && (
+                    <li className="text-slate-500">No fee requests recorded yet.</li>
+                  )}
+                  {feeTypeDistribution.map((entry) => (
+                    <li
+                      key={entry.label}
+                      className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"
+                    >
+                      <span className="font-medium text-slate-700">{entry.label}</span>
+                      <span className="text-sm font-semibold text-slate-900">{entry.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="text-base font-semibold text-slate-900">Outstanding Payments</h3>
                 <ul className="mt-4 space-y-3 text-sm">
