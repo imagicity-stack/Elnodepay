@@ -50,6 +50,90 @@ const REQUEST_CYCLE_OPTIONS = [
   { id: 'Half-Yearly', label: '6 Months' },
 ];
 
+const SCHOOL_NAME = 'Elden Heights School - Silwar Hazaribagh';
+
+const REPORT_DEFAULT_FILTERS = {
+  class: 'All',
+  status: 'All',
+  cycle: 'All',
+  session: 'All',
+  term: '',
+  paymentMode: 'All',
+  reminder: 'All',
+  dueFrom: '',
+  dueTo: '',
+  search: '',
+};
+
+const parseDateValue = (value) => {
+  if (!value) return null;
+  if (value?.toDate) {
+    const parsed = value.toDate();
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+  }
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+};
+
+const parseAmountValue = (value) => {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount : 0;
+};
+
+const resolveRequestCycle = (request = {}) => {
+  const rawCycle =
+    request.type ||
+    request.cycle ||
+    request.fee_cycle ||
+    request.billing_cycle ||
+    request.frequency ||
+    '';
+  const normalised = `${rawCycle}`.toLowerCase();
+  if (normalised.includes('half') || normalised.includes('6')) {
+    return '6 Months';
+  }
+  if (normalised.includes('quarter')) {
+    return 'Quarterly';
+  }
+  if (normalised.includes('month')) {
+    return 'Monthly';
+  }
+  if (normalised.includes('annual') || normalised.includes('year')) {
+    return 'Annual';
+  }
+  return rawCycle || 'Other';
+};
+
+const calculateFeeRequestTotal = (request = {}) => {
+  const directTotal = parseAmountValue(request.amount_total ?? request.amount);
+  if (directTotal > 0) {
+    return directTotal;
+  }
+  const base = parseAmountValue(request.base_amount);
+  const custom = parseAmountValue(request.custom_amount);
+  const extras = parseAmountValue(request.extras_total);
+  if (base + custom + extras > 0) {
+    return base + custom + extras;
+  }
+  const breakdown = request.breakdown && typeof request.breakdown === 'object' ? request.breakdown : {};
+  return Object.values(breakdown).reduce((sum, item) => sum + parseAmountValue(item?.amount), 0);
+};
+
+const normalisePaymentMode = (mode) => {
+  if (!mode) return 'Unspecified';
+  const value = `${mode}`.toLowerCase();
+  if (value === 'cash') {
+    return 'Cash';
+  }
+  if (value === 'online') {
+    return 'Online';
+  }
+  if (value === 'upi' || value === 'upi payment') {
+    return 'Online';
+  }
+  return mode;
+};
+
 const emptyStudentForm = {
   studentId: '',
   name: '',
@@ -591,6 +675,7 @@ const AccountantDashboard = () => {
   const [students, setStudents] = useState([]);
   const [payments, setPayments] = useState([]);
   const [reminders, setReminders] = useState([]);
+  const [feeRequests, setFeeRequests] = useState([]);
   const [loadingStudents, setLoadingStudents] = useState(true);
   const [loadingPayments, setLoadingPayments] = useState(true);
   const [loadingReminders, setLoadingReminders] = useState(true);
@@ -606,6 +691,9 @@ const AccountantDashboard = () => {
     search: '',
     sort: 'name-asc',
   });
+  const [reportFilters, setReportFilters] = useState(() => ({ ...REPORT_DEFAULT_FILTERS }));
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportDownloadState, setReportDownloadState] = useState({ format: null, loading: false });
   const [historyContext, setHistoryContext] = useState({ open: false, student: null, entries: [] });
   const [settingsState, setSettingsState] = useState({
     currentTerm: '',
@@ -773,7 +861,9 @@ const AccountantDashboard = () => {
         amount: Number(amount || 0),
         mode: mode || 'Online',
         transaction_id: transactionId || '',
-        status: status || 'Success',
+        status: status || 'Paid',
+        parent_email: student.parent_email || '',
+        parent_uid: student.parent_uid || '',
         month_key: meta.key,
         month_label: meta.label,
         date: serverTimestamp(),
@@ -856,6 +946,19 @@ const AccountantDashboard = () => {
       () => setLoadingReminders(false),
     );
 
+    const feeRequestsQuery = query(collection(db, 'fee_requests'), orderBy('created_at', 'desc'));
+    const unsubscribeFeeRequests = onSnapshot(
+      feeRequestsQuery,
+      (snapshot) => {
+        const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        setFeeRequests(data);
+        console.log('[Sync] fee_requests snapshot received', data.length);
+      },
+      (error) => {
+        console.error('[Sync] fee_requests listener error', error);
+      },
+    );
+
     const settingsRef = doc(db, 'settings', 'general');
     const unsubscribeSettings = onSnapshot(settingsRef, (snapshot) => {
       if (snapshot.exists()) {
@@ -888,6 +991,7 @@ const AccountantDashboard = () => {
       unsubscribeStudents();
       unsubscribePayments();
       unsubscribeReminders();
+      unsubscribeFeeRequests();
       unsubscribeSettings();
       unsubscribeFeeStructure();
       unsubscribeTransactions();
@@ -907,38 +1011,152 @@ const AccountantDashboard = () => {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    today.setHours(0, 0, 0, 0);
+    const upcomingThreshold = new Date(today);
+    upcomingThreshold.setDate(upcomingThreshold.getDate() + 7);
+    upcomingThreshold.setHours(23, 59, 59, 999);
 
     let monthTotal = 0;
     let yearTotal = 0;
 
-    payments.forEach((payment) => {
-      const date = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
-      if (!Number.isFinite(date.getTime())) return;
-      if (date >= startOfYear) {
-        yearTotal += Number(payment.amount || 0);
+    const monthlyMap = new Map();
+    const modeTotals = { Cash: 0, Online: 0, Other: 0 };
+    const paidTransactions = [];
+
+    transactionsLog.forEach((entry) => {
+      const status = (entry.status || '').toLowerCase();
+      if (status !== 'paid' && status !== 'success') return;
+      const amount = parseAmountValue(entry.amount);
+      const entryDate = parseDateValue(entry.date) || parseDateValue(entry.created_at);
+      if (!entryDate) return;
+      paidTransactions.push({ ...entry, entryDate });
+      if (entryDate >= startOfYear) {
+        yearTotal += amount;
       }
-      if (date >= startOfMonth) {
-        monthTotal += Number(payment.amount || 0);
+      if (entryDate >= startOfMonth) {
+        monthTotal += amount;
+      }
+      const modeRaw = (entry.mode || 'Online').toLowerCase();
+      const modeKey = modeRaw === 'cash' ? 'Cash' : modeRaw === 'online' ? 'Online' : 'Other';
+      modeTotals[modeKey] += amount;
+      const monthKey =
+        entry.month_key || `${entryDate.getFullYear()}-${String(entryDate.getMonth() + 1).padStart(2, '0')}`;
+      const monthLabel = entry.month_label || entryDate.toLocaleString('en-IN', { month: 'short', year: 'numeric' });
+      const existing = monthlyMap.get(monthKey) || { label: monthLabel, amount: 0 };
+      monthlyMap.set(monthKey, { label: existing.label || monthLabel, amount: existing.amount + amount });
+    });
+
+    const transactionDatesByStudent = new Map();
+    paidTransactions.forEach(({ studentId, student_doc_id, entryDate }) => {
+      const key = studentId || student_doc_id;
+      if (!key || !entryDate) return;
+      if (!transactionDatesByStudent.has(key)) {
+        transactionDatesByStudent.set(key, []);
+      }
+      transactionDatesByStudent.get(key).push(entryDate);
+    });
+    transactionDatesByStudent.forEach((dates) => dates.sort((a, b) => a - b));
+
+    const pendingFees = { amount: 0, count: 0 };
+    const overdueFees = { amount: 0, count: 0 };
+    let upcomingDueCount = 0;
+    let storeRevenue = 0;
+    let paidRequests = 0;
+    let pendingRequests = 0;
+    const feeTypeMap = new Map();
+    const delays = [];
+    const activeParentEmails = new Set();
+
+    const reminderMap = new Map();
+    reminders.forEach((reminder) => {
+      const key = reminder.studentId || reminder.student_id || reminder.student_doc_id;
+      if (!key) return;
+      const reminderDate =
+        parseDateValue(reminder.created_at) ||
+        parseDateValue(reminder.sent_at) ||
+        parseDateValue(reminder.date);
+      const existing = reminderMap.get(key);
+      if (!existing || (reminderDate && existing && existing > reminderDate)) {
+        reminderMap.set(key, reminderDate || null);
+      } else if (!existing) {
+        reminderMap.set(key, reminderDate || null);
       }
     });
 
-    const pendingTotal = students
-      .filter((student) => student.status !== 'Paid')
-      .reduce((sum, student) => sum + Number(student.balance ?? student.fee_amount ?? 0), 0);
+    const todayTime = today.getTime();
 
-    const overdueCount = students.filter((student) => student.status === 'Overdue').length;
+    feeRequests.forEach((request) => {
+      const status = (request.status || '').toLowerCase();
+      const total = calculateFeeRequestTotal(request);
+      const dueDate = parseDateValue(request.due_date);
+      const cycleKey = resolveRequestCycle(request);
+      feeTypeMap.set(cycleKey, (feeTypeMap.get(cycleKey) || 0) + 1);
 
-    const upcomingCount = students.filter((student) => {
-      if (!student.due_date) return false;
-      const due = new Date(student.due_date);
-      if (!Number.isFinite(due.getTime())) return false;
-      const diff = (due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24);
-      return diff >= 0 && diff <= 7;
-    }).length;
+      if (request.breakdown?.store) {
+        storeRevenue += parseAmountValue(request.breakdown.store.amount);
+      }
 
-    const paidCount = students.filter((student) => student.status === 'Paid').length;
-    const unpaidCount = students.length - paidCount;
+      if (status === 'paid') {
+        paidRequests += 1;
+      } else {
+        pendingRequests += 1;
+      }
 
+      if (status === 'pending') {
+        pendingFees.amount += total;
+        pendingFees.count += 1;
+      }
+
+      if (status !== 'paid') {
+        if (dueDate && dueDate.getTime() < todayTime) {
+          overdueFees.amount += total;
+          overdueFees.count += 1;
+        } else if (dueDate && dueDate >= today && dueDate <= upcomingThreshold) {
+          upcomingDueCount += 1;
+        }
+      }
+
+      if (status !== 'paid' && request.parent_email) {
+        activeParentEmails.add(request.parent_email);
+      }
+
+      if (status === 'paid' && dueDate) {
+        const paidDate =
+          parseDateValue(request.paid_at) ||
+          parseDateValue(request.payment_date) ||
+          (() => {
+            const key = request.studentId || request.student_doc_id;
+            const dates = transactionDatesByStudent.get(key) || [];
+            if (!dates.length) return null;
+            const match = dates.find((date) => !dueDate || date >= dueDate);
+            return match || dates[dates.length - 1] || null;
+          })();
+        if (paidDate) {
+          const diffDays = (paidDate.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24);
+          delays.push(diffDays < 0 ? 0 : diffDays);
+        }
+      }
+    });
+
+    const reminderBaseCount = reminderMap.size;
+    let reminderConvertedCount = 0;
+    reminderMap.forEach((reminderDate, studentKey) => {
+      const transactions = transactionDatesByStudent.get(studentKey) || [];
+      if (!transactions.length) return;
+      const hasPaymentAfterReminder = transactions.some((date) => !reminderDate || date >= reminderDate);
+      if (hasPaymentAfterReminder) {
+        reminderConvertedCount += 1;
+      }
+    });
+
+    const monthEntries = Array.from(monthlyMap.entries()).sort((a, b) => (a[0] > b[0] ? 1 : -1));
+    const recentEntries = monthEntries.slice(-6);
+    const monthLabels = recentEntries.map(([, value]) => value.label);
+    const monthValues = recentEntries.map(([, value]) => value.amount);
+
+    const paidStudents = students.filter((student) => (student.status || '').toLowerCase() === 'paid').length;
+    const overdueStudents = students.filter((student) => (student.status || '').toLowerCase() === 'overdue').length;
     const outstandingList = [...students]
       .map((student) => ({
         id: student.id,
@@ -952,44 +1170,47 @@ const AccountantDashboard = () => {
 
     const revenueByCategory = payments.reduce((acc, payment) => {
       const key = payment.fee_type || 'Tuition';
-      acc[key] = (acc[key] || 0) + Number(payment.amount || 0);
+      acc[key] = (acc[key] || 0) + parseAmountValue(payment.amount);
       return acc;
     }, {});
 
-    const monthLabels = [];
-    const monthValues = [];
+    const unpaidStudents = students.length - paidStudents;
+    const averageCollectionDelay = delays.length
+      ? delays.reduce((sum, value) => sum + value, 0) / delays.length
+      : null;
+    const reminderConversionRate =
+      reminderBaseCount > 0 ? (reminderConvertedCount / reminderBaseCount) * 100 : null;
 
-    for (let i = 5; i >= 0; i -= 1) {
-      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const label = date.toLocaleString('en-IN', { month: 'short' });
-      const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
-      const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
-      const sum = payments.reduce((total, payment) => {
-        const paymentDate = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
-        if (!Number.isFinite(paymentDate.getTime())) return total;
-        if (paymentDate >= monthStart && paymentDate <= monthEnd) {
-          return total + Number(payment.amount || 0);
-        }
-        return total;
-      }, 0);
-      monthLabels.push(label);
-      monthValues.push(sum);
-    }
+    const feeTypeDistribution = Array.from(feeTypeMap.entries())
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count);
 
     return {
       monthTotal,
       yearTotal,
-      pendingTotal,
-      overdueCount,
-      upcomingCount,
-      paidCount,
-      unpaidCount,
+      pendingTotal: pendingFees.amount,
+      pendingRequestCount: pendingFees.count,
+      overdueFeesAmount: overdueFees.amount,
+      overdueRequestCount: overdueFees.count,
+      upcomingCount: upcomingDueCount,
+      paidCount: paidStudents,
+      unpaidCount: unpaidStudents,
+      overdueCount: overdueStudents,
       outstandingList,
       revenueByCategory,
       monthLabels,
       monthValues,
+      requestStatusCounts: { paid: paidRequests, pending: pendingRequests },
+      paymentModeSplit: modeTotals,
+      feeTypeDistribution,
+      averageCollectionDelay,
+      reminderConversionRate,
+      reminderBaseCount,
+      storeRevenue,
+      totalStudents: students.length,
+      activeParents: activeParentEmails.size,
     };
-  }, [payments, students]);
+  }, [transactionsLog, feeRequests, reminders, students, payments]);
 
   const sessionOptions = useMemo(() => {
     if (!feeStructureDraft.session || SESSION_OPTIONS.includes(feeStructureDraft.session)) {
@@ -1023,6 +1244,11 @@ const AccountantDashboard = () => {
       return matchesMode && key === transactionFilters.month;
     });
   }, [transactionsLog, transactionFilters]);
+
+  const paidRequestCount = monthMetrics.requestStatusCounts?.paid || 0;
+  const pendingRequestCount = monthMetrics.requestStatusCounts?.pending || 0;
+  const paymentModeTotals = monthMetrics.paymentModeSplit || { Cash: 0, Online: 0, Other: 0 };
+  const feeTypeDistribution = monthMetrics.feeTypeDistribution || [];
 
   const feeRequestAmounts = useMemo(() => {
     const student = feeRequestContext.student;
@@ -1074,10 +1300,432 @@ const AccountantDashboard = () => {
     return sorted;
   }, [students, filters]);
 
+  const feeRequestReportEntries = useMemo(() => {
+    const studentsByDocId = new Map();
+    const studentsByStudentId = new Map();
+    students.forEach((student) => {
+      studentsByDocId.set(student.id, student);
+      if (student.studentId) {
+        studentsByStudentId.set(student.studentId, student);
+      }
+    });
+
+    const reminderIndex = new Map();
+    reminders.forEach((reminder) => {
+      const keys = [reminder.student_doc_id, reminder.studentId, reminder.student_id]
+        .map((value) => (value ? `${value}` : ''))
+        .filter(Boolean);
+      if (!keys.length) return;
+      const due = parseDateValue(reminder.due_date);
+      keys.forEach((key) => {
+        if (!reminderIndex.has(key)) {
+          reminderIndex.set(key, []);
+        }
+        reminderIndex.get(key).push({ ...reminder, due });
+      });
+    });
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return feeRequests.map((request) => {
+      const studentMatch =
+        studentsByDocId.get(request.student_doc_id) ||
+        (request.studentId ? studentsByStudentId.get(request.studentId) : null) ||
+        null;
+      const dueDate = parseDateValue(request.due_date);
+      const paidDate = parseDateValue(request.paid_at) || parseDateValue(request.payment_date);
+      const amount = calculateFeeRequestTotal(request);
+      const rawStatus = `${request.status || ''}`.trim().toLowerCase();
+      let statusLabel = rawStatus ? `${rawStatus.charAt(0).toUpperCase()}${rawStatus.slice(1)}` : 'Pending';
+      if (rawStatus === 'paid' || rawStatus === 'success') {
+        statusLabel = 'Paid';
+      } else if (dueDate && dueDate.getTime() < today.getTime()) {
+        statusLabel = 'Overdue';
+      } else if (!rawStatus) {
+        statusLabel = 'Pending';
+      }
+
+      const reminderCandidates = [
+        ...(request.student_doc_id ? reminderIndex.get(request.student_doc_id) || [] : []),
+        ...(request.studentId && request.studentId !== request.student_doc_id
+          ? reminderIndex.get(request.studentId) || []
+          : []),
+      ];
+      let hasReminder = false;
+      if (reminderCandidates.length) {
+        hasReminder = reminderCandidates.some((item) => {
+          if (!dueDate || !item?.due) return true;
+          const diff = Math.abs(item.due.getTime() - dueDate.getTime());
+          return diff <= 1000 * 60 * 60 * 24;
+        });
+      }
+
+      const paymentModeLabel = normalisePaymentMode(
+        request.payment_mode ||
+          request.mode ||
+          request.transaction_mode ||
+          request.paymentMode ||
+          request.channel,
+      );
+      const paymentModeKey = ['Cash', 'Online'].includes(paymentModeLabel)
+        ? paymentModeLabel
+        : paymentModeLabel
+        ? 'Other'
+        : 'Unspecified';
+
+      const sessionValue = request.session || studentMatch?.session || '';
+      const termValue = request.term || request.billing_term || request.term_label || '';
+
+      const storeAmount = parseAmountValue(request.breakdown?.store?.amount);
+
+      return {
+        id: request.id,
+        studentId: studentMatch?.studentId || request.studentId || request.student_doc_id || '',
+        studentName: studentMatch?.name || request.student_name || '',
+        class: studentMatch?.class || request.class || '',
+        section: studentMatch?.section || request.section || '',
+        parentEmail: studentMatch?.parent_email || request.parent_email || '',
+        parentPhone: studentMatch?.parent_phone || request.parent_phone || '',
+        statusLabel,
+        rawStatus,
+        dueDate,
+        paidDate,
+        amount,
+        balance: rawStatus === 'paid' || rawStatus === 'success' ? 0 : amount,
+        cycle: resolveRequestCycle(request),
+        session: sessionValue,
+        term: termValue,
+        paymentModeLabel,
+        paymentModeKey,
+        transactionId: request.transaction_id || request.payment_reference || request.razorpay_payment_id || '',
+        hasReminder,
+        storeAmount,
+      };
+    });
+  }, [feeRequests, students, reminders]);
+
+  const filteredReportEntries = useMemo(() => {
+    const dueFromDate = reportFilters.dueFrom ? new Date(`${reportFilters.dueFrom}T00:00:00`) : null;
+    const dueToDate = reportFilters.dueTo ? new Date(`${reportFilters.dueTo}T23:59:59`) : null;
+    const searchValue = reportFilters.search.trim().toLowerCase();
+    const normalizedTerm = reportFilters.term.trim().toLowerCase();
+
+    const filtered = feeRequestReportEntries.filter((entry) => {
+      const matchesClass = reportFilters.class === 'All' || entry.class === reportFilters.class;
+      const matchesStatus = reportFilters.status === 'All' || entry.statusLabel === reportFilters.status;
+      const cycleFilter = reportFilters.cycle === 'Half-Yearly' ? '6 Months' : reportFilters.cycle;
+      const matchesCycle = reportFilters.cycle === 'All' || entry.cycle === cycleFilter;
+      const matchesSession = reportFilters.session === 'All' || entry.session === reportFilters.session;
+      const matchesTerm =
+        normalizedTerm.length === 0 || (entry.term || '').toLowerCase().includes(normalizedTerm);
+      const matchesPaymentMode =
+        reportFilters.paymentMode === 'All' || entry.paymentModeKey === reportFilters.paymentMode;
+      const matchesReminder =
+        reportFilters.reminder === 'All' ||
+        (reportFilters.reminder === 'Sent' ? entry.hasReminder : !entry.hasReminder);
+
+      let matchesDueFrom = true;
+      if (dueFromDate) {
+        matchesDueFrom = entry.dueDate ? entry.dueDate >= dueFromDate : false;
+      }
+      let matchesDueTo = true;
+      if (dueToDate) {
+        matchesDueTo = entry.dueDate ? entry.dueDate <= dueToDate : false;
+      }
+
+      const matchesSearch =
+        searchValue.length === 0 ||
+        entry.studentName?.toLowerCase().includes(searchValue) ||
+        entry.studentId?.toLowerCase().includes(searchValue) ||
+        entry.parentEmail?.toLowerCase().includes(searchValue) ||
+        entry.parentPhone?.toLowerCase().includes(searchValue) ||
+        entry.transactionId?.toLowerCase().includes(searchValue);
+
+      return (
+        matchesClass &&
+        matchesStatus &&
+        matchesCycle &&
+        matchesSession &&
+        matchesTerm &&
+        matchesPaymentMode &&
+        matchesReminder &&
+        matchesDueFrom &&
+        matchesDueTo &&
+        matchesSearch
+      );
+    });
+
+    const sorted = [...filtered].sort((a, b) => {
+      if (a.dueDate && b.dueDate) {
+        return a.dueDate - b.dueDate;
+      }
+      if (a.dueDate) return -1;
+      if (b.dueDate) return 1;
+      return (a.studentName || '').localeCompare(b.studentName || '');
+    });
+
+    return sorted;
+  }, [feeRequestReportEntries, reportFilters]);
+
+  const reportFilterSummary = useMemo(() => {
+    const parts = [];
+    if (reportFilters.class !== 'All') {
+      parts.push(`Class ${reportFilters.class}`);
+    }
+    if (reportFilters.status !== 'All') {
+      parts.push(`Status ${reportFilters.status}`);
+    }
+    if (reportFilters.cycle !== 'All') {
+      parts.push(`Cycle ${reportFilters.cycle}`);
+    }
+    if (reportFilters.session !== 'All') {
+      parts.push(`Session ${reportFilters.session}`);
+    }
+    if (reportFilters.term.trim()) {
+      parts.push(`Term contains “${reportFilters.term.trim()}”`);
+    }
+    if (reportFilters.paymentMode !== 'All') {
+      parts.push(`Mode ${reportFilters.paymentMode}`);
+    }
+    if (reportFilters.reminder !== 'All') {
+      parts.push(reportFilters.reminder === 'Sent' ? 'Reminder sent' : 'No reminder');
+    }
+    if (reportFilters.dueFrom) {
+      parts.push(`Due from ${reportFilters.dueFrom}`);
+    }
+    if (reportFilters.dueTo) {
+      parts.push(`Due to ${reportFilters.dueTo}`);
+    }
+    if (reportFilters.search.trim()) {
+      parts.push(`Search “${reportFilters.search.trim()}”`);
+    }
+    return parts.length ? parts.join(' · ') : 'No filters applied';
+  }, [reportFilters]);
+
   const handleFilterChange = (event) => {
     const { name, value } = event.target;
     setFilters((prev) => ({ ...prev, [name]: value }));
   };
+
+  const handleReportFilterChange = (event) => {
+    const { name, value } = event.target;
+    setReportFilters((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleResetReportFilters = () => {
+    setReportFilters({ ...REPORT_DEFAULT_FILTERS });
+  };
+
+  const openReportModal = () => {
+    setIsReportModalOpen(true);
+  };
+
+  const closeReportModal = () => {
+    setIsReportModalOpen(false);
+  };
+
+  const handleDownloadReport = async (format) => {
+    if (!['pdf', 'csv'].includes(format)) {
+      return;
+    }
+    if (!filteredReportEntries.length) {
+      triggerToast('No records match the selected filters.', 'info');
+      return;
+    }
+    setReportDownloadState({ format, loading: true });
+    const summaryText = reportFilterSummary;
+
+    const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
+    const formatDateDisplay = (date) =>
+      date instanceof Date && Number.isFinite(date.getTime())
+        ? date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        : '—';
+    const formatDateIso = (date) =>
+      date instanceof Date && Number.isFinite(date.getTime()) ? date.toISOString().split('T')[0] : '';
+
+    try {
+      if (format === 'csv') {
+        const escapeCsvValue = (value) => {
+          if (value === null || value === undefined) return '""';
+          const stringValue = `${value}`.replace(/"/g, '""');
+          return `"${stringValue}"`;
+        };
+
+        const lines = [];
+        lines.push(escapeCsvValue(SCHOOL_NAME));
+        lines.push(`${escapeCsvValue('Generated On')},${escapeCsvValue(new Date().toLocaleString())}`);
+        lines.push(`${escapeCsvValue('Filters')},${escapeCsvValue(summaryText)}`);
+        lines.push('');
+
+        const header = [
+          'Student ID',
+          'Student Name',
+          'Class',
+          'Section',
+          'Status',
+          'Fee Cycle',
+          'Session',
+          'Term',
+          'Due Date',
+          'Amount (₹)',
+          'Balance (₹)',
+          'Payment Mode',
+          'Transaction ID',
+          'Parent Email',
+          'Parent Phone',
+          'Reminder Sent',
+          'Store Charge (₹)',
+        ];
+        lines.push(header.map(escapeCsvValue).join(','));
+
+        filteredReportEntries.forEach((entry) => {
+          const row = [
+            entry.studentId || '-',
+            entry.studentName || '-',
+            entry.class || '-',
+            entry.section || '-',
+            entry.statusLabel || '-',
+            entry.cycle || '-',
+            entry.session || '-',
+            entry.term || '-',
+            formatDateIso(entry.dueDate) || '-',
+            Number(entry.amount || 0).toFixed(2),
+            Number(entry.balance || 0).toFixed(2),
+            entry.paymentModeLabel || '-',
+            entry.transactionId || '-',
+            entry.parentEmail || '-',
+            entry.parentPhone || '-',
+            entry.hasReminder ? 'Yes' : 'No',
+            Number(entry.storeAmount || 0).toFixed(2),
+          ];
+          lines.push(row.map(escapeCsvValue).join(','));
+        });
+
+        const csvContent = lines.join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', 'fee-collection-report.csv');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } else {
+        const { jsPDF } = await import('jspdf');
+        const doc = new jsPDF();
+        doc.setFontSize(15);
+        doc.text(SCHOOL_NAME, 14, 20);
+        doc.setFontSize(12);
+        doc.text('Fee Collection Report', 14, 32);
+        doc.setFontSize(9);
+        doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 42);
+        doc.text(`Filters: ${summaryText}`, 14, 52, { maxWidth: 180 });
+
+        let y = 64;
+        filteredReportEntries.forEach((entry, index) => {
+          if (y > 270) {
+            doc.addPage();
+            y = 24;
+          }
+          doc.setFontSize(11);
+          doc.text(`${index + 1}. ${entry.studentName || 'Student'}`, 14, y);
+          y += 8;
+          doc.setFontSize(9);
+          doc.text(`Student ID: ${entry.studentId || '—'}`, 14, y);
+          doc.text(`Class: ${entry.class || '—'}${entry.section ? ` · Section ${entry.section}` : ''}`, 100, y);
+          y += 10;
+          doc.text(`Status: ${entry.statusLabel || '—'} · Cycle: ${entry.cycle || '—'}`, 14, y);
+          doc.text(`Session: ${entry.session || '—'} · Term: ${entry.term || '—'}`, 100, y);
+          y += 10;
+          doc.text(
+            `Amount: ${formatCurrency(entry.amount)} · Balance: ${formatCurrency(entry.balance)}`,
+            14,
+            y,
+          );
+          doc.text(`Due: ${formatDateDisplay(entry.dueDate)} · Paid: ${formatDateDisplay(entry.paidDate)}`, 100, y);
+          y += 10;
+          doc.text(
+            `Mode: ${entry.paymentModeLabel || '—'} · Txn: ${entry.transactionId || '—'}`,
+            14,
+            y,
+          );
+          y += 10;
+          doc.text(`Parent: ${entry.parentEmail || '—'} · Phone: ${entry.parentPhone || '—'}`, 14, y);
+          y += 10;
+          doc.text(
+            `Reminder Sent: ${entry.hasReminder ? 'Yes' : 'No'} · Store Charge: ${formatCurrency(entry.storeAmount)}`,
+            14,
+            y,
+          );
+          y += 12;
+        });
+
+        doc.save('fee-collection-report.pdf');
+      }
+      triggerToast('Report downloaded successfully.', 'success');
+    } catch (error) {
+      console.error('Error generating report', error);
+      triggerToast('Unable to download report. Please try again.', 'error');
+    } finally {
+      setReportDownloadState({ format: null, loading: false });
+    }
+  };
+
+  const StudentFilterControls = () => (
+    <div className="grid gap-3 md:grid-cols-5">
+      <select
+        name="class"
+        value={filters.class}
+        onChange={handleFilterChange}
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+      >
+        <option value="All">All Classes</option>
+        {CLASS_OPTIONS.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+      <select
+        name="status"
+        value={filters.status}
+        onChange={handleFilterChange}
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+      >
+        {STATUS_OPTIONS.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+      <input
+        name="term"
+        value={filters.term}
+        onChange={handleFilterChange}
+        placeholder="Term"
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+      />
+      <input
+        name="search"
+        value={filters.search}
+        onChange={handleFilterChange}
+        placeholder="Search"
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+      />
+      <select
+        name="sort"
+        value={filters.sort}
+        onChange={handleFilterChange}
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+      >
+        <option value="name-asc">Name (A-Z)</option>
+        <option value="class-asc">Class</option>
+        <option value="balance-desc">Highest Balance</option>
+      </select>
+    </div>
+  );
 
   const handleOpenAddStudent = () => {
     closeStudentActions();
@@ -1762,12 +2410,35 @@ const AccountantDashboard = () => {
         status: 'Success',
         transaction_id: normalizedMode === 'Online' ? transactionId : '',
       });
+      const pendingRequestsQuery = query(
+        collection(db, 'fee_requests'),
+        where('student_doc_id', '==', student.id),
+      );
+      const pendingRequestsSnapshot = await getDocs(pendingRequestsQuery);
+      const requestUpdates = [];
+      pendingRequestsSnapshot.forEach((requestDoc) => {
+        const requestStatus = (requestDoc.data().status || '').toLowerCase();
+        if (requestStatus === 'paid') return;
+        requestUpdates.push(
+          updateDoc(doc(db, 'fee_requests', requestDoc.id), {
+            status: 'Paid',
+            paid_at: serverTimestamp(),
+            payment_mode: normalizedMode,
+            transaction_id: normalizedMode === 'Online' ? transactionId : '',
+            updated_at: serverTimestamp(),
+          }),
+        );
+      });
+      if (requestUpdates.length > 0) {
+        await Promise.all(requestUpdates);
+        console.log('[Sync] Updated fee_requests status to Paid', requestUpdates.length);
+      }
       await logTransactionEntry({
         student,
         amount: amountToClear,
         mode: normalizedMode,
         transactionId: normalizedMode === 'Online' ? transactionId : '',
-        status: 'Success',
+        status: 'Paid',
       });
       triggerToast('Payment recorded successfully.', 'success');
       resetMarkPaidContext();
@@ -1776,39 +2447,6 @@ const AccountantDashboard = () => {
       setMarkPaidContext((prev) => ({ ...prev, submitting: false, error: 'Unable to update record. Please try again.' }));
       triggerToast('Unable to update record.', 'error');
     }
-  };
-
-  const handleGenerateCsv = () => {
-    const header = [
-      'Student ID',
-      'Name',
-      'Class',
-      'Status',
-      'Fee Amount',
-      'Balance',
-      'Due Date',
-      'Parent Email',
-    ];
-    const rows = filteredStudents.map((student) => [
-      student.studentId || student.id,
-      student.name,
-      student.class,
-      student.status,
-      Number(student.fee_amount || 0).toFixed(2),
-      Number(student.balance ?? 0).toFixed(2),
-      student.due_date || '',
-      student.parent_email || '',
-    ]);
-    const csvContent = [header, ...rows].map((line) => line.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'accountant-report.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
   const handleSettingsChange = (event) => {
@@ -1882,7 +2520,7 @@ const AccountantDashboard = () => {
             </button>
             <button
               type="button"
-              onClick={handleGenerateCsv}
+              onClick={openReportModal}
               className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
             >
               Generate Report
@@ -1900,9 +2538,10 @@ const AccountantDashboard = () => {
 
       <main className="mx-auto max-w-7xl px-6 py-8">
         <nav className="flex flex-wrap gap-3">
-          {[
+          {[ 
             { id: 'overview', label: 'Overview' },
             { id: 'students', label: 'Students' },
+            { id: 'fee-report', label: 'Fee Report' },
             { id: 'transactions', label: 'Transaction Log' },
             { id: 'reminders', label: 'Reminders and Notification' },
             { id: 'fee-settings', label: 'Fee Settings' },
@@ -1925,7 +2564,7 @@ const AccountantDashboard = () => {
 
         {activeTab === 'overview' && (
           <section className="mt-8 space-y-8">
-            <div className="grid gap-4 md:grid-cols-3">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="text-sm font-medium text-slate-500">Fees Collected (This Month)</h3>
                 <p className="mt-3 text-2xl font-semibold text-slate-900">
@@ -1936,24 +2575,69 @@ const AccountantDashboard = () => {
                 </p>
               </div>
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-medium text-slate-500">Pending Payments</h3>
+                <h3 className="text-sm font-medium text-slate-500">Pending Fees</h3>
                 <p className="mt-3 text-2xl font-semibold text-amber-600">
                   ₹{monthMetrics.pendingTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                 </p>
-                <p className="mt-2 text-xs text-slate-500">Overdue students: {monthMetrics.overdueCount}</p>
+                <p className="mt-2 text-xs text-slate-500">Pending requests: {monthMetrics.pendingRequestCount}</p>
               </div>
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-medium text-slate-500">Upcoming Due Dates</h3>
+                <h3 className="text-sm font-medium text-slate-500">Overdue Fees</h3>
+                <p className="mt-3 text-2xl font-semibold text-rose-600">
+                  ₹{monthMetrics.overdueFeesAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">Overdue requests: {monthMetrics.overdueRequestCount}</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Upcoming Due Payments</h3>
                 <p className="mt-3 text-2xl font-semibold text-slate-900">{monthMetrics.upcomingCount}</p>
                 <p className="mt-2 text-xs text-slate-500">
-                  Paid / Unpaid: {monthMetrics.paidCount}/{monthMetrics.unpaidCount}
+                  Paid / Unpaid students: {monthMetrics.paidCount}/{monthMetrics.unpaidCount}
                 </p>
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Average Collection Delay</h3>
+                <p className="mt-3 text-2xl font-semibold text-slate-900">
+                  {monthMetrics.averageCollectionDelay != null
+                    ? `${monthMetrics.averageCollectionDelay.toFixed(1)} days`
+                    : '—'}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">Based on {paidRequestCount} paid requests</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Reminder Conversion Rate</h3>
+                <p className="mt-3 text-2xl font-semibold text-slate-900">
+                  {monthMetrics.reminderConversionRate != null
+                    ? `${monthMetrics.reminderConversionRate.toFixed(0)}%`
+                    : 'N/A'}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">Tracked reminders: {monthMetrics.reminderBaseCount}</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Store-Charge Revenue</h3>
+                <p className="mt-3 text-2xl font-semibold text-slate-900">
+                  ₹{monthMetrics.storeRevenue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">Across fee request breakdowns</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Total Students Registered</h3>
+                <p className="mt-3 text-2xl font-semibold text-slate-900">{monthMetrics.totalStudents}</p>
+                <p className="mt-2 text-xs text-slate-500">Overdue students: {monthMetrics.overdueCount}</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Active Parents</h3>
+                <p className="mt-3 text-2xl font-semibold text-slate-900">{monthMetrics.activeParents}</p>
+                <p className="mt-2 text-xs text-slate-500">Parents with open requests</p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-base font-semibold text-slate-900">Collections (Last 6 months)</h3>
+                <h3 className="text-base font-semibold text-slate-900">Monthly Collection Trend</h3>
                 <Bar
                   data={{
                     labels: monthMetrics.monthLabels,
@@ -1975,14 +2659,37 @@ const AccountantDashboard = () => {
                 />
               </div>
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-                <h3 className="text-base font-semibold text-slate-900">Students Paid vs Pending</h3>
+                <h3 className="text-base font-semibold text-slate-900">Paid vs Pending Requests</h3>
                 <Pie
                   data={{
-                    labels: ['Paid', 'Unpaid'],
+                    labels: ['Paid', 'Pending'],
                     datasets: [
                       {
-                        data: [monthMetrics.paidCount, monthMetrics.unpaidCount],
+                        data: [paidRequestCount, pendingRequestCount],
                         backgroundColor: ['#047857', '#f59e0b'],
+                      },
+                    ],
+                  }}
+                  options={{
+                    plugins: {
+                      legend: { position: 'bottom' },
+                    },
+                  }}
+                />
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-base font-semibold text-slate-900">Payment Mode Split</h3>
+                <Pie
+                  data={{
+                    labels: ['Online', 'Cash', 'Other'],
+                    datasets: [
+                      {
+                        data: [
+                          paymentModeTotals.Online || 0,
+                          paymentModeTotals.Cash || 0,
+                          paymentModeTotals.Other || 0,
+                        ],
+                        backgroundColor: ['#2563eb', '#047857', '#f97316'],
                       },
                     ],
                   }}
@@ -1995,7 +2702,24 @@ const AccountantDashboard = () => {
               </div>
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid gap-4 xl:grid-cols-3">
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-base font-semibold text-slate-900">Fee Type Distribution</h3>
+                <ul className="mt-4 space-y-3 text-sm">
+                  {feeTypeDistribution.length === 0 && (
+                    <li className="text-slate-500">No fee requests recorded yet.</li>
+                  )}
+                  {feeTypeDistribution.map((entry) => (
+                    <li
+                      key={entry.label}
+                      className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"
+                    >
+                      <span className="font-medium text-slate-700">{entry.label}</span>
+                      <span className="text-sm font-semibold text-slate-900">{entry.count}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="text-base font-semibold text-slate-900">Outstanding Payments</h3>
                 <ul className="mt-4 space-y-3 text-sm">
@@ -2048,57 +2772,7 @@ const AccountantDashboard = () => {
                     View every student, update their details, and raise fee requests in one place.
                   </p>
                 </div>
-                <div className="grid gap-3 md:grid-cols-5">
-                  <select
-                    name="class"
-                    value={filters.class}
-                    onChange={handleFilterChange}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  >
-                    <option value="All">All Classes</option>
-                    {CLASS_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    name="status"
-                    value={filters.status}
-                    onChange={handleFilterChange}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  >
-                    {STATUS_OPTIONS.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    name="term"
-                    value={filters.term}
-                    onChange={handleFilterChange}
-                    placeholder="Term"
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  />
-                  <input
-                    name="search"
-                    value={filters.search}
-                    onChange={handleFilterChange}
-                    placeholder="Search"
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  />
-                  <select
-                    name="sort"
-                    value={filters.sort}
-                    onChange={handleFilterChange}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  >
-                    <option value="name-asc">Name (A-Z)</option>
-                    <option value="class-asc">Class</option>
-                    <option value="balance-desc">Highest Balance</option>
-                  </select>
-                </div>
+                <StudentFilterControls />
               </div>
 
               <div className="mt-6">
@@ -2177,12 +2851,20 @@ const AccountantDashboard = () => {
                 )}
               </div>
             </div>
+          </section>
+        )}
+
+        {activeTab === 'fee-report' && (
+          <section className="mt-8 space-y-6">
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-2">
-                <h2 className="text-lg font-semibold text-slate-900">Fee Report</h2>
-                <p className="text-sm text-slate-500">
-                  Track pending, paid, and overdue payments. Update records or send reminders instantly.
-                </p>
+              <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Fee Report</h2>
+                  <p className="text-sm text-slate-500">
+                    Track pending, paid, and overdue payments. Update records or send reminders instantly.
+                  </p>
+                </div>
+                <StudentFilterControls />
               </div>
               <div className="mt-6">
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -2623,6 +3305,189 @@ const AccountantDashboard = () => {
           </section>
         )}
       </main>
+
+      {isReportModalOpen && (
+        <Modal title="Generate Fee Report" onClose={closeReportModal} size="xl">
+          <div className="space-y-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Class
+                <select
+                  name="class"
+                  value={reportFilters.class}
+                  onChange={handleReportFilterChange}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                >
+                  <option value="All">All classes</option>
+                  {CLASS_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Status
+                <select
+                  name="status"
+                  value={reportFilters.status}
+                  onChange={handleReportFilterChange}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                >
+                  {['All', 'Paid', 'Pending', 'Overdue'].map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Fee cycle
+                <select
+                  name="cycle"
+                  value={reportFilters.cycle}
+                  onChange={handleReportFilterChange}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                >
+                  <option value="All">All cycles</option>
+                  {REQUEST_CYCLE_OPTIONS.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                  <option value="Annual">Annual</option>
+                  <option value="Other">Other</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Session
+                <select
+                  name="session"
+                  value={reportFilters.session}
+                  onChange={handleReportFilterChange}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                >
+                  <option value="All">All sessions</option>
+                  {sessionOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Payment mode
+                <select
+                  name="paymentMode"
+                  value={reportFilters.paymentMode}
+                  onChange={handleReportFilterChange}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                >
+                  {['All', 'Cash', 'Online', 'Other', 'Unspecified'].map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Reminder status
+                <select
+                  name="reminder"
+                  value={reportFilters.reminder}
+                  onChange={handleReportFilterChange}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                >
+                  <option value="All">All reminders</option>
+                  <option value="Sent">Reminder sent</option>
+                  <option value="Not Sent">No reminder</option>
+                </select>
+              </label>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Due from
+                <input
+                  type="date"
+                  name="dueFrom"
+                  value={reportFilters.dueFrom}
+                  onChange={handleReportFilterChange}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Due to
+                <input
+                  type="date"
+                  name="dueTo"
+                  value={reportFilters.dueTo}
+                  onChange={handleReportFilterChange}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                />
+              </label>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Term contains
+                <input
+                  name="term"
+                  value={reportFilters.term}
+                  onChange={handleReportFilterChange}
+                  placeholder="e.g. Term 1"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Search by student, parent, or transaction
+                <input
+                  name="search"
+                  value={reportFilters.search}
+                  onChange={handleReportFilterChange}
+                  placeholder="Name, email, or transaction ID"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm text-slate-500">
+                <p>
+                  {filteredReportEntries.length} fee requests match the selected filters.
+                </p>
+                <p className="mt-1 text-xs text-slate-400">{reportFilterSummary}</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleResetReportFilters}
+                  className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                >
+                  Reset filters
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadReport('pdf')}
+                  disabled={reportDownloadState.loading}
+                  className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {reportDownloadState.loading && reportDownloadState.format === 'pdf'
+                    ? 'Preparing…'
+                    : 'download as pdf'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDownloadReport('csv')}
+                  disabled={reportDownloadState.loading}
+                  className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {reportDownloadState.loading && reportDownloadState.format === 'csv'
+                    ? 'Preparing…'
+                    : 'download as csv'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {isFormOpen && (
         <StudentFormModal
