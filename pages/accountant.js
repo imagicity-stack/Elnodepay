@@ -1085,6 +1085,14 @@ const AccountantDashboard = () => {
       } else if (!reminderExisting) {
         reminderMap.set(key, reminderDate || null);
       }
+      const modeRaw = (entry.mode || 'Online').toLowerCase();
+      const modeKey = modeRaw === 'cash' ? 'Cash' : modeRaw === 'online' ? 'Online' : 'Other';
+      modeTotals[modeKey] += amount;
+      const monthKey =
+        entry.month_key || `${entryDate.getFullYear()}-${String(entryDate.getMonth() + 1).padStart(2, '0')}`;
+      const monthLabel = entry.month_label || entryDate.toLocaleString('en-IN', { month: 'short', year: 'numeric' });
+      const existing = monthlyMap.get(monthKey) || { label: monthLabel, amount: 0 };
+      monthlyMap.set(monthKey, { label: existing.label || monthLabel, amount: existing.amount + amount });
     });
 
     const todayTime = today.getTime();
@@ -2597,6 +2605,17 @@ const AccountantDashboard = () => {
                 <p className="mt-2 text-xs text-slate-500">
                   Paid / Unpaid students: {monthMetrics.paidCount}/{monthMetrics.unpaidCount}
                 </p>
+                <p className="mt-2 text-xs text-slate-500">Across fee request breakdowns</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Total Students Registered</h3>
+                <p className="mt-3 text-2xl font-semibold text-slate-900">{monthMetrics.totalStudents}</p>
+                <p className="mt-2 text-xs text-slate-500">Overdue students: {monthMetrics.overdueCount}</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Active Parents</h3>
+                <p className="mt-3 text-2xl font-semibold text-slate-900">{monthMetrics.activeParents}</p>
+                <p className="mt-2 text-xs text-slate-500">Parents with open requests</p>
               </div>
             </div>
 
