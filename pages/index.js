@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react';
 import Head from 'next/head';
+import Image from 'next/image';
 import { useRouter } from 'next/router';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
+import {
+  browserLocalPersistence,
+  browserSessionPersistence,
+  onAuthStateChanged,
+  setPersistence,
+  signInWithEmailAndPassword,
+  signOut,
+} from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 
@@ -12,6 +20,16 @@ const LoginPage = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [rememberMe, setRememberMe] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const remembered = window.localStorage.getItem('elnode-remember-me');
+      if (remembered === 'true') {
+        setRememberMe(true);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -77,6 +95,17 @@ const LoginPage = () => {
     setLoading(true);
 
     try {
+      const persistence = rememberMe ? browserLocalPersistence : browserSessionPersistence;
+      await setPersistence(auth, persistence);
+      if (typeof window !== 'undefined') {
+        if (rememberMe) {
+          window.localStorage.setItem('elnode-remember-me', 'true');
+          window.sessionStorage.removeItem('elnode-remember-me');
+        } else {
+          window.sessionStorage.setItem('elnode-remember-me', 'false');
+          window.localStorage.removeItem('elnode-remember-me');
+        }
+      }
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err) {
       const message = err?.message?.replace('Firebase: ', '') || 'Login failed. Please check your credentials.';
@@ -114,7 +143,7 @@ const LoginPage = () => {
   }
 
   return (
-    <div className="min-h-screen bg-white flex items-center justify-center px-4 py-16 font-poppins text-slate-800">
+    <div className="relative min-h-screen bg-white flex items-center justify-center px-4 py-16 font-poppins text-slate-800">
       <Head>
         <title>EL-NODE Pay Login</title>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -124,6 +153,9 @@ const LoginPage = () => {
           rel="stylesheet"
         />
       </Head>
+      <div className="absolute left-6 top-6">
+        <Image src="/elnode.png" alt="EL-NODE Pay logo" width={48} height={48} priority />
+      </div>
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
           <h1 className="text-4xl font-semibold text-cardinal">EL-NODE Pay</h1>
@@ -158,6 +190,15 @@ const LoginPage = () => {
               placeholder="Enter your password"
             />
           </div>
+          <label className="flex items-center gap-2 text-sm font-medium text-cardinal">
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={(event) => setRememberMe(event.target.checked)}
+              className="h-4 w-4 rounded border-cardinal/40 text-cardinal focus:ring-cardinal"
+            />
+            Keep me signed in
+          </label>
           {error && <p className="text-sm font-medium text-red-600">{error}</p>}
           <button
             type="submit"
