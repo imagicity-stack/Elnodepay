@@ -1,0 +1,22 @@
+{
+  "name": "ELNODE",
+  "short_name": "ELNODE",
+  "description": "ELNODE payment management platform",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FFFFFF",
+  "theme_color": "#A31F36",
+  "icons": [
+    {
+      "src": "/elnode.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/elnode.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
