@@ -121,6 +121,26 @@ const calculateFeeRequestTotal = (request = {}) => {
   return Object.values(breakdown).reduce((sum, item) => sum + parseAmountValue(item?.amount), 0);
 };
 
+const resolveRequestBalance = (request = {}, fallbackAmount = 0) => {
+  const explicitFields = [
+    request.balance,
+    request.outstanding,
+    request.remaining_amount,
+    request.amount_due,
+  ];
+  for (const field of explicitFields) {
+    const amount = parseAmountValue(field);
+    if (amount > 0) {
+      return amount;
+    }
+  }
+  const status = `${request.status || ''}`.toLowerCase();
+  if (status === 'paid' || status === 'success') {
+    return 0;
+  }
+  return Math.max(parseAmountValue(fallbackAmount), 0);
+};
+
 const normalisePaymentMode = (mode) => {
   if (!mode) return 'Unspecified';
   const value = `${mode}`.toLowerCase();
@@ -290,32 +310,53 @@ const FeeRequestModal = ({
 }) => (
   <Modal title={`Create Fee Request · ${student?.name || ''}`} onClose={onClose}>
     <form onSubmit={onSubmit} className="space-y-5">
+      <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+        <input
+          id="fee-request-tuition"
+          type="checkbox"
+          checked={formState.tuitionEnabled}
+          onChange={(event) => onFieldChange('tuitionEnabled', event.target.checked)}
+          className="mt-1 h-4 w-4 rounded border-slate-300 text-cardinal focus:ring-cardinal"
+        />
+        <label htmlFor="fee-request-tuition" className="space-y-1 text-sm">
+          <span className="block font-semibold text-slate-900">Tuition fees</span>
+          <span className="block text-slate-600">
+            Toggle this on when the request should include the regular tuition cycle and due date.
+          </span>
+        </label>
+      </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Billing Cycle
-          <select
-            name="cycle"
-            value={formState.cycle}
-            onChange={(event) => onFieldChange(event.target.name, event.target.value)}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-          >
-            {cycleOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Due Date
-          <input
-            type="date"
-            name="dueDate"
-            value={formState.dueDate}
-            onChange={(event) => onFieldChange(event.target.name, event.target.value)}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-          />
-        </label>
+        {formState.tuitionEnabled && (
+          <>
+            <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+              Billing Cycle
+              <select
+                name="cycle"
+                value={formState.cycle}
+                onChange={(event) => onFieldChange(event.target.name, event.target.value)}
+                className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
+s:ring-2 focus:ring-cardinal/20"
+              >
+                {cycleOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+              Due Date
+              <input
+                type="date"
+                name="dueDate"
+                value={formState.dueDate}
+                onChange={(event) => onFieldChange(event.target.name, event.target.value)}
+                className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
+s:ring-2 focus:ring-cardinal/20"
+              />
+            </label>
+          </>
+        )}
         <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
           Custom Fee (optional)
           <input
@@ -324,7 +365,8 @@ const FeeRequestModal = ({
             onChange={(event) => onFieldChange(event.target.name, event.target.value)}
             placeholder="0"
             inputMode="decimal"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
+s:ring-2 focus:ring-cardinal/20"
           />
         </label>
         <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
@@ -334,7 +376,8 @@ const FeeRequestModal = ({
             value={formState.customNote}
             onChange={(event) => onFieldChange(event.target.name, event.target.value)}
             placeholder="Reason for custom amount"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
+s:ring-2 focus:ring-cardinal/20"
           />
         </label>
         <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
@@ -345,7 +388,8 @@ const FeeRequestModal = ({
             onChange={(event) => onFieldChange(event.target.name, event.target.value)}
             placeholder="0"
             inputMode="decimal"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
+s:ring-2 focus:ring-cardinal/20"
           />
         </label>
         <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
@@ -355,7 +399,8 @@ const FeeRequestModal = ({
             value={formState.othersLabel}
             onChange={(event) => onFieldChange(event.target.name, event.target.value)}
             placeholder="Lab fee, picnic…"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
+s:ring-2 focus:ring-cardinal/20"
           />
         </label>
         <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
@@ -364,7 +409,8 @@ const FeeRequestModal = ({
             name="includeStore"
             value={formState.includeStore ? 'yes' : 'no'}
             onChange={(event) => onFieldChange('includeStore', event.target.value === 'yes')}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
+s:ring-2 focus:ring-cardinal/20"
           >
             <option value="no">No</option>
             <option value="yes">Yes</option>
@@ -399,10 +445,12 @@ const FeeRequestModal = ({
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
         <p className="font-medium text-slate-900">Breakdown</p>
         <ul className="mt-2 space-y-1">
-          <li className="flex justify-between">
-            <span>{cycleOptions.find((item) => item.id === formState.cycle)?.label || 'Tuition'}</span>
-            <span>₹{amounts.base.toLocaleString('en-IN')}</span>
-          </li>
+          {formState.tuitionEnabled && (
+            <li className="flex justify-between">
+              <span>{cycleOptions.find((item) => item.id === formState.cycle)?.label || 'Tuition'}</span>
+              <span>₹{amounts.base.toLocaleString('en-IN')}</span>
+            </li>
+          )}
           {amounts.custom > 0 && (
             <li className="flex justify-between">
               <span>{formState.customNote.trim() || 'Custom Fee'}</span>
@@ -445,6 +493,161 @@ const FeeRequestModal = ({
     </form>
   </Modal>
 );
+
+
+const CommonFeeRequestModal = ({
+  state,
+  cycleOptions,
+  filteredStudents,
+  onCycleChange,
+  onDueDateChange,
+  onClassFilterChange,
+  onSearchChange,
+  onToggleStudent,
+  onToggleAllFiltered,
+  onClearSelection,
+  onSubmit,
+  onClose,
+  isSubmitting,
+  resolveAmount,
+}) => {
+  const selectedCount = state.selectedIds instanceof Set ? state.selectedIds.size : 0;
+  const allFilteredSelected =
+    filteredStudents.length > 0 &&
+    filteredStudents.every((student) => state.selectedIds.has(student.id));
+
+  return (
+    <Modal title="Create Common Fee Request" onClose={onClose} size="xl">
+      <form onSubmit={onSubmit} className="space-y-5">
+        <div className="grid gap-4 md:grid-cols-2">
+          <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+            Billing Cycle
+            <select
+              value={state.cycle}
+              onChange={(event) => onCycleChange(event.target.value)}
+              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            >
+              {cycleOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+            Due Date (optional)
+            <input
+              type="date"
+              value={state.dueDate}
+              onChange={(event) => onDueDateChange(event.target.value)}
+              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            />
+          </label>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+            <div className="grid gap-3 md:grid-cols-2">
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Class Filter
+                <select
+                  value={state.classFilter}
+                  onChange={(event) => onClassFilterChange(event.target.value)}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                >
+                  <option value="All">All Classes</option>
+                  {CLASS_OPTIONS.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Search Student
+                <input
+                  value={state.search}
+                  onChange={(event) => onSearchChange(event.target.value)}
+                  placeholder="Search by name or ID"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                />
+              </label>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
+              <button
+                type="button"
+                onClick={onToggleAllFiltered}
+                className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-100"
+              >
+                {allFilteredSelected ? 'Deselect filtered' : 'Select filtered'}
+              </button>
+              <button
+                type="button"
+                onClick={onClearSelection}
+                className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-100"
+              >
+                Clear all
+              </button>
+              <span className="inline-flex items-center rounded-full border border-slate-200 px-3 py-1 text-slate-600">
+                Selected: {selectedCount}
+              </span>
+            </div>
+          </div>
+          <div className="mt-4 max-h-80 overflow-y-auto rounded-2xl border border-slate-200">
+            <ul className="divide-y divide-slate-200">
+              {filteredStudents.map((student) => {
+                const amount = resolveAmount(student);
+                const checked = state.selectedIds.has(student.id);
+                return (
+                  <li key={student.id}>
+                    <label className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+                      <span className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => onToggleStudent(student.id)}
+                          className="h-4 w-4 rounded border-slate-300 text-cardinal focus:ring-cardinal"
+                        />
+                        <span>
+                          <p className="font-semibold text-slate-900">{student.name}</p>
+                          <p className="text-xs text-slate-500">
+                            {student.studentId || student.id} · Class {student.class || '—'}
+                          </p>
+                        </span>
+                      </span>
+                      <span className="text-xs font-semibold text-slate-600">
+                        ₹{Number(amount || 0).toLocaleString('en-IN')}
+                      </span>
+                    </label>
+                  </li>
+                );
+              })}
+              {filteredStudents.length === 0 && (
+                <li className="px-4 py-6 text-center text-sm text-slate-500">
+                  No students match the current filters.
+                </li>
+              )}
+            </ul>
+          </div>
+        </div>
+        <div className="flex items-center justify-between text-sm text-slate-600">
+          <span>
+            Cycle: <span className="font-semibold text-slate-900">{state.cycle}</span> · Due date:{' '}
+            <span className="font-semibold text-slate-900">{state.dueDate || 'Not set'}</span>
+          </span>
+          <button
+            type="submit"
+            disabled={isSubmitting || selectedCount === 0}
+            className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {isSubmitting
+              ? 'Creating requests…'
+              : `Create for ${selectedCount} student${selectedCount === 1 ? '' : 's'}`}
+          </button>
+        </div>
+      </form>
+    </Modal>
+  );
+};
 
 const PaymentHistoryModal = ({ student, payments, onClose, onDownload }) => (
   <Modal title={`Payment history · ${student?.name || ''}`} onClose={onClose} size="xl">
@@ -709,6 +912,7 @@ const AccountantDashboard = () => {
   const [feeStructureSaving, setFeeStructureSaving] = useState(false);
   const [feeRequestContext, setFeeRequestContext] = useState({ open: false, student: null });
   const [feeRequestForm, setFeeRequestForm] = useState({
+    tuitionEnabled: true,
     cycle: 'Monthly',
     dueDate: '',
     customAmount: '',
@@ -720,6 +924,14 @@ const AccountantDashboard = () => {
     storeAmount: '',
   });
   const [feeRequestSubmitting, setFeeRequestSubmitting] = useState(false);
+  const [commonRequestContext, setCommonRequestContext] = useState({ open: false, submitting: false });
+  const [commonRequestState, setCommonRequestState] = useState(() => ({
+    cycle: 'Monthly',
+    dueDate: '',
+    classFilter: 'All',
+    search: '',
+    selectedIds: new Set(),
+  }));
   const [transactionsLog, setTransactionsLog] = useState([]);
   const [transactionFilters, setTransactionFilters] = useState({ month: 'All', mode: 'All' });
   const [selectedStudentId, setSelectedStudentId] = useState(null);
@@ -1142,6 +1354,7 @@ const AccountantDashboard = () => {
     safeFeeRequests.forEach((request) => {
       const status = (request.status || '').toLowerCase();
       const total = calculateFeeRequestTotal(request);
+      const outstanding = resolveRequestBalance(request, total);
       const dueDate = parseDateValue(request.due_date);
       const cycleKey = resolveRequestCycle(request);
       feeTypeMap.set(cycleKey, (feeTypeMap.get(cycleKey) || 0) + 1);
@@ -1150,31 +1363,28 @@ const AccountantDashboard = () => {
         storeRevenue += parseAmountValue(request.breakdown.store.amount);
       }
 
-      if (status === 'paid') {
+      if (status === 'paid' || outstanding <= 0) {
         paidRequests += 1;
       } else {
         pendingRequests += 1;
       }
 
-      if (status === 'pending') {
-        pendingFees.amount += total;
+      if (outstanding > 0) {
+        pendingFees.amount += outstanding;
         pendingFees.count += 1;
-      }
-
-      if (status !== 'paid') {
         if (dueDate && dueDate.getTime() < todayTime) {
-          overdueFees.amount += total;
+          overdueFees.amount += outstanding;
           overdueFees.count += 1;
         } else if (dueDate && dueDate >= today && dueDate <= upcomingThreshold) {
           upcomingDueCount += 1;
         }
       }
 
-      if (status !== 'paid' && request.parent_email) {
+      if (outstanding > 0 && request.parent_email) {
         activeParentEmails.add(request.parent_email);
       }
 
-      if (status === 'paid' && dueDate) {
+      if (outstanding <= 0 && dueDate) {
         const paidDate =
           parseDateValue(request.paid_at) ||
           parseDateValue(request.payment_date) ||
@@ -1316,7 +1526,9 @@ const AccountantDashboard = () => {
     if (!student) {
       return { base: 0, custom: 0, others: 0, store: 0, total: 0 };
     }
-    const base = getFeeAmountFromStructure(student.class, feeRequestForm.cycle);
+    const base = feeRequestForm.tuitionEnabled
+      ? getFeeAmountFromStructure(student.class, feeRequestForm.cycle)
+      : 0;
     const parseAmount = (value) => {
       const numeric = Number(value || 0);
       return Number.isFinite(numeric) ? numeric : 0;
@@ -1365,6 +1577,32 @@ const AccountantDashboard = () => {
     return sorted;
   }, [students, filters]);
 
+  const commonFilteredStudents = useMemo(() => {
+    const safeStudents = Array.isArray(students) ? students : [];
+    if (!safeStudents || safeStudents.length === 0) {
+      return [];
+    }
+    const classFilter = commonRequestState.classFilter;
+    const searchValue = commonRequestState.search.trim().toLowerCase();
+    return safeStudents
+      .filter((student) => classFilter === 'All' || student.class === classFilter)
+      .filter((student) => {
+        if (!searchValue) {
+          return true;
+        }
+        const nameMatch = student.name?.toLowerCase().includes(searchValue);
+        const idMatch = student.studentId?.toLowerCase().includes(searchValue);
+        return Boolean(nameMatch || idMatch);
+      })
+      .sort((a, b) => {
+        const classCompare = (a.class || '').localeCompare(b.class || '');
+        if (classCompare !== 0) {
+          return classCompare;
+        }
+        return (a.name || '').localeCompare(b.name || '');
+      });
+  }, [students, commonRequestState.classFilter, commonRequestState.search]);
+
   const feeRequestReportEntries = useMemo(() => {
     const safeFeeRequests = Array.isArray(feeRequests) ? feeRequests : [];
     const safeStudents = Array.isArray(students) ? students : [];
@@ -1407,9 +1645,10 @@ const AccountantDashboard = () => {
       const dueDate = parseDateValue(request.due_date);
       const paidDate = parseDateValue(request.paid_at) || parseDateValue(request.payment_date);
       const amount = calculateFeeRequestTotal(request);
+      const outstanding = resolveRequestBalance(request, amount);
       const rawStatus = `${request.status || ''}`.trim().toLowerCase();
       let statusLabel = rawStatus ? `${rawStatus.charAt(0).toUpperCase()}${rawStatus.slice(1)}` : 'Pending';
-      if (rawStatus === 'paid' || rawStatus === 'success') {
+      if (rawStatus === 'paid' || rawStatus === 'success' || outstanding <= 0) {
         statusLabel = 'Paid';
       } else if (dueDate && dueDate.getTime() < today.getTime()) {
         statusLabel = 'Overdue';
@@ -1450,6 +1689,25 @@ const AccountantDashboard = () => {
 
       const storeAmount = parseAmountValue(request.breakdown?.store?.amount);
 
+      const keyCandidates = [
+        request.student_doc_id,
+        request.studentId,
+        request.student_id,
+        request.studentID,
+        studentMatch?.id,
+        studentMatch?.studentId,
+        request.student_name,
+        studentMatch?.name,
+      ];
+      const lookupKeys = Array.from(
+        new Set(
+          keyCandidates
+            .map((value) => (value ? `${value}` : ''))
+            .map((value) => value.trim().toLowerCase())
+            .filter(Boolean),
+        ),
+      );
+
       return {
         id: request.id,
         studentId: studentMatch?.studentId || request.studentId || request.student_doc_id || '',
@@ -1464,7 +1722,7 @@ const AccountantDashboard = () => {
         dueDate,
         paidDate,
         amount,
-        balance: rawStatus === 'paid' || rawStatus === 'success' ? 0 : amount,
+        balance: Math.max(outstanding, 0),
         cycle: resolveRequestCycle(request),
         session: sessionValue,
         term: termValue,
@@ -1473,9 +1731,26 @@ const AccountantDashboard = () => {
         transactionId: request.transaction_id || request.payment_reference || request.razorpay_payment_id || '',
         hasReminder,
         storeAmount,
+        tuitionEnabled: Boolean(request.tuition_enabled),
+        lookupKeys,
       };
     });
   }, [feeRequests, students, reminders]);
+
+  const feeRequestEntriesLookup = useMemo(() => {
+    const safeEntries = Array.isArray(feeRequestReportEntries) ? feeRequestReportEntries : [];
+    const map = new Map();
+    safeEntries.forEach((entry) => {
+      const keys = Array.isArray(entry.lookupKeys) ? entry.lookupKeys : [];
+      keys.forEach((key) => {
+        if (!map.has(key)) {
+          map.set(key, []);
+        }
+        map.get(key).push(entry);
+      });
+    });
+    return map;
+  }, [feeRequestReportEntries]);
 
   const filteredReportEntries = useMemo(() => {
     const safeEntries = Array.isArray(feeRequestReportEntries) ? feeRequestReportEntries : [];
@@ -1837,16 +2112,33 @@ const AccountantDashboard = () => {
     return match ? match.id : 'Monthly';
   };
 
-  const buildFeeRequestForm = (student) => ({
-    cycle: normaliseCycleId(student?.fee_cycle),
-    dueDate: student?.due_date || feeStructureDraft.defaultDueDate || '',
-    customAmount: '',
-    customNote: '',
-    othersAmount: '',
-    othersLabel: '',
-    includeStore: false,
-    storeItem: '',
-    storeAmount: '',
+  const buildFeeRequestForm = (student) => {
+    const cycle = normaliseCycleId(student?.fee_cycle);
+    const inferredTuition = Boolean(
+      student?.fee_cycle ||
+        student?.due_date ||
+        getFeeAmountFromStructure(student?.class, cycle) > 0,
+    );
+    return {
+      tuitionEnabled: inferredTuition,
+      cycle,
+      dueDate: student?.due_date || feeStructureDraft.defaultDueDate || '',
+      customAmount: '',
+      customNote: '',
+      othersAmount: '',
+      othersLabel: '',
+      includeStore: false,
+      storeItem: '',
+      storeAmount: '',
+    };
+  };
+
+  const buildCommonRequestState = () => ({
+    cycle: 'Monthly',
+    dueDate: feeStructureDraft.defaultDueDate || '',
+    classFilter: 'All',
+    search: '',
+    selectedIds: new Set(),
   });
 
   const handleOpenFeeRequest = (student) => {
@@ -1862,8 +2154,34 @@ const AccountantDashboard = () => {
     setFeeRequestSubmitting(false);
   };
 
+  const handleOpenCommonRequest = () => {
+    closeStudentActions();
+    resetMarkPaidContext();
+    setCommonRequestState(buildCommonRequestState());
+    setCommonRequestContext({ open: true, submitting: false });
+  };
+
+  const handleCloseCommonRequest = () => {
+    setCommonRequestContext({ open: false, submitting: false });
+    setCommonRequestState(buildCommonRequestState());
+  };
+
   const handleFeeRequestFieldChange = (name, rawValue) => {
     setFeeRequestForm((prev) => {
+      if (name === 'tuitionEnabled') {
+        const enable = Boolean(rawValue);
+        const defaultCycle = normaliseCycleId(
+          feeRequestContext.student?.fee_cycle || prev.cycle || 'Monthly',
+        );
+        const defaultDueDate =
+          feeRequestContext.student?.due_date || feeStructureDraft.defaultDueDate || '';
+        return {
+          ...prev,
+          tuitionEnabled: enable,
+          cycle: enable ? defaultCycle : prev.cycle,
+          dueDate: enable ? prev.dueDate || defaultDueDate : '',
+        };
+      }
       if (name === 'includeStore') {
         const include = Boolean(rawValue);
         return {
@@ -1881,6 +2199,52 @@ const AccountantDashboard = () => {
       const value = isAmountField ? `${rawValue}`.replace(/[^0-9.]/g, '') : rawValue;
       return { ...prev, [name]: value };
     });
+  };
+
+  const handleCommonCycleChange = (value) => {
+    setCommonRequestState((prev) => ({ ...prev, cycle: normaliseCycleId(value) }));
+  };
+
+  const handleCommonDueDateChange = (value) => {
+    setCommonRequestState((prev) => ({ ...prev, dueDate: value }));
+  };
+
+  const handleCommonClassFilterChange = (value) => {
+    setCommonRequestState((prev) => ({ ...prev, classFilter: value }));
+  };
+
+  const handleCommonSearchChange = (value) => {
+    setCommonRequestState((prev) => ({ ...prev, search: value }));
+  };
+
+  const handleCommonToggleStudent = (studentId) => {
+    setCommonRequestState((prev) => {
+      const next = new Set(prev.selectedIds);
+      if (next.has(studentId)) {
+        next.delete(studentId);
+      } else {
+        next.add(studentId);
+      }
+      return { ...prev, selectedIds: next };
+    });
+  };
+
+  const handleCommonToggleAllFiltered = () => {
+    setCommonRequestState((prev) => {
+      const next = new Set(prev.selectedIds);
+      const filteredIds = commonFilteredStudents.map((student) => student.id);
+      const allSelected = filteredIds.every((id) => next.has(id));
+      if (allSelected) {
+        filteredIds.forEach((id) => next.delete(id));
+      } else {
+        filteredIds.forEach((id) => next.add(id));
+      }
+      return { ...prev, selectedIds: next };
+    });
+  };
+
+  const handleCommonClearSelection = () => {
+    setCommonRequestState((prev) => ({ ...prev, selectedIds: new Set() }));
   };
 
   const ensureParentAccount = async (email, details = {}) => {
@@ -2146,6 +2510,13 @@ const AccountantDashboard = () => {
   const handleSendReminder = async (student, { silent = false } = {}) => {
     resetMarkPaidContext();
     closeStudentActions();
+    const outstandingAmount = Number(student.balance ?? student.fee_amount ?? 0);
+    if ((student.status || '').toLowerCase() === 'paid' || outstandingAmount <= 0) {
+      if (!silent) {
+        triggerToast('No outstanding balance for this student.', 'info');
+      }
+      return;
+    }
     try {
       const parentUid = student.parent_uid || (await ensureParentAccount(student.parent_email));
       const reminderMessage = settingsState.reminderTemplate.replace(
@@ -2279,7 +2650,8 @@ const AccountantDashboard = () => {
     event.preventDefault();
     if (!feeRequestContext.student) return;
     const student = feeRequestContext.student;
-    const baseAmount = feeRequestAmounts.base;
+    const includeTuition = Boolean(feeRequestForm.tuitionEnabled);
+    const baseAmount = includeTuition ? feeRequestAmounts.base : 0;
     const customAmount = feeRequestAmounts.custom;
     const othersAmount = feeRequestAmounts.others;
     const storeAmount = feeRequestAmounts.store;
@@ -2292,11 +2664,17 @@ const AccountantDashboard = () => {
       triggerToast('Store charges must include an amount.', 'error');
       return;
     }
-    const dueDateValue = feeRequestForm.dueDate || feeStructureDraft.defaultDueDate || '';
-    const cycleMeta = REQUEST_CYCLE_OPTIONS.find((item) => item.id === feeRequestForm.cycle) || {
-      id: feeRequestForm.cycle,
-      label: feeRequestForm.cycle,
-    };
+    const dueDateValue = includeTuition
+      ? feeRequestForm.dueDate || feeStructureDraft.defaultDueDate || ''
+      : '';
+    const cycleMeta = includeTuition
+      ? REQUEST_CYCLE_OPTIONS.find((item) => item.id === feeRequestForm.cycle) || {
+          id: feeRequestForm.cycle,
+          label: feeRequestForm.cycle,
+        }
+      : { id: feeRequestForm.cycle || 'Adhoc', label: feeRequestForm.cycle || 'Adhoc' };
+    const statusValue = totalAmount > 0 ? 'Pending' : 'Paid';
+    const timestamp = serverTimestamp();
     setFeeRequestSubmitting(true);
     try {
       const breakdown = {};
@@ -2334,16 +2712,19 @@ const AccountantDashboard = () => {
         class: student.class || '',
         parent_email: student.parent_email || '',
         parent_uid: student.parent_uid || '',
-        fee_cycle: cycleMeta.label,
-        cycle: cycleMeta.id,
+        fee_cycle: includeTuition ? cycleMeta.label : '',
+        cycle: includeTuition ? cycleMeta.id : '',
         base_amount: baseAmount,
         custom_amount: customAmount,
         extras_total: othersAmount + storeAmount,
         amount_total: totalAmount,
         due_date: dueDateValue,
         breakdown,
-        status: 'Pending',
-        created_at: serverTimestamp(),
+        balance: totalAmount,
+        status: statusValue,
+        tuition_enabled: includeTuition,
+        created_at: timestamp,
+        ...(statusValue === 'Paid' ? { paid_at: timestamp } : {}),
       });
 
       const feeBreakdown = [];
@@ -2357,16 +2738,19 @@ const AccountantDashboard = () => {
         });
       }
 
-      const tuitionBalance = baseAmount + customAmount;
-      await updateDoc(doc(db, 'students', student.id), {
-        fee_cycle: cycleMeta.label,
-        fee_amount: tuitionBalance,
-        balance: tuitionBalance,
-        due_date: dueDateValue,
-        fee_breakdown: feeBreakdown,
-        status: tuitionBalance > 0 ? 'Pending' : 'Paid',
+      const studentUpdates = {
+        balance: totalAmount,
+        status: statusValue,
         updated_at: serverTimestamp(),
-      });
+      };
+      if (includeTuition) {
+        studentUpdates.fee_cycle = cycleMeta.label;
+        studentUpdates.fee_amount = baseAmount + customAmount;
+        studentUpdates.due_date = dueDateValue;
+        studentUpdates.fee_breakdown = feeBreakdown;
+      }
+
+      await updateDoc(doc(db, 'students', student.id), studentUpdates);
 
       triggerToast('Fee request created successfully.', 'success');
       handleCloseFeeRequest();
@@ -2374,6 +2758,92 @@ const AccountantDashboard = () => {
       console.error('Error creating fee request', error);
       triggerToast('Unable to create fee request. Please try again.', 'error');
       setFeeRequestSubmitting(false);
+    }
+  };
+
+  const handleCommonRequestSubmit = async (event) => {
+    event.preventDefault();
+    const selectedIds = Array.from(commonRequestState.selectedIds);
+    if (!selectedIds.length) {
+      triggerToast('Select at least one student before creating a request.', 'error');
+      return;
+    }
+    setCommonRequestContext((prev) => ({ ...prev, submitting: true }));
+    try {
+      const cycleMeta =
+        REQUEST_CYCLE_OPTIONS.find((item) => item.id === commonRequestState.cycle) || {
+          id: commonRequestState.cycle,
+          label: commonRequestState.cycle,
+        };
+      const dueDateValue = commonRequestState.dueDate || feeStructureDraft.defaultDueDate || '';
+      let createdCount = 0;
+      let skippedCount = 0;
+      const safeStudents = Array.isArray(students) ? students : [];
+      for (const studentId of selectedIds) {
+        const student = safeStudents.find((item) => item.id === studentId);
+        if (!student) {
+          skippedCount += 1;
+          continue;
+        }
+        const baseAmount = getFeeAmountFromStructure(student.class, cycleMeta.id);
+        if (!(baseAmount > 0)) {
+          skippedCount += 1;
+          continue;
+        }
+        const timestamp = serverTimestamp();
+        const breakdown = {
+          tuition: {
+            label: `${cycleMeta.label} Fee`,
+            amount: baseAmount,
+            cycle: cycleMeta.label,
+          },
+        };
+        await addDoc(collection(db, 'fee_requests'), {
+          student_doc_id: student.id,
+          studentId: student.studentId || student.id,
+          student_name: student.name,
+          class: student.class || '',
+          parent_email: student.parent_email || '',
+          parent_uid: student.parent_uid || '',
+          fee_cycle: cycleMeta.label,
+          cycle: cycleMeta.id,
+          base_amount: baseAmount,
+          custom_amount: 0,
+          extras_total: 0,
+          amount_total: baseAmount,
+          due_date: dueDateValue,
+          breakdown,
+          balance: baseAmount,
+          status: 'Pending',
+          tuition_enabled: true,
+          created_at: timestamp,
+        });
+        await updateDoc(doc(db, 'students', student.id), {
+          fee_cycle: cycleMeta.label,
+          fee_amount: baseAmount,
+          balance: baseAmount,
+          due_date: dueDateValue,
+          fee_breakdown: [{ label: `${cycleMeta.label} Fee`, amount: baseAmount }],
+          status: baseAmount > 0 ? 'Pending' : 'Paid',
+          updated_at: timestamp,
+        });
+        createdCount += 1;
+      }
+      if (createdCount > 0) {
+        const parts = [`Created ${createdCount} request${createdCount === 1 ? '' : 's'}`];
+        if (skippedCount > 0) {
+          parts.push(`Skipped ${skippedCount} without fee data`);
+        }
+        triggerToast(parts.join(' · '), 'success');
+      } else {
+        triggerToast('No requests created. Check the fee structure for the selected students.', 'warning');
+      }
+      setCommonRequestContext({ open: false, submitting: false });
+      setCommonRequestState(buildCommonRequestState());
+    } catch (error) {
+      console.error('Error creating common requests', error);
+      setCommonRequestContext((prev) => ({ ...prev, submitting: false }));
+      triggerToast('Unable to create common fee requests. Please try again.', 'error');
     }
   };
 
@@ -2501,6 +2971,7 @@ const AccountantDashboard = () => {
             paid_at: serverTimestamp(),
             payment_mode: normalizedMode,
             transaction_id: normalizedMode === 'Online' ? transactionId : '',
+            balance: 0,
             updated_at: serverTimestamp(),
           }),
         );
@@ -2555,8 +3026,7 @@ const AccountantDashboard = () => {
 
   const handleCheckDues = (student) => {
     if (!student) return;
-    const safeEntries = Array.isArray(feeRequestReportEntries) ? feeRequestReportEntries : [];
-    if (!safeEntries.length) {
+    if (!feeRequestEntriesLookup || feeRequestEntriesLookup.size === 0) {
       triggerToast('No fee records available yet.', 'info');
       return;
     }
@@ -2568,11 +3038,15 @@ const AccountantDashboard = () => {
         .filter(Boolean),
     );
 
-    const matchingEntries = safeEntries.filter((entry) => {
-      const entryKeys = [entry.studentId, entry.studentDocId, entry.studentName]
-        .map(normalizeKey)
-        .filter(Boolean);
-      return entryKeys.some((key) => studentKeys.has(key));
+    const seen = new Set();
+    const matchingEntries = [];
+    studentKeys.forEach((key) => {
+      const entries = feeRequestEntriesLookup.get(key) || [];
+      entries.forEach((entry) => {
+        if (seen.has(entry.id)) return;
+        seen.add(entry.id);
+        matchingEntries.push(entry);
+      });
     });
 
     if (!matchingEntries.length) {
@@ -2919,7 +3393,18 @@ const AccountantDashboard = () => {
                     View every student, update their details, and raise fee requests in one place.
                   </p>
                 </div>
-                <StudentFilterControls />
+                <div className="space-y-3 md:w-1/2 xl:w-2/5">
+                  <StudentFilterControls />
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      onClick={handleOpenCommonRequest}
+                      className="rounded-full border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
+                    >
+                      Create Common Fee Request
+                    </button>
+                  </div>
+                </div>
               </div>
 
               <div className="mt-6">
@@ -3007,8 +3492,9 @@ const AccountantDashboard = () => {
                     const balance = Number(student.balance ?? student.fee_amount ?? 0);
                     const total = Number(student.fee_amount ?? 0);
                     const paid = Math.max(total - balance, 0);
+                    const hasOutstanding = balance > 0;
                     const isMarking = markPaidContext.student?.id === student.id;
-                    const isPaid = (student.status || '').toLowerCase() === 'paid';
+                    const statusLabel = hasOutstanding ? student.status || 'Pending' : 'Paid';
                     return (
                       <div
                         key={`${student.id}-fee-report`}
@@ -3025,10 +3511,10 @@ const AccountantDashboard = () => {
                           </div>
                           <span
                             className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                              statusBadgeClasses[student.status] || 'bg-slate-100 text-slate-600'
+                              statusBadgeClasses[statusLabel] || 'bg-slate-100 text-slate-600'
                             }`}
                           >
-                            {student.status || 'Pending'}
+                            {statusLabel}
                           </span>
                         </div>
                         <div className="mt-4 grid grid-cols-3 gap-3 text-xs">
@@ -3046,7 +3532,7 @@ const AccountantDashboard = () => {
                           </div>
                           <div className="rounded-2xl bg-slate-50 p-3 text-center">
                             <dt className="text-slate-500">Balance</dt>
-                            <dd className="mt-1 text-sm font-semibold text-rose-600">
+                            <dd className="mt-1 text-sm font-semibold ${hasOutstanding ? 'text-rose-600' : 'text-emerald-600'}">
                               ₹{balance.toLocaleString('en-IN')}
                             </dd>
                           </div>
@@ -3062,9 +3548,9 @@ const AccountantDashboard = () => {
                           <button
                             type="button"
                             onClick={() => beginMarkPaidFlow(student)}
-                            disabled={isPaid || markPaidContext.submitting}
+                            disabled={!hasOutstanding || markPaidContext.submitting}
                             className={`rounded-full border px-3 py-1.5 transition ${
-                              isPaid
+                              !hasOutstanding
                                 ? 'border-slate-200 text-slate-400'
                                 : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
                             } disabled:cursor-not-allowed disabled:opacity-60`}
@@ -3074,7 +3560,7 @@ const AccountantDashboard = () => {
                           <button
                             type="button"
                             onClick={() => handleSendReminder(student)}
-                            disabled={markPaidContext.submitting}
+                            disabled={!hasOutstanding || markPaidContext.submitting}
                             className="rounded-full border border-cardinal px-3 py-1.5 text-cardinal transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             Send Reminder
@@ -3673,6 +4159,27 @@ const AccountantDashboard = () => {
           onClose={() => setHistoryContext({ open: false, student: null, entries: [] })}
           onDownload={() =>
             handleDownloadHistoryReport(historyContext.student, historyContext.entries)
+          }
+        />
+      )}
+
+      {commonRequestContext.open && (
+        <CommonFeeRequestModal
+          state={commonRequestState}
+          cycleOptions={REQUEST_CYCLE_OPTIONS}
+          filteredStudents={commonFilteredStudents}
+          onCycleChange={handleCommonCycleChange}
+          onDueDateChange={handleCommonDueDateChange}
+          onClassFilterChange={handleCommonClassFilterChange}
+          onSearchChange={handleCommonSearchChange}
+          onToggleStudent={handleCommonToggleStudent}
+          onToggleAllFiltered={handleCommonToggleAllFiltered}
+          onClearSelection={handleCommonClearSelection}
+          onSubmit={handleCommonRequestSubmit}
+          onClose={handleCloseCommonRequest}
+          isSubmitting={commonRequestContext.submitting}
+          resolveAmount={(student) =>
+            getFeeAmountFromStructure(student.class, commonRequestState.cycle)
           }
         />
       )}

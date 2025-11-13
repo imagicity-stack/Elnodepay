@@ -4,12 +4,141 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
+  query,
   serverTimestamp,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
 const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+const parseDateValue = (value) => {
+  if (!value) return null;
+  if (typeof value.toDate === 'function') {
+    const parsed = value.toDate();
+    return Number.isFinite(parsed?.getTime?.()) ? parsed : null;
+  }
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+};
+
+const parseAmountValue = (value) => {
+  const amount = Number(value ?? 0);
+  return Number.isFinite(amount) ? amount : 0;
+};
+
+const calculateFeeRequestTotal = (request = {}) => {
+  const directTotal = parseAmountValue(request.amount_total ?? request.amount);
+  if (directTotal > 0) {
+    return directTotal;
+  }
+  const base = parseAmountValue(request.base_amount);
+  const custom = parseAmountValue(request.custom_amount);
+  const extras = parseAmountValue(request.extras_total);
+  if (base + custom + extras > 0) {
+    return base + custom + extras;
+  }
+  const breakdown = request.breakdown && typeof request.breakdown === 'object' ? request.breakdown : {};
+  return Object.values(breakdown).reduce((sum, item) => sum + parseAmountValue(item?.amount), 0);
+};
+
+const resolveRequestBalance = (request = {}, fallbackAmount = 0) => {
+  const explicitFields = [
+    request.balance,
+    request.outstanding,
+    request.remaining_amount,
+    request.amount_due,
+  ];
+  for (const field of explicitFields) {
+    const amount = parseAmountValue(field);
+    if (amount > 0) {
+      return amount;
+    }
+  }
+  const status = `${request.status || ''}`.toLowerCase();
+  if (status === 'paid' || status === 'success') {
+    return 0;
+  }
+  return Math.max(parseAmountValue(fallbackAmount), 0);
+};
+
+const syncFeeRequestsAfterPayment = async ({
+  studentDocId,
+  studentId,
+  amountPaid,
+  paymentMode,
+  paymentId,
+}) => {
+  if ((!studentDocId && !studentId) || !(amountPaid > 0)) {
+    return;
+  }
+  const requestDocs = new Map();
+  if (studentDocId) {
+    const snapshot = await getDocs(
+      query(collection(db, 'fee_requests'), where('student_doc_id', '==', studentDocId)),
+    );
+    snapshot.forEach((docSnap) => {
+      requestDocs.set(docSnap.id, docSnap);
+    });
+  }
+  if (studentId && studentId !== studentDocId) {
+    const snapshot = await getDocs(
+      query(collection(db, 'fee_requests'), where('studentId', '==', studentId)),
+    );
+    snapshot.forEach((docSnap) => {
+      requestDocs.set(docSnap.id, docSnap);
+    });
+  }
+  if (!requestDocs.size) {
+    return;
+  }
+
+  const sortedRequests = Array.from(requestDocs.values()).sort((a, b) => {
+    const dataA = a.data();
+    const dataB = b.data();
+    const dueA = parseDateValue(dataA.due_date);
+    const dueB = parseDateValue(dataB.due_date);
+    const timeA = dueA ? dueA.getTime() : parseDateValue(dataA.created_at)?.getTime() || 0;
+    const timeB = dueB ? dueB.getTime() : parseDateValue(dataB.created_at)?.getTime() || 0;
+    return timeA - timeB;
+  });
+
+  let remaining = amountPaid;
+  for (const docSnap of sortedRequests) {
+    if (remaining <= 0) {
+      break;
+    }
+    const data = docSnap.data();
+    const total = calculateFeeRequestTotal(data);
+    const outstanding = resolveRequestBalance(data, total);
+    if (outstanding <= 0) {
+      continue;
+    }
+    if (remaining >= outstanding) {
+      await updateDoc(doc(db, 'fee_requests', docSnap.id), {
+        status: 'Paid',
+        paid_at: serverTimestamp(),
+        payment_mode: paymentMode || 'Online',
+        transaction_id: paymentId || '',
+        balance: 0,
+        updated_at: serverTimestamp(),
+      });
+      remaining -= outstanding;
+    } else {
+      const newBalance = outstanding - remaining;
+      await updateDoc(doc(db, 'fee_requests', docSnap.id), {
+        balance: newBalance,
+        status: 'Pending',
+        payment_mode: paymentMode || 'Online',
+        transaction_id: paymentId || '',
+        updated_at: serverTimestamp(),
+      });
+      remaining = 0;
+    }
+  }
+};
 
 const handler = async (req, res) => {
   if (req.method !== 'POST') {
@@ -88,6 +217,14 @@ const handler = async (req, res) => {
         });
       }
     }
+
+    await syncFeeRequestsAfterPayment({
+      studentDocId,
+      studentId,
+      amountPaid,
+      paymentMode: paymentMode || 'Online',
+      paymentId: razorpay_payment_id || '',
+    });
 
     const eventDate = new Date();
     const monthKey = `${eventDate.getFullYear()}-${String(eventDate.getMonth() + 1).padStart(2, '0')}`;
