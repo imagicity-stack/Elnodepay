@@ -12,8 +12,6 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 
-const keySecret = process.env.RAZORPAY_KEY_SECRET;
-
 const parseDateValue = (value) => {
   if (!value) return null;
   if (typeof value.toDate === 'function') {
@@ -146,10 +144,6 @@ const handler = async (req, res) => {
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
 
-  if (!keySecret) {
-    return res.status(500).json({ success: false, message: 'Razorpay secret missing' });
-  }
-
   try {
     const {
       razorpay_order_id,
@@ -169,6 +163,12 @@ const handler = async (req, res) => {
       paymentMode = 'Online',
     } = req.body;
 
+    const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+    if (!keySecret) {
+      return res.status(500).json({ success: false, message: 'Razorpay secret missing' });
+    }
+
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({ success: false, message: 'Incomplete Razorpay payload' });
     }
@@ -177,10 +177,22 @@ const handler = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Missing user reference' });
     }
 
+    console.log('[Razorpay] Verifying payment', {
+      orderId: razorpay_order_id,
+      paymentId: razorpay_payment_id,
+      userId,
+      amount,
+      paymentMode,
+    });
+
     const body = `${razorpay_order_id}|${razorpay_payment_id}`;
     const expectedSignature = crypto.createHmac('sha256', keySecret).update(body).digest('hex');
 
     if (expectedSignature !== razorpay_signature) {
+      console.warn('[Razorpay] Signature mismatch', {
+        orderId: razorpay_order_id,
+        paymentId: razorpay_payment_id,
+      });
       return res.status(400).json({ success: false, message: 'Signature mismatch' });
     }
 
@@ -226,6 +238,14 @@ const handler = async (req, res) => {
       paymentId: razorpay_payment_id || '',
     });
 
+    console.log('[Razorpay] Payment verified and recorded', {
+      orderId: razorpay_order_id,
+      paymentId: razorpay_payment_id,
+      amount: amountPaid,
+      paymentMode: paymentMode || 'Online',
+      paymentDocId: paymentDoc.id,
+    });
+
     const eventDate = new Date();
     const monthKey = `${eventDate.getFullYear()}-${String(eventDate.getMonth() + 1).padStart(2, '0')}`;
     const monthLabel = eventDate.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
@@ -257,7 +277,7 @@ const handler = async (req, res) => {
 
     return res.status(200).json({ success: true, paymentId: paymentDoc.id });
   } catch (error) {
-    console.error('verifyPayment error', error);
+    console.error('[Razorpay] verifyPayment error', error);
     return res.status(500).json({ success: false, message: error.message || 'Unable to verify payment' });
   }
 };

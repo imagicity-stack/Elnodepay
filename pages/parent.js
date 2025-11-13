@@ -565,8 +565,24 @@ const ParentDashboard = () => {
         throw new Error(orderData.message || 'Unable to initiate payment');
       }
 
+      const razorpayKeyId = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+
+      if (!razorpayKeyId) {
+        throw new Error('Payment gateway unavailable. Please contact support.');
+      }
+
+      if (razorpayKeyId.includes('rzp_test')) {
+        console.warn('[Razorpay] Test key detected in live payment flow');
+      }
+
+      console.log('[Razorpay] Initializing checkout', {
+        orderId: orderData.order.id,
+        amount: orderData.order.amount,
+        currency: orderData.order.currency,
+      });
+
       const options = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        key: razorpayKeyId,
         amount: orderData.order.amount,
         currency: 'INR',
         name: 'EL-NODE Pay',
