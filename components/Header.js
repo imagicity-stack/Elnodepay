@@ -23,6 +23,7 @@ const Header = () => {
   const [isClient, setIsClient] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isAuditOpen, setIsAuditOpen] = useState(false);
+  const isAccountantPage = router.pathname === '/accountant';
   const auditMenuRef = useRef(null);
 
   useEffect(() => {
@@ -80,7 +81,7 @@ const Header = () => {
               {item.label}
             </Link>
           ))}
-          {isClient && isAuthenticated && (
+          {isClient && isAuthenticated && isAccountantPage && (
             <div className="relative" ref={auditMenuRef}>
               <button
                 type="button"
