@@ -990,6 +990,8 @@ const AccountantDashboard = () => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
+  const [isAuditMenuOpen, setIsAuditMenuOpen] = useState(false);
+  const auditMenuRef = useRef(null);
   const [filters, setFilters] = useState({
     class: 'All',
     status: 'All',
@@ -1130,6 +1132,49 @@ const AccountantDashboard = () => {
       router.replace('/');
     }
   }, [router]); // fix: define before effects to avoid init issues
+
+  useEffect(() => {
+    if (typeof document === 'undefined') {
+      return undefined;
+    }
+
+    const handleClickOutside = (event) => {
+      if (auditMenuRef.current && !auditMenuRef.current.contains(event.target)) {
+        setIsAuditMenuOpen(false);
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setIsAuditMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, []);
+
+  const handleAuditNavigate = useCallback(
+    (tabId) => {
+      setActiveTab(tabId);
+      setIsAuditMenuOpen(false);
+
+      if (typeof window !== 'undefined') {
+        window.requestAnimationFrame(() => {
+          const section = document.getElementById(tabId);
+          if (section) {
+            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        });
+      }
+    },
+    []
+  );
 
   const closeStudentActions = () => {
     setStudentActionsContext({ open: false, student: null });
@@ -3768,6 +3813,55 @@ const resolveTransactionMonthLabel = (entry) => {
             >
               Generate Report
             </button>
+            <div className="relative" ref={auditMenuRef}>
+              <button
+                type="button"
+                onClick={() => setIsAuditMenuOpen((prev) => !prev)}
+                className="flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                aria-haspopup="true"
+                aria-expanded={isAuditMenuOpen}
+                aria-controls="audit-menu"
+              >
+                Audit
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  className={`h-4 w-4 transition-transform ${isAuditMenuOpen ? 'rotate-180' : ''}`}
+                  aria-hidden="true"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.25a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </button>
+              {isAuditMenuOpen && (
+                <div
+                  id="audit-menu"
+                  className="absolute right-0 z-10 mt-2 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                  role="menu"
+                  aria-label="Audit"
+                >
+                  {[
+                    { id: 'ledger', label: 'Ledger' },
+                    { id: 'expenses', label: 'Expenses' },
+                    { id: 'reports', label: 'Reports' },
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => handleAuditNavigate(item.id)}
+                      className="block w-full px-4 py-2 text-left text-sm text-slate-700 transition hover:bg-cardinal/10"
+                      role="menuitem"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
             <button
               type="button"
               onClick={handleSignOut}
@@ -3784,9 +3878,6 @@ const resolveTransactionMonthLabel = (entry) => {
           {[
             { id: 'overview', label: 'Overview' },
             { id: 'students', label: 'Students' },
-            { id: 'ledger', label: 'Ledger' },
-            { id: 'expenses', label: 'Expenses' },
-            { id: 'reports', label: 'Reports' },
             { id: 'fee-report', label: 'Fee Report' },
             { id: 'reminders', label: 'Reminders and Notification' },
             { id: 'fee-settings', label: 'Fee Settings' },
@@ -4442,7 +4533,7 @@ const resolveTransactionMonthLabel = (entry) => {
         )}
 
         {activeTab === 'ledger' && (
-          <section className="mt-8 space-y-6">
+          <section id="ledger" className="mt-8 space-y-6">
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                 <div>
@@ -4633,7 +4724,7 @@ const resolveTransactionMonthLabel = (entry) => {
         )}
 
         {activeTab === 'expenses' && (
-          <section className="mt-8 space-y-6">
+          <section id="expenses" className="mt-8 space-y-6">
             <div className="grid gap-6 lg:grid-cols-5">
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
                 <h2 className="text-lg font-semibold text-slate-900">Record Expense</h2>
@@ -4940,7 +5031,7 @@ const resolveTransactionMonthLabel = (entry) => {
         )}
 
         {activeTab === 'reports' && (
-          <section className="mt-8 space-y-6">
+          <section id="reports" className="mt-8 space-y-6">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="text-lg font-semibold text-slate-900">Monthly Collection Summary</h3>
