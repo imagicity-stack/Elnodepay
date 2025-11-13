@@ -172,6 +172,64 @@ const normalisePaymentMode = (mode) => {
   return mode;
 };
 
+const getFinancialYearRange = (referenceDate = new Date()) => { // fixed initialization order
+  const date = new Date(referenceDate);
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const startYear = month >= 3 ? year : year - 1;
+  const endYear = startYear + 1;
+  const start = new Date(startYear, 3, 1);
+  const end = new Date(endYear, 2, 31, 23, 59, 59, 999);
+  return { start, end };
+};
+
+const formatDateInput = (date) => { // fixed initialization order
+  if (!date) return '';
+  const parsed = date instanceof Date ? date : new Date(date);
+  if (!Number.isFinite(parsed.getTime())) return '';
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatCurrency = (amount) => { // fixed initialization order
+  const value = Number(amount || 0);
+  if (!Number.isFinite(value)) return '₹0';
+  return `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+};
+
+const INITIAL_FY_RANGE = getFinancialYearRange(); // fixed initialization order
+const DEFAULT_FY_START = formatDateInput(INITIAL_FY_RANGE.start); // fixed initialization order
+const DEFAULT_FY_END = formatDateInput(INITIAL_FY_RANGE.end); // fixed initialization order
+
+const resolveCoaFromFeeType = (feeType) => { // fixed initialization order
+  switch (feeType) {
+    case 'Tuition':
+      return 'Tuition Fees';
+    case 'Transport':
+      return 'Transport Fees';
+    case 'Uniform':
+      return 'Store Sales';
+    case 'Event':
+      return 'Donations';
+    default:
+      return 'Misc Income';
+  }
+};
+
+const resolveCostCenterFromStudent = (student) => { // fixed initialization order
+  if (!student) return 'Admin Office';
+  const classValue = Number(student.class || student.class_name || student.className);
+  if (Number.isFinite(classValue)) {
+    if (classValue <= 5) return 'Junior Wing';
+    if (classValue > 5) return 'Senior Wing';
+  }
+  const section = `${student.section || ''}`.toLowerCase();
+  if (section.includes('transport')) return 'Transport';
+  return 'Admin Office';
+};
+
 const emptyStudentForm = {
   studentId: '',
   name: '',
@@ -2443,64 +2501,6 @@ const resolveTransactionMonthLabel = (entry) => {
       storeItem: '',
       storeAmount: '',
   };
-};
-
-const getFinancialYearRange = (referenceDate = new Date()) => {
-  const date = new Date(referenceDate);
-  const year = date.getFullYear();
-  const month = date.getMonth();
-  const startYear = month >= 3 ? year : year - 1;
-  const endYear = startYear + 1;
-  const start = new Date(startYear, 3, 1);
-  const end = new Date(endYear, 2, 31, 23, 59, 59, 999);
-  return { start, end };
-};
-
-const formatDateInput = (date) => {
-  if (!date) return '';
-  const parsed = date instanceof Date ? date : new Date(date);
-  if (!Number.isFinite(parsed.getTime())) return '';
-  const year = parsed.getFullYear();
-  const month = String(parsed.getMonth() + 1).padStart(2, '0');
-  const day = String(parsed.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const formatCurrency = (amount) => {
-  const value = Number(amount || 0);
-  if (!Number.isFinite(value)) return '₹0';
-  return `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-};
-
-const INITIAL_FY_RANGE = getFinancialYearRange();
-const DEFAULT_FY_START = formatDateInput(INITIAL_FY_RANGE.start);
-const DEFAULT_FY_END = formatDateInput(INITIAL_FY_RANGE.end);
-
-const resolveCoaFromFeeType = (feeType) => {
-  switch (feeType) {
-    case 'Tuition':
-      return 'Tuition Fees';
-    case 'Transport':
-      return 'Transport Fees';
-    case 'Uniform':
-      return 'Store Sales';
-    case 'Event':
-      return 'Donations';
-    default:
-      return 'Misc Income';
-  }
-};
-
-const resolveCostCenterFromStudent = (student) => {
-  if (!student) return 'Admin Office';
-  const classValue = Number(student.class || student.class_name || student.className);
-  if (Number.isFinite(classValue)) {
-    if (classValue <= 5) return 'Junior Wing';
-    if (classValue > 5) return 'Senior Wing';
-  }
-  const section = `${student.section || ''}`.toLowerCase();
-  if (section.includes('transport')) return 'Transport';
-  return 'Admin Office';
 };
 
   const buildCommonRequestState = () => ({
