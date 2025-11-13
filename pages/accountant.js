@@ -22,6 +22,7 @@ import {
   onSnapshot,
   orderBy,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -34,14 +35,29 @@ import {
   CategoryScale,
   Chart as ChartJS,
   Legend,
+  LineElement,
   LinearScale,
+  PointElement,
   Title,
   Tooltip,
 } from 'chart.js';
-import { Bar, Pie } from 'react-chartjs-2';
+import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'firebase/storage';
+import { Bar, Line, Pie } from 'react-chartjs-2';
 import { auth, db } from '../lib/firebase';
+import { getCollectionsInRange, groupByMonth, makeExpenseId, makeVoucherNo } from '../lib/reports';
+import { toCSV } from '../lib/csv';
 
-ChartJS.register(ArcElement, BarElement, CategoryScale, LinearScale, Tooltip, Legend, Title);
+ChartJS.register(
+  ArcElement,
+  BarElement,
+  CategoryScale,
+  LineElement,
+  LinearScale,
+  PointElement,
+  Tooltip,
+  Legend,
+  Title,
+);
 
 const CLASS_OPTIONS = ['Nursery', 'Kg1', 'Kg2', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
 const SESSION_OPTIONS = ['2023-24', '2024-25', '2025-26', '2026-27', '2027-28'];
@@ -171,6 +187,33 @@ const statusBadgeClasses = {
   Pending: 'bg-amber-100 text-amber-700 border border-amber-200',
   Overdue: 'bg-rose-100 text-rose-700 border border-rose-200',
 };
+
+const COA_INCOME = [
+  'Tuition Fees',
+  'Transport Fees',
+  'Activity/Lab Fees',
+  'Store Sales',
+  'Donations',
+  'Misc Income',
+];
+
+const COA_EXPENSE = [
+  'Salaries',
+  'Electricity',
+  'Printing & Stationery',
+  'Repairs & Maintenance',
+  'Transport Fuel',
+  'IT & Hosting',
+  'Misc Expense',
+];
+
+const COST_CENTERS = ['Junior Wing', 'Senior Wing', 'Transport', 'Store', 'Admin Office'];
+
+const PAYMENT_MODES = ['Online', 'Cash', 'Card', 'UPI', 'BankTransfer'];
+
+const EXPENSE_CATEGORIES = ['Printing', 'Electricity', 'Repairs', 'Salary', 'TransportFuel', 'Misc'];
+
+const EXPENSE_STATUS_OPTIONS = ['Paid', 'Unpaid', 'PartiallyPaid'];
 
 const SUPER_ADMIN_PASSWORD = 'yesdeletethestudent';
 
@@ -933,7 +976,69 @@ const AccountantDashboard = () => {
     selectedIds: new Set(),
   }));
   const [transactionsLog, setTransactionsLog] = useState([]);
-  const [transactionFilters, setTransactionFilters] = useState({ month: 'All', mode: 'All' });
+  const [expenses, setExpenses] = useState([]);
+  const [loadingExpenses, setLoadingExpenses] = useState(true);
+  const [ledgerFilters, setLedgerFilters] = useState({
+    startDate: DEFAULT_FY_START,
+    endDate: DEFAULT_FY_END,
+    feeType: 'All',
+    paymentMode: 'All',
+    coa: 'All',
+    costCenter: 'All',
+    className: 'All',
+    search: '',
+  });
+  const [manualEntryModalOpen, setManualEntryModalOpen] = useState(false);
+  const [manualEntrySubmitting, setManualEntrySubmitting] = useState(false);
+  const [manualEntryForm, setManualEntryForm] = useState(() => ({
+    date: formatDateInput(new Date()),
+    studentId: '',
+    feeType: 'Tuition',
+    coa: COA_INCOME[0],
+    costCenter: COST_CENTERS[0],
+    amount: '',
+    paymentMode: 'Cash',
+    notes: '',
+  }));
+  const [expenseForm, setExpenseForm] = useState(() => ({
+    date: formatDateInput(new Date()),
+    vendor: '',
+    category: EXPENSE_CATEGORIES[0],
+    amount: '',
+    paymentMode: 'Cash',
+    coa: COA_EXPENSE[0],
+    costCenter: COST_CENTERS[0],
+    invoiceNo: '',
+    narration: '',
+    status: EXPENSE_STATUS_OPTIONS[0],
+  }));
+  const [expenseAttachmentFile, setExpenseAttachmentFile] = useState(null);
+  const [expenseSubmitting, setExpenseSubmitting] = useState(false);
+  const [expenseFilters, setExpenseFilters] = useState({
+    startDate: DEFAULT_FY_START,
+    endDate: DEFAULT_FY_END,
+    category: 'All',
+    vendor: '',
+    costCenter: 'All',
+    status: 'All',
+  });
+  const [selectedExpense, setSelectedExpense] = useState(null);
+  const [reportRanges, setReportRanges] = useState({
+    collectionStart: DEFAULT_FY_START,
+    collectionEnd: DEFAULT_FY_END,
+    outstandingStart: DEFAULT_FY_START,
+    outstandingEnd: DEFAULT_FY_END,
+    expenseStart: DEFAULT_FY_START,
+    expenseEnd: DEFAULT_FY_END,
+    cashFlowStart: DEFAULT_FY_START,
+    cashFlowEnd: DEFAULT_FY_END,
+  });
+  const [reportsLoading, setReportsLoading] = useState({
+    collections: false,
+    outstanding: false,
+    expenses: false,
+    cashflow: false,
+  });
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [studentActionsContext, setStudentActionsContext] = useState({ open: false, student: null });
   const [deleteContext, setDeleteContext] = useState({
@@ -1062,11 +1167,11 @@ const AccountantDashboard = () => {
     return getMonthMeta(entry.date).key;
   };
 
-  const resolveTransactionMonthLabel = (entry) => {
-    if (!entry) return '';
-    if (entry.month_label) return entry.month_label;
-    if (entry.month) {
-      const parsed = new Date(entry.month);
+const resolveTransactionMonthLabel = (entry) => {
+  if (!entry) return '';
+  if (entry.month_label) return entry.month_label;
+  if (entry.month) {
+    const parsed = new Date(entry.month);
       if (Number.isFinite(parsed.getTime())) {
         return parsed.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
       }
@@ -1075,28 +1180,70 @@ const AccountantDashboard = () => {
     return getMonthMeta(entry.date).label;
   };
 
-  const logTransactionEntry = async ({ student, amount, mode, transactionId, status }) => {
-    if (!student) return;
-    const meta = getMonthMeta();
+  const logTransactionEntry = async ({
+    student,
+    amount,
+    mode,
+    transactionId,
+    status,
+    feeType,
+    notes,
+    orderId,
+    coa,
+    costCenter,
+    recordedBy,
+    date,
+  }) => {
+    const safeStudent = student || {
+      id: 'misc-income',
+      studentId: 'misc-income',
+      name: 'Misc Income',
+      class: '',
+      section: '',
+      parent_email: '',
+      parent_phone: '',
+    };
+    const entryDate = date ? new Date(date) : new Date();
+    if (!Number.isFinite(entryDate.getTime())) {
+      throw new Error('Invalid date provided for transaction log entry');
+    }
+    const voucherNo = await makeVoucherNo(db, runTransaction, entryDate);
+    const resolvedFeeType = feeType || 'Tuition';
+    const resolvedCoa = coa || resolveCoaFromFeeType(resolvedFeeType);
+    const resolvedCostCenter = costCenter || resolveCostCenterFromStudent(safeStudent);
+    const paymentMode = mode || 'Online';
+    const isoDate = entryDate.toISOString();
+    const monthLabel = entryDate.toLocaleString('en-IN', { month: 'long' });
+    const metadata = getMonthMeta(entryDate);
     try {
       await addDoc(collection(db, 'transactions_log'), {
-        student_doc_id: student.id,
-        studentId: student.studentId || student.id,
-        student_name: student.name,
-        class: student.class,
+        transaction_id: transactionId || 'manual',
+        order_id: orderId || null,
+        voucher_no: voucherNo,
+        student_doc_id: safeStudent.id,
+        student_id: safeStudent.studentId || safeStudent.id,
+        student_name: safeStudent.name || 'Misc Income',
+        class_name: safeStudent.class || safeStudent.class_name || '',
+        section: safeStudent.section || '',
+        parent_email: safeStudent.parent_email || '',
+        parent_phone: safeStudent.parent_phone || '',
         amount: Number(amount || 0),
-        mode: mode || 'Online',
-        transaction_id: transactionId || '',
+        fee_type: resolvedFeeType,
+        coa: resolvedCoa,
+        cost_center: resolvedCostCenter,
+        payment_mode: paymentMode,
         status: status || 'Paid',
-        parent_email: student.parent_email || '',
-        parent_uid: student.parent_uid || '',
-        month_key: meta.key,
-        month_label: meta.label,
-        date: serverTimestamp(),
+        date: isoDate,
+        month: monthLabel,
+        month_key: metadata.key,
+        month_label: metadata.label,
+        recorded_by: recordedBy || user?.email || user?.uid || 'system',
+        notes: notes || '',
         created_at: serverTimestamp(),
       });
     } catch (error) {
       console.error('Unable to record transaction log', error);
+      throw error;
     }
   };
 
@@ -1244,6 +1391,17 @@ const AccountantDashboard = () => {
       setTransactionsLog(data);
     });
 
+    const expensesQueryRef = query(collection(db, 'expenses'), orderBy('date', 'desc'));
+    const unsubscribeExpenses = onSnapshot(
+      expensesQueryRef,
+      (snapshot) => {
+        const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        setExpenses(data);
+        setLoadingExpenses(false);
+      },
+      () => setLoadingExpenses(false),
+    );
+
     return () => {
       unsubscribeStudents();
       unsubscribePayments();
@@ -1252,6 +1410,7 @@ const AccountantDashboard = () => {
       unsubscribeSettings();
       unsubscribeFeeStructure();
       unsubscribeTransactions();
+      unsubscribeExpenses();
     };
   }, [user]);
 
@@ -1270,9 +1429,11 @@ const AccountantDashboard = () => {
     const safeFeeRequests = Array.isArray(feeRequests) ? feeRequests : [];
     const safeStudents = Array.isArray(students) ? students : [];
     const safePayments = Array.isArray(payments) ? payments : [];
+    const safeExpenses = Array.isArray(expenses) ? expenses : [];
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const { start: fyStart, end: fyEnd } = getFinancialYearRange(now);
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     today.setHours(0, 0, 0, 0);
     const upcomingThreshold = new Date(today);
@@ -1281,8 +1442,11 @@ const AccountantDashboard = () => {
 
     let monthTotal = 0;
     let yearTotal = 0;
+    let fyCollectionTotal = 0;
+    let fyExpenseTotal = 0;
 
     const monthlyMap = new Map();
+    const expenseMonthlyMap = new Map();
     const modeTotals = { Cash: 0, Online: 0, Other: 0 };
     const paidTransactions = [];
 
@@ -1299,6 +1463,9 @@ const AccountantDashboard = () => {
       if (entryDate >= startOfMonth) {
         monthTotal += amount;
       }
+      if (entryDate >= fyStart && entryDate <= fyEnd) {
+        fyCollectionTotal += amount;
+      }
       const modeRaw = (entry.mode || 'Online').toLowerCase();
       const modeKey = modeRaw === 'cash' ? 'Cash' : modeRaw === 'online' ? 'Online' : 'Other';
       modeTotals[modeKey] += amount;
@@ -1307,6 +1474,22 @@ const AccountantDashboard = () => {
       const monthLabel = entry.month_label || entryDate.toLocaleString('en-IN', { month: 'short', year: 'numeric' });
       const monthExisting = monthlyMap.get(monthKey) || { label: monthLabel, amount: 0 };
       monthlyMap.set(monthKey, {
+        label: monthExisting.label || monthLabel,
+        amount: monthExisting.amount + amount,
+      });
+    });
+
+    safeExpenses.forEach((expense) => {
+      const entryDate = parseDateValue(expense.date);
+      if (!entryDate) return;
+      const amount = parseAmountValue(expense.amount);
+      if (entryDate >= fyStart && entryDate <= fyEnd) {
+        fyExpenseTotal += amount;
+      }
+      const monthKey = `${entryDate.getFullYear()}-${String(entryDate.getMonth() + 1).padStart(2, '0')}`;
+      const monthLabel = entryDate.toLocaleString('en-IN', { month: 'short', year: 'numeric' });
+      const monthExisting = expenseMonthlyMap.get(monthKey) || { label: monthLabel, amount: 0 };
+      expenseMonthlyMap.set(monthKey, {
         label: monthExisting.label || monthLabel,
         amount: monthExisting.amount + amount,
       });
@@ -1418,6 +1601,18 @@ const AccountantDashboard = () => {
     const monthLabels = recentEntries.map(([, value]) => value.label);
     const monthValues = recentEntries.map(([, value]) => value.amount);
 
+    const combinedMonthKeys = Array.from(
+      new Set([...monthlyMap.keys(), ...expenseMonthlyMap.keys()]),
+    ).sort((a, b) => (a > b ? 1 : -1));
+    const cashFlowLabels = combinedMonthKeys.map((key) => {
+      const incomeEntry = monthlyMap.get(key);
+      const expenseEntry = expenseMonthlyMap.get(key);
+      return incomeEntry?.label || expenseEntry?.label || key;
+    });
+    const cashFlowInflow = combinedMonthKeys.map((key) => monthlyMap.get(key)?.amount || 0);
+    const cashFlowOutflow = combinedMonthKeys.map((key) => expenseMonthlyMap.get(key)?.amount || 0);
+    const cashFlowNet = cashFlowInflow.map((value, index) => value - cashFlowOutflow[index]);
+
     const paidStudents = safeStudents.filter((student) => (student.status || '').toLowerCase() === 'paid').length;
     const overdueStudents = safeStudents.filter((student) => (student.status || '').toLowerCase() === 'overdue').length;
     const outstandingList = [...safeStudents]
@@ -1451,6 +1646,9 @@ const AccountantDashboard = () => {
     return {
       monthTotal,
       yearTotal,
+      fyCollectionTotal,
+      fyExpenseTotal,
+      fyNet: fyCollectionTotal - fyExpenseTotal,
       pendingTotal: pendingFees.amount,
       pendingRequestCount: pendingFees.count,
       overdueFeesAmount: overdueFees.amount,
@@ -1463,6 +1661,10 @@ const AccountantDashboard = () => {
       revenueByCategory,
       monthLabels,
       monthValues,
+      cashFlowLabels,
+      cashFlowInflow,
+      cashFlowOutflow,
+      cashFlowNet,
       requestStatusCounts: { paid: paidRequests, pending: pendingRequests },
       paymentModeSplit: modeTotals,
       feeTypeDistribution,
@@ -1473,7 +1675,7 @@ const AccountantDashboard = () => {
       totalStudents: safeStudents.length,
       activeParents: activeParentEmails.size,
     };
-  }, [transactionsLog, feeRequests, reminders, students, payments]);
+  }, [transactionsLog, feeRequests, reminders, students, payments, expenses]);
 
   const sessionOptions = useMemo(() => {
     if (!feeStructureDraft.session || SESSION_OPTIONS.includes(feeStructureDraft.session)) {
@@ -1482,39 +1684,149 @@ const AccountantDashboard = () => {
     return [...SESSION_OPTIONS, feeStructureDraft.session];
   }, [feeStructureDraft.session]);
 
-  const transactionMonthOptions = useMemo(() => {
-    const safeTransactions = Array.isArray(transactionsLog) ? transactionsLog : [];
-    if (!safeTransactions || safeTransactions.length === 0) {
-      return [];
+  const ledgerEntriesView = useMemo(() => {
+    const safeEntries = Array.isArray(transactionsLog) ? transactionsLog : [];
+    if (!safeEntries.length) return [];
+    const start = ledgerFilters.startDate ? new Date(ledgerFilters.startDate) : null;
+    const end = ledgerFilters.endDate ? new Date(ledgerFilters.endDate) : null;
+    if (start && Number.isFinite(start.getTime())) {
+      start.setHours(0, 0, 0, 0);
     }
-    const monthMap = new Map();
-    safeTransactions.forEach((entry) => {
-      const key = resolveTransactionMonthKey(entry);
-      const label = resolveTransactionMonthLabel(entry);
-      if (key) {
-        monthMap.set(key, label || key);
-      }
-    });
-    return Array.from(monthMap.entries())
-      .sort((a, b) => (a[0] > b[0] ? -1 : 1))
-      .map(([value, label]) => ({ value, label }));
-  }, [transactionsLog]);
+    if (end && Number.isFinite(end.getTime())) {
+      end.setHours(23, 59, 59, 999);
+    }
+    const searchValue = ledgerFilters.search.trim().toLowerCase();
+    return safeEntries
+      .map((entry) => {
+        const parsedDate = parseDateValue(entry.date) || parseDateValue(entry.created_at);
+        return { ...entry, parsedDate };
+      })
+      .filter((entry) => {
+        if (start && entry.parsedDate && entry.parsedDate < start) {
+          return false;
+        }
+        if (end && entry.parsedDate && entry.parsedDate > end) {
+          return false;
+        }
+        if (ledgerFilters.feeType !== 'All') {
+          if ((entry.fee_type || '').toLowerCase() !== ledgerFilters.feeType.toLowerCase()) {
+            return false;
+          }
+        }
+        if (ledgerFilters.paymentMode !== 'All') {
+          const modeValue = entry.payment_mode || entry.mode || 'Online';
+          if (`${modeValue}`.toLowerCase() !== ledgerFilters.paymentMode.toLowerCase()) {
+            return false;
+          }
+        }
+        if (ledgerFilters.coa !== 'All') {
+          if ((entry.coa || '').toLowerCase() !== ledgerFilters.coa.toLowerCase()) {
+            return false;
+          }
+        }
+        if (ledgerFilters.costCenter !== 'All') {
+          if ((entry.cost_center || '').toLowerCase() !== ledgerFilters.costCenter.toLowerCase()) {
+            return false;
+          }
+        }
+        if (ledgerFilters.className !== 'All') {
+          const classValue = entry.class_name || entry.class || '';
+          if (`${classValue}` !== ledgerFilters.className) {
+            return false;
+          }
+        }
+        if (searchValue) {
+          const searchable = [
+            entry.student_name,
+            entry.parent_email,
+            entry.voucher_no,
+            entry.transaction_id,
+            entry.notes,
+          ]
+            .filter(Boolean)
+            .map((value) => `${value}`.toLowerCase());
+          const matchesSearch = searchable.some((value) => value.includes(searchValue));
+          if (!matchesSearch) {
+            return false;
+          }
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const dateA = a.parsedDate ? a.parsedDate.getTime() : 0;
+        const dateB = b.parsedDate ? b.parsedDate.getTime() : 0;
+        return dateB - dateA;
+      });
+  }, [transactionsLog, ledgerFilters]);
 
-  const filteredTransactions = useMemo(() => {
-    const safeTransactions = Array.isArray(transactionsLog) ? transactionsLog : [];
-    if (!safeTransactions || safeTransactions.length === 0) {
-      return [];
+  const ledgerTotalAmount = useMemo(
+    () =>
+      ledgerEntriesView.reduce((sum, entry) => {
+        const value = parseAmountValue(entry.amount);
+        return sum + value;
+      }, 0),
+    [ledgerEntriesView],
+  );
+
+  const expenseEntriesView = useMemo(() => {
+    const safeEntries = Array.isArray(expenses) ? expenses : [];
+    if (!safeEntries.length) return [];
+    const start = expenseFilters.startDate ? new Date(expenseFilters.startDate) : null;
+    const end = expenseFilters.endDate ? new Date(expenseFilters.endDate) : null;
+    if (start && Number.isFinite(start.getTime())) {
+      start.setHours(0, 0, 0, 0);
     }
-    return safeTransactions.filter((entry) => {
-      const matchesMode =
-        transactionFilters.mode === 'All' || (entry.mode || 'Online') === transactionFilters.mode;
-      if (transactionFilters.month === 'All') {
-        return matchesMode;
-      }
-      const key = resolveTransactionMonthKey(entry);
-      return matchesMode && key === transactionFilters.month;
-    });
-  }, [transactionsLog, transactionFilters]);
+    if (end && Number.isFinite(end.getTime())) {
+      end.setHours(23, 59, 59, 999);
+    }
+    const vendorSearch = expenseFilters.vendor.trim().toLowerCase();
+    return safeEntries
+      .map((entry) => ({ ...entry, parsedDate: parseDateValue(entry.date) }))
+      .filter((entry) => {
+        if (start && entry.parsedDate && entry.parsedDate < start) {
+          return false;
+        }
+        if (end && entry.parsedDate && entry.parsedDate > end) {
+          return false;
+        }
+        if (expenseFilters.category !== 'All') {
+          if ((entry.category || '').toLowerCase() !== expenseFilters.category.toLowerCase()) {
+            return false;
+          }
+        }
+        if (expenseFilters.costCenter !== 'All') {
+          if ((entry.cost_center || '').toLowerCase() !== expenseFilters.costCenter.toLowerCase()) {
+            return false;
+          }
+        }
+        if (expenseFilters.status !== 'All') {
+          if ((entry.status || '').toLowerCase() !== expenseFilters.status.toLowerCase()) {
+            return false;
+          }
+        }
+        if (vendorSearch) {
+          const vendorValue = `${entry.vendor || ''}`.toLowerCase();
+          if (!vendorValue.includes(vendorSearch)) {
+            return false;
+          }
+        }
+        return true;
+      })
+      .sort((a, b) => {
+        const dateA = a.parsedDate ? a.parsedDate.getTime() : 0;
+        const dateB = b.parsedDate ? b.parsedDate.getTime() : 0;
+        return dateB - dateA;
+      });
+  }, [expenses, expenseFilters]);
+
+  const expenseTotalAmount = useMemo(
+    () =>
+      expenseEntriesView.reduce((sum, entry) => {
+        const value = parseAmountValue(entry.amount);
+        return sum + value;
+      }, 0),
+    [expenseEntriesView],
+  );
 
   const paidRequestCount = monthMetrics.requestStatusCounts?.paid || 0;
   const pendingRequestCount = monthMetrics.requestStatusCounts?.pending || 0;
@@ -2130,8 +2442,66 @@ const AccountantDashboard = () => {
       includeStore: false,
       storeItem: '',
       storeAmount: '',
-    };
   };
+};
+
+const getFinancialYearRange = (referenceDate = new Date()) => {
+  const date = new Date(referenceDate);
+  const year = date.getFullYear();
+  const month = date.getMonth();
+  const startYear = month >= 3 ? year : year - 1;
+  const endYear = startYear + 1;
+  const start = new Date(startYear, 3, 1);
+  const end = new Date(endYear, 2, 31, 23, 59, 59, 999);
+  return { start, end };
+};
+
+const formatDateInput = (date) => {
+  if (!date) return '';
+  const parsed = date instanceof Date ? date : new Date(date);
+  if (!Number.isFinite(parsed.getTime())) return '';
+  const year = parsed.getFullYear();
+  const month = String(parsed.getMonth() + 1).padStart(2, '0');
+  const day = String(parsed.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatCurrency = (amount) => {
+  const value = Number(amount || 0);
+  if (!Number.isFinite(value)) return '₹0';
+  return `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+};
+
+const INITIAL_FY_RANGE = getFinancialYearRange();
+const DEFAULT_FY_START = formatDateInput(INITIAL_FY_RANGE.start);
+const DEFAULT_FY_END = formatDateInput(INITIAL_FY_RANGE.end);
+
+const resolveCoaFromFeeType = (feeType) => {
+  switch (feeType) {
+    case 'Tuition':
+      return 'Tuition Fees';
+    case 'Transport':
+      return 'Transport Fees';
+    case 'Uniform':
+      return 'Store Sales';
+    case 'Event':
+      return 'Donations';
+    default:
+      return 'Misc Income';
+  }
+};
+
+const resolveCostCenterFromStudent = (student) => {
+  if (!student) return 'Admin Office';
+  const classValue = Number(student.class || student.class_name || student.className);
+  if (Number.isFinite(classValue)) {
+    if (classValue <= 5) return 'Junior Wing';
+    if (classValue > 5) return 'Senior Wing';
+  }
+  const section = `${student.section || ''}`.toLowerCase();
+  if (section.includes('transport')) return 'Transport';
+  return 'Admin Office';
+};
 
   const buildCommonRequestState = () => ({
     cycle: 'Monthly',
@@ -2406,56 +2776,6 @@ const AccountantDashboard = () => {
     } finally {
       setFormSubmitting(false);
     }
-  };
-
-  const handleTransactionFilterChange = (event) => {
-    const { name, value } = event.target;
-    setTransactionFilters((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleExportTransactions = () => {
-    const header = [
-      'Date',
-      'Time',
-      'Student Name',
-      'Class',
-      'Amount',
-      'Mode',
-      'Transaction ID',
-      'Month',
-      'Status',
-    ];
-    const rows = filteredTransactions.map((entry) => {
-      const rawDate = entry.date?.toDate
-        ? entry.date.toDate()
-        : entry.date
-        ? new Date(entry.date)
-        : null;
-      const hasValidDate = rawDate && Number.isFinite(rawDate.getTime());
-      const dateValue = hasValidDate ? rawDate.toLocaleDateString('en-IN') : '';
-      const timeValue = hasValidDate ? rawDate.toLocaleTimeString('en-IN') : '';
-      return [
-        dateValue,
-        timeValue,
-        entry.student_name || '',
-        entry.class || '',
-        Number(entry.amount || 0).toFixed(2),
-        entry.mode || '',
-        entry.transaction_id || '',
-        resolveTransactionMonthLabel(entry),
-        entry.status || '',
-      ];
-    });
-    const csvContent = [header, ...rows].map((line) => line.join(',')).join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', 'transactions-log.csv');
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
   };
 
   const handleFeeStructureFieldChange = (event) => {
@@ -2986,6 +3306,8 @@ const AccountantDashboard = () => {
         mode: normalizedMode,
         transactionId: normalizedMode === 'Online' ? transactionId : '',
         status: 'Paid',
+        feeType: 'Tuition',
+        notes: 'Marked as paid from fee report',
       });
       triggerToast('Payment recorded successfully.', 'success');
       resetMarkPaidContext();
@@ -3021,6 +3343,317 @@ const AccountantDashboard = () => {
       alert('Unable to save settings.');
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  const resetManualEntryForm = () => {
+    setManualEntryForm({
+      date: formatDateInput(new Date()),
+      studentId: '',
+      feeType: 'Tuition',
+      coa: COA_INCOME[0],
+      costCenter: COST_CENTERS[0],
+      amount: '',
+      paymentMode: 'Cash',
+      notes: '',
+    });
+  };
+
+  const handleOpenManualEntryModal = () => {
+    resetManualEntryForm();
+    setManualEntryModalOpen(true);
+  };
+
+  const handleManualEntryFieldChange = (event) => {
+    const { name, value } = event.target;
+    setManualEntryForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleManualEntrySave = async (event) => {
+    event.preventDefault();
+    if (manualEntrySubmitting) return;
+    const amountValue = parseAmountValue(manualEntryForm.amount);
+    if (amountValue <= 0) {
+      triggerToast('Enter a valid amount for the ledger entry.', 'error');
+      return;
+    }
+    setManualEntrySubmitting(true);
+    try {
+      const selectedStudent = manualEntryForm.studentId
+        ? students.find((student) => student.id === manualEntryForm.studentId)
+        : null;
+      await logTransactionEntry({
+        student: selectedStudent || null,
+        amount: amountValue,
+        mode: manualEntryForm.paymentMode,
+        transactionId: manualEntryForm.paymentMode === 'Online' ? 'manual-entry' : 'manual',
+        status: 'Paid',
+        feeType: manualEntryForm.feeType,
+        notes: manualEntryForm.notes,
+        coa: manualEntryForm.coa,
+        costCenter: manualEntryForm.costCenter,
+        recordedBy: user?.email || user?.uid || 'system',
+        date: manualEntryForm.date,
+      });
+      triggerToast('Ledger entry recorded successfully.');
+      setManualEntryModalOpen(false);
+      resetManualEntryForm();
+    } catch (error) {
+      console.error('Manual ledger entry error', error);
+      triggerToast('Unable to save ledger entry. Please try again.', 'error');
+    } finally {
+      setManualEntrySubmitting(false);
+    }
+  };
+
+  const resetExpenseForm = () => {
+    setExpenseForm({
+      date: formatDateInput(new Date()),
+      vendor: '',
+      category: EXPENSE_CATEGORIES[0],
+      amount: '',
+      paymentMode: 'Cash',
+      coa: COA_EXPENSE[0],
+      costCenter: COST_CENTERS[0],
+      invoiceNo: '',
+      narration: '',
+      status: EXPENSE_STATUS_OPTIONS[0],
+    });
+    setExpenseAttachmentFile(null);
+  };
+
+  const handleExpenseFieldChange = (event) => {
+    const { name, value } = event.target;
+    setExpenseForm((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const handleExpenseAttachmentChange = (event) => {
+    const file = event.target.files && event.target.files[0] ? event.target.files[0] : null;
+    setExpenseAttachmentFile(file);
+  };
+
+  const handleExpenseSubmit = async (event) => {
+    event.preventDefault();
+    if (expenseSubmitting) return;
+    const amountValue = parseAmountValue(expenseForm.amount);
+    if (amountValue <= 0) {
+      triggerToast('Enter a valid expense amount.', 'error');
+      return;
+    }
+    if (!expenseForm.vendor.trim()) {
+      triggerToast('Vendor name is required.', 'error');
+      return;
+    }
+    setExpenseSubmitting(true);
+    try {
+      const entryDate = expenseForm.date ? new Date(expenseForm.date) : new Date();
+      if (!Number.isFinite(entryDate.getTime())) {
+        throw new Error('Invalid expense date');
+      }
+      const expenseId = await makeExpenseId(db, runTransaction, entryDate);
+      let attachments = [];
+      if (expenseAttachmentFile) {
+        const storage = getStorage();
+        const fileRef = storageRef(storage, `expenses/${expenseId}/${expenseAttachmentFile.name}`);
+        const uploadSnapshot = await uploadBytes(fileRef, expenseAttachmentFile);
+        const url = await getDownloadURL(uploadSnapshot.ref);
+        attachments = [url];
+      }
+      await addDoc(collection(db, 'expenses'), {
+        expense_id: expenseId,
+        date: entryDate.toISOString(),
+        vendor: expenseForm.vendor,
+        category: expenseForm.category,
+        amount: amountValue,
+        payment_mode: expenseForm.paymentMode,
+        coa: expenseForm.coa,
+        cost_center: expenseForm.costCenter,
+        invoice_no: expenseForm.invoiceNo || null,
+        narration: expenseForm.narration || '',
+        status: expenseForm.status,
+        uploaded_by: user?.email || user?.uid || 'system',
+        attachments,
+        created_at: serverTimestamp(),
+      });
+      triggerToast('Expense recorded successfully.');
+      resetExpenseForm();
+    } catch (error) {
+      console.error('Expense submission error', error);
+      triggerToast('Unable to save expense. Please try again.', 'error');
+    } finally {
+      setExpenseSubmitting(false);
+    }
+  };
+
+  const handleLedgerFilterChange = (field) => (event) => {
+    const value = event?.target ? event.target.value : event;
+    setLedgerFilters((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleExpenseFilterChange = (field) => (event) => {
+    const value = event?.target ? event.target.value : event;
+    setExpenseFilters((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleExpenseRowClick = (entry) => {
+    setSelectedExpense(entry);
+  };
+
+  const handleCloseExpenseDetail = () => {
+    setSelectedExpense(null);
+  };
+
+  const handleReportsRangeChange = (field) => (event) => {
+    const value = event?.target ? event.target.value : event;
+    setReportRanges((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const downloadCsvFile = (filename, rows) => {
+    if (!rows || rows.length === 0) {
+      triggerToast('No data available for download.', 'info');
+      return;
+    }
+    const csvContent = toCSV(rows);
+    if (!csvContent) {
+      triggerToast('Unable to generate CSV content.', 'error');
+      return;
+    }
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    triggerToast('Report downloaded successfully.', 'success');
+  };
+
+  const handleDownloadMonthlyCollections = async () => {
+    setReportsLoading((prev) => ({ ...prev, collections: true }));
+    try {
+      const { collectionStart, collectionEnd } = reportRanges;
+      const rows = await getCollectionsInRange(db, 'transactions_log', 'date', collectionStart, collectionEnd);
+      const paidRows = rows.filter((row) => `${row.status || ''}`.toLowerCase() === 'paid');
+      const grouped = groupByMonth(paidRows, 'date');
+      const csvRows = Array.from(grouped.values()).map((entry) => ({
+        Month: entry.label,
+        Transactions: entry.items.length,
+        TotalAmount: entry.total,
+      }));
+      downloadCsvFile('monthly-collection-summary.csv', csvRows);
+    } catch (error) {
+      console.error('Monthly collection export error', error);
+      triggerToast('Unable to download monthly collection summary.', 'error');
+    } finally {
+      setReportsLoading((prev) => ({ ...prev, collections: false }));
+    }
+  };
+
+  const handleDownloadOutstanding = async () => {
+    setReportsLoading((prev) => ({ ...prev, outstanding: true }));
+    try {
+      const { outstandingStart, outstandingEnd } = reportRanges;
+      const start = outstandingStart ? new Date(outstandingStart) : null;
+      const end = outstandingEnd ? new Date(outstandingEnd) : null;
+      if (start && Number.isFinite(start.getTime())) {
+        start.setHours(0, 0, 0, 0);
+      }
+      if (end && Number.isFinite(end.getTime())) {
+        end.setHours(23, 59, 59, 999);
+      }
+      const safeRequests = Array.isArray(feeRequests) ? feeRequests : [];
+      const filtered = safeRequests.filter((request) => {
+        const status = `${request.status || ''}`.toLowerCase();
+        if (status === 'paid' || status === 'success') return false;
+        const dueDate =
+          parseDateValue(request.due_date) ||
+          parseDateValue(request.dueDate) ||
+          parseDateValue(request.due_on) ||
+          null;
+        if (start && dueDate && dueDate < start) {
+          return false;
+        }
+        if (end && dueDate && dueDate > end) {
+          return false;
+        }
+        return true;
+      });
+      const csvRows = filtered.map((request) => ({
+        Student: request.student_name || request.studentName || request.student_id || '',
+        Class: request.class || request.class_name || '',
+        DueDate: (parseDateValue(request.due_date) || parseDateValue(request.dueDate))?.toISOString() || '',
+        Amount: parseAmountValue(request.amount || request.amount_total || request.balance || 0),
+        Balance: parseAmountValue(request.balance || request.amount_due || request.amount || 0),
+        Status: request.status || 'Pending',
+      }));
+      downloadCsvFile('outstanding-fees.csv', csvRows);
+    } catch (error) {
+      console.error('Outstanding report export error', error);
+      triggerToast('Unable to download outstanding fee report.', 'error');
+    } finally {
+      setReportsLoading((prev) => ({ ...prev, outstanding: false }));
+    }
+  };
+
+  const handleDownloadExpensesLedger = async () => {
+    setReportsLoading((prev) => ({ ...prev, expenses: true }));
+    try {
+      const { expenseStart, expenseEnd } = reportRanges;
+      const rows = await getCollectionsInRange(db, 'expenses', 'date', expenseStart, expenseEnd);
+      const csvRows = rows.map((entry) => ({
+        Date: entry.date,
+        ExpenseID: entry.expense_id,
+        Vendor: entry.vendor,
+        Category: entry.category,
+        COA: entry.coa,
+        CostCenter: entry.cost_center,
+        Amount: parseAmountValue(entry.amount),
+        PaymentMode: entry.payment_mode,
+        Status: entry.status,
+      }));
+      downloadCsvFile('expenses-ledger.csv', csvRows);
+    } catch (error) {
+      console.error('Expense ledger export error', error);
+      triggerToast('Unable to download expenses ledger.', 'error');
+    } finally {
+      setReportsLoading((prev) => ({ ...prev, expenses: false }));
+    }
+  };
+
+  const handleDownloadCashflow = async () => {
+    setReportsLoading((prev) => ({ ...prev, cashflow: true }));
+    try {
+      const { cashFlowStart, cashFlowEnd } = reportRanges;
+      const [collections, expenseRows] = await Promise.all([
+        getCollectionsInRange(db, 'transactions_log', 'date', cashFlowStart, cashFlowEnd),
+        getCollectionsInRange(db, 'expenses', 'date', cashFlowStart, cashFlowEnd),
+      ]);
+      const paidCollections = collections.filter((entry) => `${entry.status || ''}`.toLowerCase() === 'paid');
+      const incomeGrouped = groupByMonth(paidCollections, 'date');
+      const expenseGrouped = groupByMonth(expenseRows, 'date');
+      const monthKeys = new Set([...incomeGrouped.keys(), ...expenseGrouped.keys()]);
+      const csvRows = Array.from(monthKeys)
+        .sort((a, b) => (a > b ? 1 : -1))
+        .map((key) => {
+          const incomeEntry = incomeGrouped.get(key);
+          const expenseEntry = expenseGrouped.get(key);
+          const inflow = incomeEntry ? incomeEntry.total : 0;
+          const outflow = expenseEntry ? expenseEntry.total : 0;
+          return {
+            Month: incomeEntry?.label || expenseEntry?.label || key,
+            Inflow: inflow,
+            Outflow: outflow,
+            Net: inflow - outflow,
+          };
+        });
+      downloadCsvFile('cashflow-statement.csv', csvRows);
+    } catch (error) {
+      console.error('Cashflow export error', error);
+      triggerToast('Unable to download cash flow statement.', 'error');
+    } finally {
+      setReportsLoading((prev) => ({ ...prev, cashflow: false }));
     }
   };
 
@@ -3148,11 +3781,13 @@ const AccountantDashboard = () => {
 
       <main className="mx-auto max-w-7xl px-6 py-8">
         <nav className="flex flex-wrap gap-3">
-          {[ 
+          {[
             { id: 'overview', label: 'Overview' },
             { id: 'students', label: 'Students' },
+            { id: 'ledger', label: 'Ledger' },
+            { id: 'expenses', label: 'Expenses' },
+            { id: 'reports', label: 'Reports' },
             { id: 'fee-report', label: 'Fee Report' },
-            { id: 'transactions', label: 'Transaction Log' },
             { id: 'reminders', label: 'Reminders and Notification' },
             { id: 'fee-settings', label: 'Fee Settings' },
             { id: 'settings', label: 'Automation Settings' },
@@ -3174,6 +3809,40 @@ const AccountantDashboard = () => {
 
         {activeTab === 'overview' && (
           <section className="mt-8 space-y-8">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Total Collected (FY)</h3>
+                <p className="mt-3 text-2xl font-semibold text-slate-900">{formatCurrency(monthMetrics.fyCollectionTotal)}</p>
+                <p className="mt-2 text-xs text-slate-500">Financial year inflow</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Pending Fees</h3>
+                <p className="mt-3 text-2xl font-semibold text-amber-600">{formatCurrency(monthMetrics.pendingTotal)}</p>
+                <p className="mt-2 text-xs text-slate-500">Requests: {monthMetrics.pendingRequestCount}</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Overdue Fees</h3>
+                <p className="mt-3 text-2xl font-semibold text-rose-600">{formatCurrency(monthMetrics.overdueFeesAmount)}</p>
+                <p className="mt-2 text-xs text-slate-500">Requests: {monthMetrics.overdueRequestCount}</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Expenses (FY)</h3>
+                <p className="mt-3 text-2xl font-semibold text-slate-900">{formatCurrency(monthMetrics.fyExpenseTotal)}</p>
+                <p className="mt-2 text-xs text-slate-500">Includes all logged expenses</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Net Inflow (FY)</h3>
+                <p
+                  className={`mt-3 text-2xl font-semibold ${
+                    monthMetrics.fyNet >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                  }`}
+                >
+                  {formatCurrency(monthMetrics.fyNet)}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">Collections minus expenses</p>
+              </div>
+            </div>
+
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="text-sm font-medium text-slate-500">Fees Collected (This Month)</h3>
@@ -3181,22 +3850,8 @@ const AccountantDashboard = () => {
                   ₹{monthMetrics.monthTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                 </p>
                 <p className="mt-2 text-xs text-slate-500">
-                  Year to date: ₹{monthMetrics.yearTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                  Calendar year: ₹{monthMetrics.yearTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
                 </p>
-              </div>
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-medium text-slate-500">Pending Fees</h3>
-                <p className="mt-3 text-2xl font-semibold text-amber-600">
-                  ₹{monthMetrics.pendingTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                </p>
-                <p className="mt-2 text-xs text-slate-500">Pending requests: {monthMetrics.pendingRequestCount}</p>
-              </div>
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-medium text-slate-500">Overdue Fees</h3>
-                <p className="mt-3 text-2xl font-semibold text-rose-600">
-                  ₹{monthMetrics.overdueFeesAmount.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-                </p>
-                <p className="mt-2 text-xs text-slate-500">Overdue requests: {monthMetrics.overdueRequestCount}</p>
               </div>
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="text-sm font-medium text-slate-500">Upcoming Due Payments</h3>
@@ -3204,7 +3859,6 @@ const AccountantDashboard = () => {
                 <p className="mt-2 text-xs text-slate-500">
                   Paid / Unpaid students: {monthMetrics.paidCount}/{monthMetrics.unpaidCount}
                 </p>
-                <p className="mt-2 text-xs text-slate-500">Across fee request breakdowns</p>
               </div>
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="text-sm font-medium text-slate-500">Total Students Registered</h3>
@@ -3218,7 +3872,7 @@ const AccountantDashboard = () => {
               </div>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="text-sm font-medium text-slate-500">Average Collection Delay</h3>
                 <p className="mt-3 text-2xl font-semibold text-slate-900">
@@ -3244,19 +3898,9 @@ const AccountantDashboard = () => {
                 </p>
                 <p className="mt-2 text-xs text-slate-500">Across fee request breakdowns</p>
               </div>
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-medium text-slate-500">Total Students Registered</h3>
-                <p className="mt-3 text-2xl font-semibold text-slate-900">{monthMetrics.totalStudents}</p>
-                <p className="mt-2 text-xs text-slate-500">Overdue students: {monthMetrics.overdueCount}</p>
-              </div>
-              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="text-sm font-medium text-slate-500">Active Parents</h3>
-                <p className="mt-3 text-2xl font-semibold text-slate-900">{monthMetrics.activeParents}</p>
-                <p className="mt-2 text-xs text-slate-500">Parents with open requests</p>
-              </div>
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
               <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
                 <h3 className="text-base font-semibold text-slate-900">Monthly Collection Trend</h3>
                 <Bar
@@ -3275,6 +3919,44 @@ const AccountantDashboard = () => {
                     plugins: {
                       legend: { display: false },
                       title: { display: false },
+                    },
+                  }}
+                />
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-base font-semibold text-slate-900">Cash Flow (Monthly)</h3>
+                <Line
+                  data={{
+                    labels: monthMetrics.cashFlowLabels,
+                    datasets: [
+                      {
+                        label: 'Inflow',
+                        data: monthMetrics.cashFlowInflow,
+                        borderColor: '#047857',
+                        backgroundColor: 'rgba(4, 120, 87, 0.2)',
+                        tension: 0.3,
+                      },
+                      {
+                        label: 'Outflow',
+                        data: monthMetrics.cashFlowOutflow,
+                        borderColor: '#dc2626',
+                        backgroundColor: 'rgba(220, 38, 38, 0.2)',
+                        tension: 0.3,
+                      },
+                    ],
+                  }}
+                  options={{
+                    responsive: true,
+                    plugins: {
+                      legend: { position: 'bottom' },
+                    },
+                    interaction: { intersect: false, mode: 'index' },
+                    scales: {
+                      y: {
+                        ticks: {
+                          callback: (value) => `₹${Number(value).toLocaleString('en-IN')}`,
+                        },
+                      },
                     },
                   }}
                 />
@@ -3759,101 +4441,653 @@ const AccountantDashboard = () => {
           </section>
         )}
 
-        {activeTab === 'transactions' && (
+        {activeTab === 'ledger' && (
           <section className="mt-8 space-y-6">
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                 <div>
-                  <h2 className="text-lg font-semibold text-slate-900">Transactions Log</h2>
+                  <h2 className="text-lg font-semibold text-slate-900">Financial Ledger</h2>
                   <p className="text-sm text-slate-500">
-                    Central ledger of all online and manual fee collections.
+                    Track all receipts across fee types, cost centers, and modes.
+                  </p>
+                  <p className="mt-2 text-sm font-semibold text-slate-700">
+                    Total in view: {formatCurrency(ledgerTotalAmount)} · Entries: {ledgerEntriesView.length}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-3">
-                  <select
-                    name="month"
-                    value={transactionFilters.month}
-                    onChange={handleTransactionFilterChange}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  >
-                    <option value="All">All Months</option>
-                    {transactionMonthOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    name="mode"
-                    value={transactionFilters.mode}
-                    onChange={handleTransactionFilterChange}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  >
-                    <option value="All">All Modes</option>
-                    <option value="Cash">Cash</option>
-                    <option value="Online">Online</option>
-                  </select>
                   <button
                     type="button"
-                    onClick={handleExportTransactions}
-                    className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
+                    onClick={handleOpenManualEntryModal}
+                    className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
                   >
-                    Export to Excel
+                    Add Manual Entry
                   </button>
                 </div>
               </div>
+
+              <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  From Date
+                  <input
+                    type="date"
+                    value={ledgerFilters.startDate}
+                    onChange={handleLedgerFilterChange('startDate')}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  To Date
+                  <input
+                    type="date"
+                    value={ledgerFilters.endDate}
+                    onChange={handleLedgerFilterChange('endDate')}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Fee Type
+                  <select
+                    value={ledgerFilters.feeType}
+                    onChange={handleLedgerFilterChange('feeType')}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  >
+                    <option value="All">All</option>
+                    <option value="Tuition">Tuition</option>
+                    <option value="Transport">Transport</option>
+                    <option value="Uniform">Uniform</option>
+                    <option value="Event">Event</option>
+                    <option value="Misc">Misc</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Mode
+                  <select
+                    value={ledgerFilters.paymentMode}
+                    onChange={handleLedgerFilterChange('paymentMode')}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  >
+                    <option value="All">All</option>
+                    {PAYMENT_MODES.map((modeOption) => (
+                      <option key={modeOption} value={modeOption}>
+                        {modeOption}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  COA
+                  <select
+                    value={ledgerFilters.coa}
+                    onChange={handleLedgerFilterChange('coa')}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  >
+                    <option value="All">All</option>
+                    {COA_INCOME.map((coaOption) => (
+                      <option key={coaOption} value={coaOption}>
+                        {coaOption}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Cost Center
+                  <select
+                    value={ledgerFilters.costCenter}
+                    onChange={handleLedgerFilterChange('costCenter')}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  >
+                    <option value="All">All</option>
+                    {COST_CENTERS.map((center) => (
+                      <option key={center} value={center}>
+                        {center}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Class
+                  <select
+                    value={ledgerFilters.className}
+                    onChange={handleLedgerFilterChange('className')}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  >
+                    <option value="All">All</option>
+                    {CLASS_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500 xl:col-span-2">
+                  Search
+                  <input
+                    type="text"
+                    value={ledgerFilters.search}
+                    onChange={handleLedgerFilterChange('search')}
+                    placeholder="Student, parent email, voucher or notes"
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  />
+                </label>
+              </div>
+
               <div className="mt-6 overflow-x-auto">
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
                   <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                     <tr>
                       <th className="px-4 py-3 text-left">Date</th>
-                      <th className="px-4 py-3 text-left">Time</th>
+                      <th className="px-4 py-3 text-left">Voucher No</th>
                       <th className="px-4 py-3 text-left">Student</th>
                       <th className="px-4 py-3 text-left">Class</th>
-                      <th className="px-4 py-3 text-left">Amount</th>
+                      <th className="px-4 py-3 text-left">Fee Type</th>
+                      <th className="px-4 py-3 text-left">COA</th>
+                      <th className="px-4 py-3 text-left">Cost Center</th>
                       <th className="px-4 py-3 text-left">Mode</th>
-                      <th className="px-4 py-3 text-left">Transaction ID</th>
-                      <th className="px-4 py-3 text-left">Month</th>
+                      <th className="px-4 py-3 text-right">Amount</th>
                       <th className="px-4 py-3 text-left">Status</th>
+                      <th className="px-4 py-3 text-left">Notes</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredTransactions.map((entry) => {
-                      const rawDate = entry.date?.toDate
-                        ? entry.date.toDate()
-                        : entry.date
-                        ? new Date(entry.date)
-                        : null;
-                      const hasValidDate = rawDate && Number.isFinite(rawDate.getTime());
-                      const dateDisplay = hasValidDate
-                        ? rawDate.toLocaleDateString('en-IN')
-                        : '—';
-                      const timeDisplay = hasValidDate
-                        ? rawDate.toLocaleTimeString('en-IN')
-                        : '—';
+                    {ledgerEntriesView.map((entry) => {
+                      const entryDate = entry.parsedDate || parseDateValue(entry.date);
+                      const dateDisplay = entryDate ? entryDate.toLocaleDateString('en-IN') : '—';
+                      const statusValue = entry.status || 'Paid';
+                      const badgeClass = statusBadgeClasses[statusValue] || 'bg-slate-100 text-slate-600';
                       return (
-                        <tr key={entry.id}>
+                        <tr key={entry.id} className="hover:bg-slate-50">
                           <td className="px-4 py-3 text-slate-600">{dateDisplay}</td>
-                          <td className="px-4 py-3 text-slate-600">{timeDisplay}</td>
-                          <td className="px-4 py-3 text-slate-700">{entry.student_name}</td>
-                          <td className="px-4 py-3 text-slate-700">{entry.class}</td>
-                          <td className="px-4 py-3 text-slate-900">₹{Number(entry.amount || 0).toLocaleString('en-IN')}</td>
-                          <td className="px-4 py-3 text-slate-700">{entry.mode || '-'}</td>
-                          <td className="px-4 py-3 text-slate-700">{entry.transaction_id || '—'}</td>
-                          <td className="px-4 py-3 text-slate-700">{resolveTransactionMonthLabel(entry)}</td>
-                          <td className="px-4 py-3 text-slate-700">{entry.status || '-'}</td>
+                          <td className="px-4 py-3 font-medium text-slate-700">{entry.voucher_no || '—'}</td>
+                          <td className="px-4 py-3 text-slate-700">{entry.student_name || 'Misc Income'}</td>
+                          <td className="px-4 py-3 text-slate-600">{entry.class_name || '—'}</td>
+                          <td className="px-4 py-3 text-slate-700">{entry.fee_type || 'Tuition'}</td>
+                          <td className="px-4 py-3 text-slate-600">{entry.coa || '—'}</td>
+                          <td className="px-4 py-3 text-slate-600">{entry.cost_center || '—'}</td>
+                          <td className="px-4 py-3 text-slate-600">{entry.payment_mode || entry.mode || 'Online'}</td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-900">
+                            {formatCurrency(entry.amount)}
+                          </td>
+                          <td className="px-4 py-3">
+                            <span className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${badgeClass}`}>
+                              {statusValue}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-slate-500">{entry.notes || '—'}</td>
                         </tr>
                       );
                     })}
-                    {filteredTransactions.length === 0 && (
+                    {ledgerEntriesView.length === 0 && (
                       <tr>
-                        <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-500">
-                          No transactions recorded for the selected filters.
+                        <td colSpan={11} className="px-4 py-10 text-center text-sm text-slate-500">
+                          {transactionsLog.length === 0
+                            ? 'No ledger entries recorded yet.'
+                            : 'No entries match the current filters.'}
                         </td>
                       </tr>
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'expenses' && (
+          <section className="mt-8 space-y-6">
+            <div className="grid gap-6 lg:grid-cols-5">
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-2">
+                <h2 className="text-lg font-semibold text-slate-900">Record Expense</h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  Log operational spending with optional invoice attachments.
+                </p>
+                <form className="mt-6 space-y-4" onSubmit={handleExpenseSubmit}>
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Date
+                    <input
+                      type="date"
+                      name="date"
+                      value={expenseForm.date}
+                      onChange={handleExpenseFieldChange}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Vendor
+                    <input
+                      name="vendor"
+                      value={expenseForm.vendor}
+                      onChange={handleExpenseFieldChange}
+                      placeholder="ABC Suppliers"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    />
+                  </label>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Category
+                      <select
+                        name="category"
+                        value={expenseForm.category}
+                        onChange={handleExpenseFieldChange}
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      >
+                        {EXPENSE_CATEGORIES.map((category) => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Payment Mode
+                      <select
+                        name="paymentMode"
+                        value={expenseForm.paymentMode}
+                        onChange={handleExpenseFieldChange}
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      >
+                        {['Cash', 'BankTransfer', 'UPI', 'Card'].map((modeOption) => (
+                          <option key={modeOption} value={modeOption}>
+                            {modeOption}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Amount (₹)
+                    <input
+                      name="amount"
+                      value={expenseForm.amount}
+                      onChange={handleExpenseFieldChange}
+                      inputMode="decimal"
+                      placeholder="0"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    />
+                  </label>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      COA
+                      <select
+                        name="coa"
+                        value={expenseForm.coa}
+                        onChange={handleExpenseFieldChange}
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      >
+                        {COA_EXPENSE.map((coaOption) => (
+                          <option key={coaOption} value={coaOption}>
+                            {coaOption}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Cost Center
+                      <select
+                        name="costCenter"
+                        value={expenseForm.costCenter}
+                        onChange={handleExpenseFieldChange}
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      >
+                        {COST_CENTERS.map((center) => (
+                          <option key={center} value={center}>
+                            {center}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Invoice No.
+                      <input
+                        name="invoiceNo"
+                        value={expenseForm.invoiceNo}
+                        onChange={handleExpenseFieldChange}
+                        placeholder="INV-2024-001"
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      />
+                    </label>
+                    <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Status
+                      <select
+                        name="status"
+                        value={expenseForm.status}
+                        onChange={handleExpenseFieldChange}
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      >
+                        {EXPENSE_STATUS_OPTIONS.map((statusOption) => (
+                          <option key={statusOption} value={statusOption}>
+                            {statusOption}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Narration
+                    <textarea
+                      name="narration"
+                      value={expenseForm.narration}
+                      onChange={handleExpenseFieldChange}
+                      rows={3}
+                      placeholder="Brief note about the expense"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Attachment (optional)
+                    <input
+                      type="file"
+                      accept="image/*,.pdf"
+                      onChange={handleExpenseAttachmentChange}
+                      className="block text-sm text-slate-600"
+                    />
+                    {expenseAttachmentFile && (
+                      <span className="text-xs text-slate-500">{expenseAttachmentFile.name}</span>
+                    )}
+                  </label>
+                  <div className="flex justify-end">
+                    <button
+                      type="submit"
+                      disabled={expenseSubmitting}
+                      className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      {expenseSubmitting ? 'Saving…' : 'Save Expense'}
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm lg:col-span-3">
+                <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+                  <div>
+                    <h2 className="text-lg font-semibold text-slate-900">Expenses Ledger</h2>
+                    <p className="text-sm text-slate-500">
+                      Review spend by vendor, status, and cost center.
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-slate-700">
+                      Total in view: {formatCurrency(expenseTotalAmount)} · Entries: {expenseEntriesView.length}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    From Date
+                    <input
+                      type="date"
+                      value={expenseFilters.startDate}
+                      onChange={handleExpenseFilterChange('startDate')}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    To Date
+                    <input
+                      type="date"
+                      value={expenseFilters.endDate}
+                      onChange={handleExpenseFilterChange('endDate')}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Category
+                    <select
+                      value={expenseFilters.category}
+                      onChange={handleExpenseFilterChange('category')}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    >
+                      <option value="All">All</option>
+                      {EXPENSE_CATEGORIES.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Cost Center
+                    <select
+                      value={expenseFilters.costCenter}
+                      onChange={handleExpenseFilterChange('costCenter')}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    >
+                      <option value="All">All</option>
+                      {COST_CENTERS.map((center) => (
+                        <option key={center} value={center}>
+                          {center}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Status
+                    <select
+                      value={expenseFilters.status}
+                      onChange={handleExpenseFilterChange('status')}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    >
+                      <option value="All">All</option>
+                      {EXPENSE_STATUS_OPTIONS.map((statusOption) => (
+                        <option key={statusOption} value={statusOption}>
+                          {statusOption}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500 xl:col-span-2">
+                    Vendor
+                    <input
+                      type="text"
+                      value={expenseFilters.vendor}
+                      onChange={handleExpenseFilterChange('vendor')}
+                      placeholder="Search vendor"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    />
+                  </label>
+                </div>
+
+                <div className="mt-6 overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Date</th>
+                        <th className="px-4 py-3 text-left">Expense ID</th>
+                        <th className="px-4 py-3 text-left">Vendor</th>
+                        <th className="px-4 py-3 text-left">Category</th>
+                        <th className="px-4 py-3 text-left">COA</th>
+                        <th className="px-4 py-3 text-left">Cost Center</th>
+                        <th className="px-4 py-3 text-right">Amount</th>
+                        <th className="px-4 py-3 text-left">Mode</th>
+                        <th className="px-4 py-3 text-left">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {expenseEntriesView.map((entry) => {
+                        const entryDate = entry.parsedDate || parseDateValue(entry.date);
+                        const dateDisplay = entryDate ? entryDate.toLocaleDateString('en-IN') : '—';
+                        return (
+                          <tr
+                            key={entry.id}
+                            className="cursor-pointer hover:bg-slate-50"
+                            onClick={() => handleExpenseRowClick(entry)}
+                          >
+                            <td className="px-4 py-3 text-slate-600">{dateDisplay}</td>
+                            <td className="px-4 py-3 font-medium text-slate-700">{entry.expense_id || '—'}</td>
+                            <td className="px-4 py-3 text-slate-700">{entry.vendor || '—'}</td>
+                            <td className="px-4 py-3 text-slate-600">{entry.category || '—'}</td>
+                            <td className="px-4 py-3 text-slate-600">{entry.coa || '—'}</td>
+                            <td className="px-4 py-3 text-slate-600">{entry.cost_center || '—'}</td>
+                            <td className="px-4 py-3 text-right font-semibold text-slate-900">{formatCurrency(entry.amount)}</td>
+                            <td className="px-4 py-3 text-slate-600">{entry.payment_mode || 'Cash'}</td>
+                            <td className="px-4 py-3 text-slate-600">{entry.status || 'Paid'}</td>
+                          </tr>
+                        );
+                      })}
+                      {expenseEntriesView.length === 0 && (
+                        <tr>
+                          <td colSpan={9} className="px-4 py-10 text-center text-sm text-slate-500">
+                            {loadingExpenses ? 'Loading expenses…' : 'No expenses match the selected filters.'}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'reports' && (
+          <section className="mt-8 space-y-6">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-slate-900">Monthly Collection Summary</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Download a CA-ready summary grouped by month for the selected range.
+                </p>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    From
+                    <input
+                      type="date"
+                      value={reportRanges.collectionStart}
+                      onChange={handleReportsRangeChange('collectionStart')}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    To
+                    <input
+                      type="date"
+                      value={reportRanges.collectionEnd}
+                      onChange={handleReportsRangeChange('collectionEnd')}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    />
+                  </label>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleDownloadMonthlyCollections}
+                    disabled={reportsLoading.collections}
+                    className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {reportsLoading.collections ? 'Preparing…' : 'Download CSV'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-slate-900">Outstanding Fee Report</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Export dues for follow-up with parents and auditors.
+                </p>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    From
+                    <input
+                      type="date"
+                      value={reportRanges.outstandingStart}
+                      onChange={handleReportsRangeChange('outstandingStart')}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    To
+                    <input
+                      type="date"
+                      value={reportRanges.outstandingEnd}
+                      onChange={handleReportsRangeChange('outstandingEnd')}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    />
+                  </label>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleDownloadOutstanding}
+                    disabled={reportsLoading.outstanding}
+                    className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {reportsLoading.outstanding ? 'Preparing…' : 'Download CSV'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-slate-900">Expenses Ledger Export</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Fetch expense entries with invoice references for audits.
+                </p>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    From
+                    <input
+                      type="date"
+                      value={reportRanges.expenseStart}
+                      onChange={handleReportsRangeChange('expenseStart')}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    To
+                    <input
+                      type="date"
+                      value={reportRanges.expenseEnd}
+                      onChange={handleReportsRangeChange('expenseEnd')}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    />
+                  </label>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleDownloadExpensesLedger}
+                    disabled={reportsLoading.expenses}
+                    className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {reportsLoading.expenses ? 'Preparing…' : 'Download CSV'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+                <h3 className="text-lg font-semibold text-slate-900">Cash Flow Statement</h3>
+                <p className="mt-1 text-sm text-slate-500">
+                  Month-wise inflow versus outflow for finance review.
+                </p>
+                <div className="mt-4 grid gap-3 md:grid-cols-2">
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    From
+                    <input
+                      type="date"
+                      value={reportRanges.cashFlowStart}
+                      onChange={handleReportsRangeChange('cashFlowStart')}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    To
+                    <input
+                      type="date"
+                      value={reportRanges.cashFlowEnd}
+                      onChange={handleReportsRangeChange('cashFlowEnd')}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    />
+                  </label>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleDownloadCashflow}
+                    disabled={reportsLoading.cashflow}
+                    className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {reportsLoading.cashflow ? 'Preparing…' : 'Download CSV'}
+                  </button>
+                </div>
               </div>
             </div>
           </section>
@@ -3926,6 +5160,227 @@ const AccountantDashboard = () => {
           </section>
         )}
       </main>
+
+      {manualEntryModalOpen && (
+        <Modal
+          title="Add Manual Ledger Entry"
+          onClose={() => {
+            resetManualEntryForm();
+            setManualEntryModalOpen(false);
+          }}
+        >
+          <form className="space-y-4" onSubmit={handleManualEntrySave}>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Date
+                <input
+                  type="date"
+                  name="date"
+                  value={manualEntryForm.date}
+                  onChange={handleManualEntryFieldChange}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Student
+                <select
+                  name="studentId"
+                  value={manualEntryForm.studentId}
+                  onChange={handleManualEntryFieldChange}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                >
+                  <option value="">Misc / Not Linked</option>
+                  {students.map((student) => (
+                    <option key={student.id} value={student.id}>
+                      {student.name} · {student.class || 'Class'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Fee Type
+                <select
+                  name="feeType"
+                  value={manualEntryForm.feeType}
+                  onChange={handleManualEntryFieldChange}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                >
+                  <option value="Tuition">Tuition</option>
+                  <option value="Transport">Transport</option>
+                  <option value="Uniform">Uniform</option>
+                  <option value="Event">Event</option>
+                  <option value="Misc">Misc</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Payment Mode
+                <select
+                  name="paymentMode"
+                  value={manualEntryForm.paymentMode}
+                  onChange={handleManualEntryFieldChange}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                >
+                  {PAYMENT_MODES.map((modeOption) => (
+                    <option key={modeOption} value={modeOption}>
+                      {modeOption}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                COA
+                <select
+                  name="coa"
+                  value={manualEntryForm.coa}
+                  onChange={handleManualEntryFieldChange}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                >
+                  {COA_INCOME.map((coaOption) => (
+                    <option key={coaOption} value={coaOption}>
+                      {coaOption}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Cost Center
+                <select
+                  name="costCenter"
+                  value={manualEntryForm.costCenter}
+                  onChange={handleManualEntryFieldChange}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                >
+                  {COST_CENTERS.map((center) => (
+                    <option key={center} value={center}>
+                      {center}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Amount (₹)
+                <input
+                  name="amount"
+                  value={manualEntryForm.amount}
+                  onChange={handleManualEntryFieldChange}
+                  inputMode="decimal"
+                  placeholder="0"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Notes
+                <textarea
+                  name="notes"
+                  value={manualEntryForm.notes}
+                  onChange={handleManualEntryFieldChange}
+                  rows={3}
+                  placeholder="Optional narration for this voucher"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                />
+              </label>
+            </div>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  resetManualEntryForm();
+                  setManualEntryModalOpen(false);
+                }}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={manualEntrySubmitting}
+                className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {manualEntrySubmitting ? 'Saving…' : 'Save Entry'}
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {selectedExpense && (
+        <Modal
+          title={`Expense · ${selectedExpense.expense_id || ''}`}
+          onClose={handleCloseExpenseDetail}
+        >
+          <div className="space-y-3 text-sm text-slate-700">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Date</p>
+                <p className="mt-1 font-medium text-slate-900">
+                  {parseDateValue(selectedExpense.date)?.toLocaleDateString('en-IN') || '—'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Vendor</p>
+                <p className="mt-1 font-medium text-slate-900">{selectedExpense.vendor || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Category</p>
+                <p className="mt-1 font-medium text-slate-900">{selectedExpense.category || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Amount</p>
+                <p className="mt-1 font-semibold text-slate-900">{formatCurrency(selectedExpense.amount)}</p>
+              </div>
+            </div>
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Payment Mode</p>
+                <p className="mt-1 text-slate-700">{selectedExpense.payment_mode || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</p>
+                <p className="mt-1 text-slate-700">{selectedExpense.status || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">COA</p>
+                <p className="mt-1 text-slate-700">{selectedExpense.coa || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Cost Center</p>
+                <p className="mt-1 text-slate-700">{selectedExpense.cost_center || '—'}</p>
+              </div>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Invoice Number</p>
+              <p className="mt-1 text-slate-700">{selectedExpense.invoice_no || '—'}</p>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Narration</p>
+              <p className="mt-1 whitespace-pre-wrap text-slate-700">{selectedExpense.narration || '—'}</p>
+            </div>
+            {Array.isArray(selectedExpense.attachments) && selectedExpense.attachments.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Attachments</p>
+                <ul className="mt-2 space-y-2">
+                  {selectedExpense.attachments.map((url) => (
+                    <li key={url}>
+                      <a
+                        href={url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-semibold text-cardinal underline"
+                      >
+                        View file
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
 
       {isReportModalOpen && (
         <Modal title="Generate Fee Report" onClose={closeReportModal} size="xl">
