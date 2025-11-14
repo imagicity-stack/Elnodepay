@@ -126,7 +126,7 @@ const LoginPage = () => {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center px-4 font-poppins">
         <Head>
-          <title>EL-NODE Pay Login</title>
+          <title>EL-NODE Login</title>
           <link rel="preconnect" href="https://fonts.googleapis.com" />
           <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
           <link
@@ -145,7 +145,7 @@ const LoginPage = () => {
   return (
     <div className="relative min-h-screen bg-white flex items-center justify-center px-4 py-16 font-poppins text-slate-800">
       <Head>
-        <title>EL-NODE Pay Login</title>
+        <title>EL-NODE Login</title>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
@@ -154,12 +154,13 @@ const LoginPage = () => {
         />
       </Head>
       <div className="absolute left-6 top-6">
-        <Image src="/elnode.png" alt="EL-NODE Pay logo" width={48} height={48} priority />
+        <Image src="/elnode.png" alt="EL-NODE logo" width={48} height={48} priority />
       </div>
       <div className="w-full max-w-md space-y-8">
         <div className="text-center">
-          <h1 className="text-4xl font-semibold text-cardinal">EL-NODE Pay</h1>
-          <p className="mt-2 text-sm text-slate-500">Sign in to continue.</p>
+          <h1 className="text-4xl font-semibold text-cardinal">EL-NODE</h1>
+          <p className="mt-2 text-sm text-slate-500">ERP for Mount Litera Zee School</p>
+          <p className="mt-1 text-sm text-slate-500">Sign in to continue.</p>
         </div>
         <form className="space-y-5 rounded-3xl border border-cardinal/20 bg-cardinal/5 p-6 shadow-xl" onSubmit={handleSubmit}>
           <div className="space-y-2">
