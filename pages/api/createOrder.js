@@ -1,7 +1,22 @@
 import Razorpay from 'razorpay';
+import crypto from 'crypto';
 
 const keyId = process.env.RAZORPAY_KEY_ID || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
 const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+const MAX_RECEIPT_LENGTH = 40;
+
+const buildReceiptId = (userId) => {
+  const base = `eln-${userId || 'anon'}-${Date.now()}`;
+
+  if (base.length <= MAX_RECEIPT_LENGTH) {
+    return base;
+  }
+
+  const suffix = crypto.randomBytes(4).toString('hex');
+  const availableLength = MAX_RECEIPT_LENGTH - suffix.length - 1; // keep room for the hyphen
+  return `${base.slice(0, Math.max(0, availableLength))}-${suffix}`;
+};
 
 const handler = async (req, res) => {
   if (req.method !== 'POST') {
@@ -41,7 +56,7 @@ const handler = async (req, res) => {
     const order = await razorpay.orders.create({
       amount: Math.round(Number(amount) * 100),
       currency: 'INR',
-      receipt: `eln-${userId}-${Date.now()}`,
+      receipt: buildReceiptId(userId),
       notes: {
         userId,
         studentId: studentId || '',
