@@ -349,6 +349,10 @@ const ParentDashboard = () => {
       const key = request.studentId || request.student_doc_id || request.studentDocId;
       if (!key) return;
       if (request.status === 'Paid') return;
+      const outstanding = Number(
+        request.balance ?? request.amount_due ?? request.amount_total ?? request.amount ?? 0,
+      );
+      if (!Number.isFinite(outstanding) || outstanding <= 0) return;
       const storeBreakdown = request.breakdown?.store;
       const othersBreakdown = request.breakdown?.others;
       if (!storeBreakdown && !othersBreakdown) return;
@@ -924,9 +928,18 @@ const ParentDashboard = () => {
               return (
                 <div
                   key={student.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setSelectedChildId(student.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setSelectedChildId(student.id);
+                    }
+                  }}
                   className={`rounded-3xl border ${
                     selectedChildId === student.id ? 'border-cardinal bg-cardinal/5' : 'border-slate-200 bg-white'
-                  } p-6 shadow-sm transition`}
+                  } p-6 shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-cardinal/30 cursor-pointer`}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -955,17 +968,14 @@ const ParentDashboard = () => {
                   <div className="mt-5 flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={() => handleOpenPayment(student)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setSelectedChildId(student.id);
+                        handleOpenPayment(student);
+                      }}
                       className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
                     >
                       Pay Now
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setSelectedChildId(student.id)}
-                      className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
-                    >
-                      View Details
                     </button>
                   </div>
                 </div>
