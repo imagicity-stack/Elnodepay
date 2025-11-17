@@ -1,161 +1,66 @@
 import crypto from 'crypto';
-import { signInWithEmailAndPassword } from 'firebase/auth';
-import {
-  addDoc,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  serverTimestamp,
-  updateDoc,
-  where,
-} from 'firebase/firestore';
-import { auth, db } from '../../lib/firebase';
-
-let serviceLoginPromise = null;
-
-const ensureServiceSession = async () => {
-  const email = process.env.FIREBASE_SERVICE_EMAIL;
-  const password = process.env.FIREBASE_SERVICE_PASSWORD;
-  if (!email || !password) {
-    throw new Error('Missing FIREBASE_SERVICE_EMAIL or FIREBASE_SERVICE_PASSWORD.');
-  }
-  if (!serviceLoginPromise) {
-    serviceLoginPromise = signInWithEmailAndPassword(auth, email, password).catch((error) => {
-      serviceLoginPromise = null;
-      throw error;
-    });
-  }
-  return serviceLoginPromise;
-};
 
 const keySecret = process.env.RAZORPAY_KEY_SECRET;
+const firebaseApiKey = process.env.FIREBASE_API_KEY;
+const firebaseProjectId = process.env.FIREBASE_PROJECT_ID;
+const firebaseServiceEmail = process.env.FIREBASE_SERVICE_EMAIL;
+const firebaseServicePassword = process.env.FIREBASE_SERVICE_PASSWORD;
 
-const parseDateValue = (value) => {
-  if (!value) return null;
-  if (typeof value.toDate === 'function') {
-    const parsed = value.toDate();
-    return Number.isFinite(parsed?.getTime?.()) ? parsed : null;
+const getFirebaseIdToken = async () => {
+  if (!firebaseApiKey) {
+    throw new Error('Missing FIREBASE_API_KEY.');
   }
-  const parsed = new Date(value);
-  return Number.isFinite(parsed.getTime()) ? parsed : null;
+  if (!firebaseServiceEmail || !firebaseServicePassword) {
+    throw new Error('Missing FIREBASE_SERVICE_EMAIL or FIREBASE_SERVICE_PASSWORD.');
+  }
+
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${firebaseApiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: firebaseServiceEmail,
+        password: firebaseServicePassword,
+        returnSecureToken: true,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Failed to authenticate with Firebase: ${errorBody}`);
+  }
+
+  const data = await response.json();
+  if (!data.idToken) {
+    throw new Error('Firebase authentication did not return an idToken.');
+  }
+  return data.idToken;
 };
 
-const parseAmountValue = (value) => {
-  const amount = Number(value ?? 0);
-  return Number.isFinite(amount) ? amount : 0;
-};
+const createPaymentDocument = async (idToken, fields) => {
+  if (!firebaseProjectId) {
+    throw new Error('Missing FIREBASE_PROJECT_ID.');
+  }
+  const response = await fetch(
+    `https://firestore.googleapis.com/v1/projects/${firebaseProjectId}/databases/(default)/documents/payments`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${idToken}`,
+      },
+      body: JSON.stringify({ fields }),
+    },
+  );
 
-const calculateFeeRequestTotal = (request = {}) => {
-  const directTotal = parseAmountValue(request.amount_total ?? request.amount);
-  if (directTotal > 0) {
-    return directTotal;
-  }
-  const base = parseAmountValue(request.base_amount);
-  const custom = parseAmountValue(request.custom_amount);
-  const extras = parseAmountValue(request.extras_total);
-  if (base + custom + extras > 0) {
-    return base + custom + extras;
-  }
-  const breakdown = request.breakdown && typeof request.breakdown === 'object' ? request.breakdown : {};
-  return Object.values(breakdown).reduce((sum, item) => sum + parseAmountValue(item?.amount), 0);
-};
-
-const resolveRequestBalance = (request = {}, fallbackAmount = 0) => {
-  const explicitFields = [
-    request.balance,
-    request.outstanding,
-    request.remaining_amount,
-    request.amount_due,
-  ];
-  for (const field of explicitFields) {
-    const amount = parseAmountValue(field);
-    if (amount > 0) {
-      return amount;
-    }
-  }
-  const status = `${request.status || ''}`.toLowerCase();
-  if (status === 'paid' || status === 'success') {
-    return 0;
-  }
-  return Math.max(parseAmountValue(fallbackAmount), 0);
-};
-
-const syncFeeRequestsAfterPayment = async ({
-  studentDocId,
-  studentId,
-  amountPaid,
-  paymentMode,
-  paymentId,
-}) => {
-  if ((!studentDocId && !studentId) || !(amountPaid > 0)) {
-    return;
-  }
-  const requestDocs = new Map();
-  if (studentDocId) {
-    const snapshot = await getDocs(
-      query(collection(db, 'fee_requests'), where('student_doc_id', '==', studentDocId)),
-    );
-    snapshot.forEach((docSnap) => {
-      requestDocs.set(docSnap.id, docSnap);
-    });
-  }
-  if (studentId && studentId !== studentDocId) {
-    const snapshot = await getDocs(
-      query(collection(db, 'fee_requests'), where('studentId', '==', studentId)),
-    );
-    snapshot.forEach((docSnap) => {
-      requestDocs.set(docSnap.id, docSnap);
-    });
-  }
-  if (!requestDocs.size) {
-    return;
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Failed to write payment document: ${errorBody}`);
   }
 
-  const sortedRequests = Array.from(requestDocs.values()).sort((a, b) => {
-    const dataA = a.data();
-    const dataB = b.data();
-    const dueA = parseDateValue(dataA.due_date);
-    const dueB = parseDateValue(dataB.due_date);
-    const timeA = dueA ? dueA.getTime() : parseDateValue(dataA.created_at)?.getTime() || 0;
-    const timeB = dueB ? dueB.getTime() : parseDateValue(dataB.created_at)?.getTime() || 0;
-    return timeA - timeB;
-  });
-
-  let remaining = amountPaid;
-  for (const docSnap of sortedRequests) {
-    if (remaining <= 0) {
-      break;
-    }
-    const data = docSnap.data();
-    const total = calculateFeeRequestTotal(data);
-    const outstanding = resolveRequestBalance(data, total);
-    if (outstanding <= 0) {
-      continue;
-    }
-    if (remaining >= outstanding) {
-      await updateDoc(doc(db, 'fee_requests', docSnap.id), {
-        status: 'Paid',
-        paid_at: serverTimestamp(),
-        payment_mode: paymentMode || 'Online',
-        transaction_id: paymentId || '',
-        balance: 0,
-        updated_at: serverTimestamp(),
-      });
-      remaining -= outstanding;
-    } else {
-      const newBalance = outstanding - remaining;
-      await updateDoc(doc(db, 'fee_requests', docSnap.id), {
-        balance: newBalance,
-        status: 'Pending',
-        payment_mode: paymentMode || 'Online',
-        transaction_id: paymentId || '',
-        updated_at: serverTimestamp(),
-      });
-      remaining = 0;
-    }
-  }
+  return response.json();
 };
 
 const handler = async (req, res) => {
@@ -169,25 +74,14 @@ const handler = async (req, res) => {
   }
 
   try {
-    await ensureServiceSession();
-
     const {
       razorpay_order_id,
       razorpay_payment_id,
       razorpay_signature,
-      userId,
-      amount,
-      studentDocId,
-      studentId,
-      studentName,
-      parentEmail,
-      parentUid,
-      className,
-      term,
-      feeType,
-      breakdown = [],
-      paymentMode = 'Online',
-    } = req.body;
+      userId = '',
+      studentId = '',
+      amount = 0,
+    } = req.body || {};
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({ success: false, message: 'Incomplete Razorpay payload' });
@@ -204,78 +98,22 @@ const handler = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Signature mismatch' });
     }
 
-    const amountPaid = Number(amount || 0);
+    const idToken = await getFirebaseIdToken();
+    const amountValue = Number(amount || 0);
+    const firestoreFields = {
+      razorpay_order_id: { stringValue: String(razorpay_order_id) },
+      razorpay_payment_id: { stringValue: String(razorpay_payment_id) },
+      razorpay_signature: { stringValue: String(razorpay_signature) },
+      status: { stringValue: 'success' },
+      amount: { integerValue: String(Math.round(amountValue)) },
+      userId: { stringValue: String(userId) },
+      studentId: { stringValue: String(studentId || '') },
+      createdAt: { timestampValue: new Date().toISOString() },
+    };
 
-    const paymentDoc = await addDoc(collection(db, 'payments'), {
-      studentId: studentId || '',
-      student_name: studentName || '',
-      class: className || '',
-      parent_uid: parentUid || userId || '',
-      parent_email: parentEmail || '',
-      amount: amountPaid,
-      mode: paymentMode || 'Online',
-      date: serverTimestamp(),
-      term: term || '',
-      fee_type: feeType || 'Tuition',
-      breakdown,
-      razorpay_order_id,
-      razorpay_payment_id,
-      status: 'Success',
-    });
+    await createPaymentDocument(idToken, firestoreFields);
 
-    if (studentDocId) {
-      const studentRef = doc(db, 'students', studentDocId);
-      const studentSnap = await getDoc(studentRef);
-      if (studentSnap.exists()) {
-        const studentData = studentSnap.data();
-        const currentBalance = Number(studentData.balance ?? studentData.fee_amount ?? 0);
-        const newBalance = Math.max(currentBalance - amountPaid, 0);
-        const updatedStatus = newBalance <= 0 ? 'Paid' : studentData.status === 'Overdue' ? 'Overdue' : 'Pending';
-        await updateDoc(studentRef, {
-          balance: newBalance,
-          status: updatedStatus,
-        });
-      }
-    }
-
-    await syncFeeRequestsAfterPayment({
-      studentDocId,
-      studentId,
-      amountPaid,
-      paymentMode: paymentMode || 'Online',
-      paymentId: razorpay_payment_id || '',
-    });
-
-    const eventDate = new Date();
-    const monthKey = `${eventDate.getFullYear()}-${String(eventDate.getMonth() + 1).padStart(2, '0')}`;
-    const monthLabel = eventDate.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
-    await addDoc(collection(db, 'transactions_log'), {
-      student_doc_id: studentDocId || '',
-      studentId: studentId || '',
-      student_name: studentName || '',
-      class: className || '',
-      amount: amountPaid,
-      mode: paymentMode || 'Online',
-      transaction_id: razorpay_payment_id || '',
-      status: 'Success',
-      month_key: monthKey,
-      month_label: monthLabel,
-      date: serverTimestamp(),
-      created_at: serverTimestamp(),
-    });
-
-    if (parentUid || userId) {
-      await addDoc(collection(db, 'notifications'), {
-        user_uid: parentUid || userId,
-        type: 'info',
-        title: 'Payment received',
-        message: `Payment of ₹${amountPaid.toFixed(2)} received for ${studentName || 'student'}.`,
-        created_at: serverTimestamp(),
-        read: false,
-      });
-    }
-
-    return res.status(200).json({ success: true, paymentId: paymentDoc.id });
+    return res.status(200).json({ success: true });
   } catch (error) {
     console.error('verifyPayment error', error);
     return res.status(500).json({ success: false, message: error.message || 'Unable to verify payment' });
