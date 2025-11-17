@@ -503,7 +503,9 @@ const ParentDashboard = () => {
   }, [paymentContext]);
 
   const handleOpenPayment = (student) => {
-    const breakdown = Array.isArray(student.fee_breakdown) && student.fee_breakdown.length > 0
+    if (!student) return;
+
+    const baseBreakdown = Array.isArray(student.fee_breakdown) && student.fee_breakdown.length > 0
       ? student.fee_breakdown
       : [
           {
@@ -512,14 +514,78 @@ const ParentDashboard = () => {
             selected: true,
           },
         ];
+
+    const normalizeItems = (items = [], type = 'tuition') =>
+      items
+        .filter((item) => Number(item.amount || 0) > 0)
+        .map((item) => ({
+          label: item.label,
+          amount: Number(item.amount || 0),
+          selected: item.selected ?? true,
+          type,
+        }));
+
+    const chargeKeys = [student.id, student.studentId].filter(Boolean);
+    const seenChargeIds = new Set();
+    const storeChargeItems = [];
+    chargeKeys.forEach((key) => {
+      const list = chargesByStudent.get(key) || [];
+      list.forEach((charge) => {
+        if (seenChargeIds.has(charge.id)) return;
+        seenChargeIds.add(charge.id);
+        const amount = Number(charge.amount || 0);
+        if (amount <= 0) return;
+        storeChargeItems.push({
+          label: charge.item_name || charge.label || 'Store charge',
+          amount,
+          selected: true,
+          type: 'store',
+        });
+      });
+    });
+
+    const extraKeys = [student.studentId, student.id].filter(Boolean);
+    const seenExtraIds = new Set();
+    const requestExtraItems = [];
+    extraKeys.forEach((key) => {
+      const extras = requestExtrasByStudent.get(key);
+      if (!extras) return;
+      extras.store.forEach((item) => {
+        if (seenExtraIds.has(item.id)) return;
+        seenExtraIds.add(item.id);
+        const amount = Number(item.amount || 0);
+        if (amount <= 0) return;
+        requestExtraItems.push({
+          label: item.label || 'Store charge',
+          amount,
+          selected: true,
+          type: 'store',
+        });
+      });
+      extras.others.forEach((item) => {
+        if (seenExtraIds.has(item.id)) return;
+        seenExtraIds.add(item.id);
+        const amount = Number(item.amount || 0);
+        if (amount <= 0) return;
+        requestExtraItems.push({
+          label: item.label || 'Additional charge',
+          amount,
+          selected: true,
+          type: 'others',
+        });
+      });
+    });
+
+    const selections = [
+      ...normalizeItems(baseBreakdown, 'tuition'),
+      ...storeChargeItems,
+      ...requestExtraItems,
+    ];
+
     setPaymentContext({
       open: true,
       student,
-      selections: breakdown.map((item) => ({
-        label: item.label,
-        amount: item.amount,
-        selected: item.selected ?? true,
-      })),
+      selections,
     });
   };
 
@@ -565,11 +631,31 @@ const ParentDashboard = () => {
         throw new Error(orderData.message || 'Unable to initiate payment');
       }
 
+      const derivePaymentTitle = () => {
+        const categoryLabels = {
+          tuition: 'Tuition',
+          store: 'Store',
+          others: 'Others',
+        };
+        const categories = Array.from(
+          new Set(
+            selectedItems.map((item) => categoryLabels[item.type] || 'Tuition'),
+          ),
+        );
+        if (categories.length === 0) {
+          return 'EHS Fees';
+        }
+        if (categories.length === 1) {
+          return `EHS ${categories[0]} Fees`;
+        }
+        return `EHS Fees (${categories.join(' + ')})`;
+      };
+
       const options = {
         key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
         amount: orderData.order.amount,
         currency: 'INR',
-        name: 'EL-NODE Pay',
+        name: derivePaymentTitle(),
         description: `Fee payment for ${paymentContext.student.name}`,
         order_id: orderData.order.id,
         handler: async (response) => {
