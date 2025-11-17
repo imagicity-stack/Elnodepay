@@ -257,6 +257,13 @@ const parseDateInput = (value) => {
   return Number.isFinite(date.getTime()) ? date : null;
 };
 
+const addMonthsToDate = (value, months = 1) => {
+  const base = parseDateInput(value) || new Date();
+  const result = new Date(base.getTime());
+  result.setMonth(result.getMonth() + months);
+  return result;
+};
+
 async function fetchFeeRequests(idToken, field, value) {
   if (!value) return [];
   const structuredQuery = {
@@ -376,6 +383,76 @@ async function pushNotification({ idToken, parentUid, studentName, amount }) {
   });
 }
 
+async function applyAdvancePayment({
+  idToken,
+  studentDocId,
+  studentId,
+  studentName,
+  className,
+  parentUid,
+  parentEmail,
+  months,
+  cycle,
+  amount,
+  paymentId,
+}) {
+  const monthsValue = Number(months || 0);
+  if (!(monthsValue > 0) || !studentDocId) {
+    return;
+  }
+
+  const studentDoc = await firestoreGetDocument(idToken, `students/${studentDocId}`);
+  if (!studentDoc) {
+    throw buildError('Student record not found for advance payment.');
+  }
+
+  const now = new Date();
+  const existingCoverageEnd = parseDateInput(studentDoc.advance_plan_end);
+  const baseDate = existingCoverageEnd && existingCoverageEnd.getTime() > now.getTime()
+    ? existingCoverageEnd
+    : now;
+  const coverageEnd = addMonthsToDate(baseDate, monthsValue);
+
+  const updatePayload = {
+    advance_plan_months: monthsValue,
+    advance_plan_cycle: cycle || `${monthsValue} Months`,
+    advance_plan_amount: roundCurrency(amount),
+    advance_plan_end: coverageEnd.toISOString(),
+    advance_plan_updated_at: timestampNow(),
+    advance_plan_payment_id: paymentId || '',
+  };
+
+  await firestoreUpdateDocument(
+    idToken,
+    `students/${studentDocId}`,
+    updatePayload,
+    [
+      'advance_plan_months',
+      'advance_plan_cycle',
+      'advance_plan_amount',
+      'advance_plan_end',
+      'advance_plan_updated_at',
+      'advance_plan_payment_id',
+    ],
+  );
+
+  await firestoreCreateDocument(idToken, 'advance_payments', {
+    student_doc_id: studentDocId,
+    studentId: studentId || studentDocId,
+    student_name: studentName || '',
+    class: className || '',
+    months: monthsValue,
+    cycle: cycle || `${monthsValue} Months`,
+    amount: roundCurrency(amount),
+    razorpay_payment_id: paymentId || '',
+    parent_uid: parentUid || '',
+    parent_email: parentEmail || '',
+    coverage_start: baseDate.toISOString(),
+    coverage_end: coverageEnd.toISOString(),
+    created_at: timestampNow(),
+  });
+}
+
 const handler = async (req, res) => {
   if (req.method !== 'POST') {
     res.setHeader('Allow', 'POST');
@@ -398,6 +475,7 @@ const handler = async (req, res) => {
       feeType,
       breakdown,
       paymentMode,
+      advancePayment,
     } = req.body || {};
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
@@ -456,6 +534,22 @@ const handler = async (req, res) => {
       paymentMode: paymentMode || 'Online',
       transactionId: razorpay_payment_id,
     });
+
+    if (advancePayment?.months) {
+      await applyAdvancePayment({
+        idToken,
+        studentDocId,
+        studentId,
+        studentName,
+        className,
+        parentUid,
+        parentEmail,
+        months: Number(advancePayment.months || 0),
+        cycle: advancePayment.cycle,
+        amount: Number(advancePayment.amount || 0),
+        paymentId: razorpay_payment_id,
+      });
+    }
 
     await pushNotification({
       idToken,

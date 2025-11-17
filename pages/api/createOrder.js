@@ -41,6 +41,7 @@ const handler = async (req, res) => {
       parentEmail,
       breakdown = [],
       term,
+      advancePayment = null,
     } = req.body;
 
     if (!amount || amount <= 0) {
@@ -65,6 +66,7 @@ const handler = async (req, res) => {
         parentEmail: parentEmail || '',
         term: term || '',
         breakdown: JSON.stringify(breakdown || []),
+        advancePayment: advancePayment ? JSON.stringify(advancePayment) : '',
       },
     });
 
