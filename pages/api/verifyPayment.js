@@ -200,48 +200,171 @@ const parseDateValue = (value) => {
   if (value instanceof Date) {
     return Number.isFinite(value.getTime()) ? value : null;
   }
-  const parsed = new Date(value);
-  return Number.isFinite(parsed.getTime()) ? parsed : null;
 };
 
-const parseAmountValue = (value) => {
-  const amount = Number(value ?? 0);
-  return Number.isFinite(amount) ? amount : 0;
-};
-
-const calculateFeeRequestTotal = (request = {}) => {
-  const directTotal = parseAmountValue(request.amount_total ?? request.amount);
-  if (directTotal > 0) {
-    return directTotal;
-  }
-  const base = parseAmountValue(request.base_amount);
-  const custom = parseAmountValue(request.custom_amount);
-  const extras = parseAmountValue(request.extras_total);
-  if (base + custom + extras > 0) {
-    return base + custom + extras;
-  }
-  const breakdown = request.breakdown && typeof request.breakdown === 'object' ? request.breakdown : {};
-  return Object.values(breakdown).reduce((sum, item) => sum + parseAmountValue(item?.amount), 0);
-};
-
-const resolveRequestBalance = (request = {}, fallbackAmount = 0) => {
-  const explicitFields = [
-    request.balance,
-    request.outstanding,
-    request.remaining_amount,
-    request.amount_due,
-  ];
-  for (const field of explicitFields) {
-    const amount = parseAmountValue(field);
-    if (amount > 0) {
-      return amount;
+const encodeFields = (data = {}) => {
+  const fields = {};
+  Object.entries(data).forEach(([key, value]) => {
+    const encoded = encodeValue(value);
+    if (encoded !== undefined) {
+      fields[key] = encoded;
     }
+  });
+  return fields;
+};
+
+const decodeValue = (value) => {
+  if (!value || typeof value !== 'object') {
+    return value;
   }
-  const status = `${request.status || ''}`.toLowerCase();
-  if (status === 'paid' || status === 'success') {
-    return 0;
+  if ('stringValue' in value) return value.stringValue;
+  if ('integerValue' in value) return Number(value.integerValue);
+  if ('doubleValue' in value) return Number(value.doubleValue);
+  if ('booleanValue' in value) return Boolean(value.booleanValue);
+  if ('timestampValue' in value) {
+    const parsed = new Date(value.timestampValue);
+    return Number.isFinite(parsed.getTime()) ? parsed : value.timestampValue;
   }
-  return Math.max(parseAmountValue(fallbackAmount), 0);
+  if ('arrayValue' in value) {
+    const list = value.arrayValue?.values || [];
+    return list.map((item) => decodeValue(item));
+  }
+  if ('mapValue' in value) {
+    const fields = value.mapValue?.fields || {};
+    return Object.fromEntries(
+      Object.entries(fields).map(([key, nested]) => [key, decodeValue(nested)]),
+    );
+  }
+  if ('nullValue' in value) return null;
+  return value;
+};
+
+const parseDocument = (document) => {
+  if (!document) return null;
+  const { name, fields = {} } = document;
+  const data = {};
+  Object.entries(fields).forEach(([key, value]) => {
+    data[key] = decodeValue(value);
+  });
+  return { id: name?.split('/')?.pop() || '', ...data };
+};
+
+const firestoreFetch = async (path, idToken, { method = 'GET', body, headers, allowMissing = false } = {}) => {
+  if (!firebaseProjectId) {
+    throw new Error('Missing FIREBASE_PROJECT_ID.');
+  }
+  const url = `${FIRESTORE_BASE}${path}`;
+  const finalHeaders = {
+    Authorization: `Bearer ${idToken}`,
+    ...(body ? { 'Content-Type': 'application/json' } : {}),
+    ...headers,
+  };
+  const response = await fetch(url, {
+    method,
+    headers: finalHeaders,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!response.ok) {
+    if (allowMissing && response.status === 404) {
+      return null;
+    }
+    const errorBody = await response.text();
+    throw new Error(`Firestore request failed (${response.status}): ${errorBody}`);
+  }
+  if (response.status === 204) {
+    return null;
+  }
+  return response.json();
+};
+
+const createDocument = async (idToken, collectionPath, data) => {
+  const response = await firestoreFetch(`/${collectionPath}`, idToken, {
+    method: 'POST',
+    body: { fields: encodeFields(data) },
+  });
+  return parseDocument(response);
+};
+
+const getDocument = async (idToken, docPath) => {
+  const response = await firestoreFetch(`/${docPath}`, idToken, { allowMissing: true });
+  return response ? parseDocument(response) : null;
+};
+
+const buildUpdateMask = (fieldPaths = []) =>
+  fieldPaths
+    .filter(Boolean)
+    .map((field) => `updateMask.fieldPaths=${encodeURIComponent(field)}`)
+    .join('&');
+
+const updateDocument = async (idToken, docPath, data, fieldPaths = []) => {
+  const query = buildUpdateMask(fieldPaths);
+  const response = await firestoreFetch(`/${docPath}${query ? `?${query}` : ''}`, idToken, {
+    method: 'PATCH',
+    body: { fields: encodeFields(data) },
+  });
+  return response ? parseDocument(response) : null;
+};
+
+const runStructuredQuery = async (idToken, structuredQuery) => {
+  const response = await firestoreFetch(':runQuery', idToken, {
+    method: 'POST',
+    body: { structuredQuery },
+  });
+  if (!Array.isArray(response)) {
+    return [];
+  }
+  return response
+    .map((entry) => parseDocument(entry.document))
+    .filter(Boolean);
+};
+
+const parseDateValue = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value : null;
+  }
+  if (!firebaseServiceEmail || !firebaseServicePassword) {
+    throw new Error('Missing FIREBASE_SERVICE_EMAIL or FIREBASE_SERVICE_PASSWORD.');
+  }
+
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${firebaseApiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: firebaseServiceEmail,
+        password: firebaseServicePassword,
+        returnSecureToken: true,
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Failed to authenticate with Firebase: ${errorBody}`);
+  }
+
+  const data = await response.json();
+  if (!data.idToken) {
+    throw new Error('Firebase authentication did not return an idToken.');
+  }
+  return data.idToken;
+};
+
+const queryFeeRequests = async (idToken, field, value) => {
+  if (!value) return [];
+  const structuredQuery = {
+    from: [{ collectionId: 'fee_requests' }],
+    where: {
+      fieldFilter: {
+        field: { fieldPath: field },
+        op: 'EQUAL',
+        value: encodeValue(value),
+      },
+    },
+  };
+  return runStructuredQuery(idToken, structuredQuery);
 };
 
 const queryFeeRequests = async (idToken, field, value) => {
