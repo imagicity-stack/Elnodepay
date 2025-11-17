@@ -199,48 +199,33 @@ const parseDateValue = (value) => {
   if (value instanceof Date) {
     return Number.isFinite(value.getTime()) ? value : null;
   }
-  const parsed = new Date(value);
-  return Number.isFinite(parsed.getTime()) ? parsed : null;
-};
+  if (!firebaseServiceEmail || !firebaseServicePassword) {
+    throw new Error('Missing FIREBASE_SERVICE_EMAIL or FIREBASE_SERVICE_PASSWORD.');
+  }
 
-const parseAmountValue = (value) => {
-  const amount = Number(value ?? 0);
-  return Number.isFinite(amount) ? amount : 0;
-};
+  const response = await fetch(
+    `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${firebaseApiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: firebaseServiceEmail,
+        password: firebaseServicePassword,
+        returnSecureToken: true,
+      }),
+    },
+  );
 
-const calculateFeeRequestTotal = (request = {}) => {
-  const directTotal = parseAmountValue(request.amount_total ?? request.amount);
-  if (directTotal > 0) {
-    return directTotal;
+  if (!response.ok) {
+    const errorBody = await response.text();
+    throw new Error(`Failed to authenticate with Firebase: ${errorBody}`);
   }
-  const base = parseAmountValue(request.base_amount);
-  const custom = parseAmountValue(request.custom_amount);
-  const extras = parseAmountValue(request.extras_total);
-  if (base + custom + extras > 0) {
-    return base + custom + extras;
-  }
-  const breakdown = request.breakdown && typeof request.breakdown === 'object' ? request.breakdown : {};
-  return Object.values(breakdown).reduce((sum, item) => sum + parseAmountValue(item?.amount), 0);
-};
 
-const resolveRequestBalance = (request = {}, fallbackAmount = 0) => {
-  const explicitFields = [
-    request.balance,
-    request.outstanding,
-    request.remaining_amount,
-    request.amount_due,
-  ];
-  for (const field of explicitFields) {
-    const amount = parseAmountValue(field);
-    if (amount > 0) {
-      return amount;
-    }
+  const data = await response.json();
+  if (!data.idToken) {
+    throw new Error('Firebase authentication did not return an idToken.');
   }
-  const status = `${request.status || ''}`.toLowerCase();
-  if (status === 'paid' || status === 'success') {
-    return 0;
-  }
-  return Math.max(parseAmountValue(fallbackAmount), 0);
+  return data.idToken;
 };
 
 const queryFeeRequests = async (idToken, field, value) => {
