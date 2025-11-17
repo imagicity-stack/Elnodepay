@@ -1,4 +1,4 @@
-// eslint-env node, es2021
+/* eslint-env node, es2021 */
 import crypto from 'crypto';
 
 const keySecret = process.env.RAZORPAY_KEY_SECRET;
@@ -44,7 +44,7 @@ const getFirebaseIdToken = async () => {
   return data.idToken;
 };
 
-const encodeValue = (value) => {
+const encodeFirestoreValue = (value) => {
   if (value === undefined) {
     return undefined;
   }
@@ -55,7 +55,7 @@ const encodeValue = (value) => {
     return { timestampValue: value.toISOString() };
   }
   if (Array.isArray(value)) {
-    return { arrayValue: { values: value.map((item) => encodeValue(item)) } };
+    return { arrayValue: { values: value.map((item) => encodeFirestoreValue(item)) } };
   }
   switch (typeof value) {
     case 'string':
@@ -66,8 +66,8 @@ const encodeValue = (value) => {
       return { booleanValue: value };
     case 'object': {
       const fields = {};
-      Object.entries(value).forEach(([key, nested]) => {
-        const encoded = encodeValue(nested);
+        Object.entries(value).forEach(([key, nested]) => {
+          const encoded = encodeFirestoreValue(nested);
         if (encoded !== undefined) {
           fields[key] = encoded;
         }
@@ -79,10 +79,10 @@ const encodeValue = (value) => {
   }
 };
 
-const encodeFields = (data = {}) => {
+const encodeFirestoreFields = (data = {}) => {
   const fields = {};
   Object.entries(data).forEach(([key, value]) => {
-    const encoded = encodeValue(value);
+    const encoded = encodeFirestoreValue(value);
     if (encoded !== undefined) {
       fields[key] = encoded;
     }
@@ -157,7 +157,7 @@ const firestoreFetch = async (path, idToken, { method = 'GET', body, headers, al
 const createDocument = async (idToken, collectionPath, data) => {
   const response = await firestoreFetch(`/${collectionPath}`, idToken, {
     method: 'POST',
-    body: { fields: encodeFields(data) },
+    body: { fields: encodeFirestoreFields(data) },
   });
   return parseDocument(response);
 };
@@ -177,7 +177,7 @@ const updateDocument = async (idToken, docPath, data, fieldPaths = []) => {
   const query = buildUpdateMask(fieldPaths);
   const response = await firestoreFetch(`/${docPath}${query ? `?${query}` : ''}`, idToken, {
     method: 'PATCH',
-    body: { fields: encodeFields(data) },
+    body: { fields: encodeFirestoreFields(data) },
   });
   return response ? parseDocument(response) : null;
 };
@@ -350,6 +350,21 @@ const parseDateValue = (value) => {
     throw new Error('Firebase authentication did not return an idToken.');
   }
   return data.idToken;
+};
+
+const queryFeeRequests = async (idToken, field, value) => {
+  if (!value) return [];
+  const structuredQuery = {
+    from: [{ collectionId: 'fee_requests' }],
+    where: {
+      fieldFilter: {
+        field: { fieldPath: field },
+        op: 'EQUAL',
+        value: encodeValue(value),
+      },
+    },
+  };
+  return runStructuredQuery(idToken, structuredQuery);
 };
 
 const queryFeeRequests = async (idToken, field, value) => {
