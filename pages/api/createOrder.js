@@ -1,7 +1,22 @@
 import Razorpay from 'razorpay';
+import crypto from 'crypto';
 
-const keyId = process.env.RAZORPAY_KEY_ID;
+const keyId = process.env.RAZORPAY_KEY_ID || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
 const keySecret = process.env.RAZORPAY_KEY_SECRET;
+
+const MAX_RECEIPT_LENGTH = 40;
+
+const buildReceiptId = (userId) => {
+  const base = `eln-${userId || 'anon'}-${Date.now()}`;
+
+  if (base.length <= MAX_RECEIPT_LENGTH) {
+    return base;
+  }
+
+  const suffix = crypto.randomBytes(4).toString('hex');
+  const availableLength = MAX_RECEIPT_LENGTH - suffix.length - 1; // keep room for the hyphen
+  return `${base.slice(0, Math.max(0, availableLength))}-${suffix}`;
+};
 
 const handler = async (req, res) => {
   if (req.method !== 'POST') {
@@ -10,7 +25,10 @@ const handler = async (req, res) => {
   }
 
   if (!keyId || !keySecret) {
-    return res.status(500).json({ success: false, message: 'Razorpay keys not configured' });
+    return res.status(500).json({
+      success: false,
+      message: 'Razorpay keys are missing. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in your environment.',
+    });
   }
 
   try {
@@ -38,7 +56,7 @@ const handler = async (req, res) => {
     const order = await razorpay.orders.create({
       amount: Math.round(Number(amount) * 100),
       currency: 'INR',
-      receipt: `eln-${userId}-${Date.now()}`,
+      receipt: buildReceiptId(userId),
       notes: {
         userId,
         studentId: studentId || '',
@@ -53,7 +71,8 @@ const handler = async (req, res) => {
     return res.status(200).json({ success: true, order });
   } catch (error) {
     console.error('createOrder error', error);
-    return res.status(500).json({ success: false, message: error.message || 'Unable to create order' });
+    const fallbackMessage = error?.error?.description || error?.message || 'Unable to create order';
+    return res.status(500).json({ success: false, message: fallbackMessage });
   }
 };
 
