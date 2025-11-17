@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { signInWithEmailAndPassword } from 'firebase/auth';
 import {
   addDoc,
   collection,
@@ -10,7 +11,24 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { db } from '../../lib/firebase';
+import { auth, db } from '../../lib/firebase';
+
+let serviceLoginPromise = null;
+
+const ensureServiceSession = async () => {
+  const email = process.env.FIREBASE_SERVICE_EMAIL;
+  const password = process.env.FIREBASE_SERVICE_PASSWORD;
+  if (!email || !password) {
+    throw new Error('Missing FIREBASE_SERVICE_EMAIL or FIREBASE_SERVICE_PASSWORD.');
+  }
+  if (!serviceLoginPromise) {
+    serviceLoginPromise = signInWithEmailAndPassword(auth, email, password).catch((error) => {
+      serviceLoginPromise = null;
+      throw error;
+    });
+  }
+  return serviceLoginPromise;
+};
 
 const keySecret = process.env.RAZORPAY_KEY_SECRET;
 
@@ -151,6 +169,8 @@ const handler = async (req, res) => {
   }
 
   try {
+    await ensureServiceSession();
+
     const {
       razorpay_order_id,
       razorpay_payment_id,
