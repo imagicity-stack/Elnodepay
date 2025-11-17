@@ -1,6 +1,6 @@
 import Razorpay from 'razorpay';
 
-const keyId = process.env.RAZORPAY_KEY_ID;
+const keyId = process.env.RAZORPAY_KEY_ID || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
 const keySecret = process.env.RAZORPAY_KEY_SECRET;
 
 const handler = async (req, res) => {
@@ -10,7 +10,10 @@ const handler = async (req, res) => {
   }
 
   if (!keyId || !keySecret) {
-    return res.status(500).json({ success: false, message: 'Razorpay keys not configured' });
+    return res.status(500).json({
+      success: false,
+      message: 'Razorpay keys are missing. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in your environment.',
+    });
   }
 
   try {
@@ -53,7 +56,8 @@ const handler = async (req, res) => {
     return res.status(200).json({ success: true, order });
   } catch (error) {
     console.error('createOrder error', error);
-    return res.status(500).json({ success: false, message: error.message || 'Unable to create order' });
+    const fallbackMessage = error?.error?.description || error?.message || 'Unable to create order';
+    return res.status(500).json({ success: false, message: fallbackMessage });
   }
 };
 
