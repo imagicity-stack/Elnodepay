@@ -199,6 +199,28 @@ const formatCurrency = (amount) => { // fixed initialization order
   return `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 };
 
+const getAdvancePlanEndDate = (student = {}) => {
+  if (!student?.advance_plan_end) return null;
+  return parseDateValue(student.advance_plan_end);
+};
+
+const hasActiveAdvancePlan = (student = {}) => {
+  const endDate = getAdvancePlanEndDate(student);
+  if (!endDate) return false;
+  return endDate.getTime() > Date.now();
+};
+
+const buildAdvancePlanNotice = (student = {}) => {
+  if (!hasActiveAdvancePlan(student)) {
+    return '';
+  }
+  const endDate = getAdvancePlanEndDate(student);
+  if (!endDate) return '';
+  const label = student.advance_plan_cycle ||
+    (student.advance_plan_months ? `${student.advance_plan_months} months` : 'Advance plan');
+  return `${label ? `${label} · ` : ''}Paid till ${endDate.toLocaleDateString('en-IN')}`;
+};
+
 const INITIAL_FY_RANGE = getFinancialYearRange(); // fixed initialization order
 const DEFAULT_FY_START = formatDateInput(INITIAL_FY_RANGE.start); // fixed initialization order
 const DEFAULT_FY_END = formatDateInput(INITIAL_FY_RANGE.end); // fixed initialization order
@@ -611,11 +633,15 @@ const CommonFeeRequestModal = ({
   onClose,
   isSubmitting,
   resolveAmount,
+  resolveAdvanceNotice,
 }) => {
   const selectedCount = state.selectedIds instanceof Set ? state.selectedIds.size : 0;
-  const allFilteredSelected =
-    filteredStudents.length > 0 &&
-    filteredStudents.every((student) => state.selectedIds.has(student.id));
+  const advanceResolver = resolveAdvanceNotice || (() => '');
+  const eligibleIds = filteredStudents
+    .filter((student) => !advanceResolver(student))
+    .map((student) => student.id);
+  const allEligibleSelected =
+    eligibleIds.length > 0 && eligibleIds.every((id) => state.selectedIds.has(id));
 
   return (
     <Modal title="Create Common Fee Request" onClose={onClose} size="xl">
@@ -676,10 +702,15 @@ const CommonFeeRequestModal = ({
             <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-600">
               <button
                 type="button"
-                onClick={onToggleAllFiltered}
-                className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-100"
+                onClick={() => onToggleAllFiltered(eligibleIds)}
+                disabled={eligibleIds.length === 0}
+                className="rounded-full border border-slate-200 px-3 py-1.5 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {allFilteredSelected ? 'Deselect filtered' : 'Select filtered'}
+                {eligibleIds.length === 0
+                  ? 'No eligible students'
+                  : allEligibleSelected
+                  ? 'Deselect eligible'
+                  : 'Select eligible'}
               </button>
               <button
                 type="button"
@@ -698,6 +729,8 @@ const CommonFeeRequestModal = ({
               {filteredStudents.map((student) => {
                 const amount = resolveAmount(student);
                 const checked = state.selectedIds.has(student.id);
+                const advanceNotice = advanceResolver(student);
+                const disabled = Boolean(advanceNotice);
                 return (
                   <li key={student.id}>
                     <label className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
@@ -705,7 +738,8 @@ const CommonFeeRequestModal = ({
                         <input
                           type="checkbox"
                           checked={checked}
-                          onChange={() => onToggleStudent(student.id)}
+                          onChange={() => onToggleStudent(student.id, disabled)}
+                          disabled={disabled}
                           className="h-4 w-4 rounded border-slate-300 text-cardinal focus:ring-cardinal"
                         />
                         <span>
@@ -713,6 +747,9 @@ const CommonFeeRequestModal = ({
                           <p className="text-xs text-slate-500">
                             {student.studentId || student.id} · Class {student.class || '—'}
                           </p>
+                          {advanceNotice && (
+                            <p className="text-[11px] font-medium text-amber-600">{advanceNotice}</p>
+                          )}
                         </span>
                       </span>
                       <span className="text-xs font-semibold text-slate-600">
@@ -2606,6 +2643,11 @@ const resolveTransactionMonthLabel = (entry) => {
   const handleOpenFeeRequest = (student) => {
     closeStudentActions();
     resetMarkPaidContext();
+    if (hasActiveAdvancePlan(student)) {
+      const notice = buildAdvancePlanNotice(student) || 'Advance fees already recorded for this student.';
+      triggerToast(notice, 'warning');
+      return;
+    }
     setFeeRequestContext({ open: true, student });
     setFeeRequestForm(buildFeeRequestForm(student));
   };
@@ -2679,7 +2721,11 @@ const resolveTransactionMonthLabel = (entry) => {
     setCommonRequestState((prev) => ({ ...prev, search: value }));
   };
 
-  const handleCommonToggleStudent = (studentId) => {
+  const handleCommonToggleStudent = (studentId, isBlocked = false) => {
+    if (isBlocked) {
+      triggerToast('Advance fees already paid for this student.', 'warning');
+      return;
+    }
     setCommonRequestState((prev) => {
       const next = new Set(prev.selectedIds);
       if (next.has(studentId)) {
@@ -2691,15 +2737,20 @@ const resolveTransactionMonthLabel = (entry) => {
     });
   };
 
-  const handleCommonToggleAllFiltered = () => {
+  const handleCommonToggleAllFiltered = (eligibleIds = null) => {
     setCommonRequestState((prev) => {
       const next = new Set(prev.selectedIds);
-      const filteredIds = commonFilteredStudents.map((student) => student.id);
-      const allSelected = filteredIds.every((id) => next.has(id));
+      const targetIds = Array.isArray(eligibleIds) && eligibleIds.length > 0
+        ? eligibleIds
+        : commonFilteredStudents.map((student) => student.id);
+      if (!targetIds.length) {
+        return { ...prev, selectedIds: next };
+      }
+      const allSelected = targetIds.every((id) => next.has(id));
       if (allSelected) {
-        filteredIds.forEach((id) => next.delete(id));
+        targetIds.forEach((id) => next.delete(id));
       } else {
-        filteredIds.forEach((id) => next.add(id));
+        targetIds.forEach((id) => next.add(id));
       }
       return { ...prev, selectedIds: next };
     });
@@ -3190,11 +3241,16 @@ const resolveTransactionMonthLabel = (entry) => {
       const dueDateValue = commonRequestState.dueDate || feeStructureDraft.defaultDueDate || '';
       let createdCount = 0;
       let skippedCount = 0;
+      let advanceSkipped = 0;
       const safeStudents = Array.isArray(students) ? students : [];
       for (const studentId of selectedIds) {
         const student = safeStudents.find((item) => item.id === studentId);
         if (!student) {
           skippedCount += 1;
+          continue;
+        }
+        if (hasActiveAdvancePlan(student)) {
+          advanceSkipped += 1;
           continue;
         }
         const baseAmount = getFeeAmountFromStructure(student.class, cycleMeta.id);
@@ -3245,6 +3301,9 @@ const resolveTransactionMonthLabel = (entry) => {
         const parts = [`Created ${createdCount} request${createdCount === 1 ? '' : 's'}`];
         if (skippedCount > 0) {
           parts.push(`Skipped ${skippedCount} without fee data`);
+        }
+        if (advanceSkipped > 0) {
+          parts.push(`Skipped ${advanceSkipped} with advance fees`);
         }
         triggerToast(parts.join(' · '), 'success');
       } else {
@@ -4232,6 +4291,7 @@ const resolveTransactionMonthLabel = (entry) => {
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {filteredStudents.map((student) => {
                     const isSelected = selectedStudentId === student.id;
+                    const advanceNotice = buildAdvancePlanNotice(student);
                     return (
                       <div
                         key={student.id}
@@ -4266,6 +4326,9 @@ const resolveTransactionMonthLabel = (entry) => {
                               <p>
                                 Phone: <span className="font-medium text-slate-700">{student.parent_phone}</span>
                               </p>
+                            )}
+                            {advanceNotice && (
+                              <p className="font-semibold text-emerald-600">{advanceNotice}</p>
                             )}
                           </div>
                         </button>
@@ -4316,6 +4379,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     const hasOutstanding = balance > 0;
                     const isMarking = markPaidContext.student?.id === student.id;
                     const statusLabel = hasOutstanding ? student.status || 'Pending' : 'Paid';
+                    const advanceNotice = buildAdvancePlanNotice(student);
                     return (
                       <div
                         key={`${student.id}-fee-report`}
@@ -4329,6 +4393,9 @@ const resolveTransactionMonthLabel = (entry) => {
                             <p className="mt-1 text-sm text-slate-500">
                               {student.studentId || student.id} · Class {student.class || '—'}
                             </p>
+                            {advanceNotice && (
+                              <p className="text-xs font-semibold text-emerald-600">{advanceNotice}</p>
+                            )}
                           </div>
                           <span
                             className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
@@ -5859,6 +5926,7 @@ const resolveTransactionMonthLabel = (entry) => {
           resolveAmount={(student) =>
             getFeeAmountFromStructure(student.class, commonRequestState.cycle)
           }
+          resolveAdvanceNotice={buildAdvancePlanNotice}
         />
       )}
 

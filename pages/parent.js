@@ -22,10 +22,41 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 
+const parseDateValue = (value) => {
+  if (!value) return null;
+  if (value?.toDate) {
+    const date = value.toDate();
+    return Number.isFinite(date.getTime()) ? date : null;
+  }
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+};
+
+const normaliseFeeStructure = (data = {}) => {
+  const formattedFees = {};
+  const rawFees = data?.fees || {};
+  Object.keys(rawFees).forEach((className) => {
+    const entry = rawFees[className] || {};
+    formattedFees[className] = {
+      monthly: Number(entry.monthly || 0),
+      quarterly: Number(entry.quarterly || 0),
+      halfYearly: Number(entry.halfYearly || 0),
+    };
+  });
+  return {
+    session: data?.session || '',
+    fees: formattedFees,
+  };
+};
+
 const PayNowModal = ({
   open,
   student,
   selections,
+  advanceOptions = [],
+  selectedAdvanceId,
+  onAdvanceSelect,
+  onClearAdvance,
   onToggle,
   onClose,
   onConfirm,
@@ -73,6 +104,51 @@ const PayNowModal = ({
               </label>
             ))}
           </div>
+          {advanceOptions.length > 0 && (
+            <div className="mt-6 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-900">Pay fees in advance</p>
+                {selectedAdvanceId && (
+                  <button
+                    type="button"
+                    onClick={onClearAdvance}
+                    className="text-xs font-semibold text-cardinal underline"
+                  >
+                    Clear selection
+                  </button>
+                )}
+              </div>
+              {advanceOptions.map((plan) => {
+                const checked = selectedAdvanceId === plan.id;
+                return (
+                  <label
+                    key={plan.id}
+                    className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${
+                      plan.disabled ? 'border-slate-200 bg-slate-50 opacity-70' : 'border-cardinal/30 bg-cardinal/5'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="radio"
+                        name="advance-plan"
+                        checked={checked}
+                        onChange={() => onAdvanceSelect(plan.id)}
+                        disabled={plan.disabled}
+                        className="h-4 w-4 border-slate-300 text-cardinal focus:ring-cardinal"
+                      />
+                      <div>
+                        <p className="font-medium text-slate-900">{plan.label}</p>
+                        <p className="text-xs text-slate-500">{plan.helperText}</p>
+                      </div>
+                    </div>
+                    <span className="text-sm font-semibold text-slate-900">
+                      ₹{Number(plan.amount || 0).toLocaleString('en-IN')}
+                    </span>
+                  </label>
+                );
+              })}
+            </div>
+          )}
           <div className="mt-6 rounded-2xl border border-cardinal bg-cardinal/5 px-4 py-3 text-slate-800">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Total payable</span>
@@ -138,13 +214,20 @@ const ParentDashboard = () => {
   const [feeRequests, setFeeRequests] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [settings, setSettings] = useState({ currentTerm: '', defaultDueDate: '' });
+  const [feeStructure, setFeeStructure] = useState({ session: '', fees: {} });
   const [selectedChildId, setSelectedChildId] = useState(null);
   const [historyFilters, setHistoryFilters] = useState({ child: 'All', month: 'All', year: 'All' });
   const [supportForm, setSupportForm] = useState({ subject: '', message: '' });
   const [profileForm, setProfileForm] = useState({ name: '', contactNumber: '' });
   const [supportSubmitting, setSupportSubmitting] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
-  const [paymentContext, setPaymentContext] = useState({ open: false, student: null, selections: [] });
+  const [paymentContext, setPaymentContext] = useState({
+    open: false,
+    student: null,
+    selections: [],
+    advanceOptions: [],
+    selectedAdvanceId: null,
+  });
   const [paymentProcessing, setPaymentProcessing] = useState(false);
 
   const handleSignOut = useCallback(async () => {
@@ -283,6 +366,15 @@ const ParentDashboard = () => {
       }
     });
 
+    const feeStructureRef = doc(db, 'settings', 'feestructure');
+    const unsubscribeFeeStructure = onSnapshot(feeStructureRef, (snapshot) => {
+      if (snapshot.exists()) {
+        setFeeStructure(normaliseFeeStructure(snapshot.data()));
+      } else {
+        setFeeStructure(normaliseFeeStructure({}));
+      }
+    });
+
     if (typeof window !== 'undefined' && !document.getElementById('razorpay-script')) {
       const script = document.createElement('script');
       script.id = 'razorpay-script';
@@ -296,6 +388,7 @@ const ParentDashboard = () => {
       unsubscribePayments();
       unsubscribeNotifications();
       unsubscribeSettings();
+      unsubscribeFeeStructure();
       unsubscribeCharges();
       unsubscribeFeeRequests();
     };
@@ -342,6 +435,49 @@ const ParentDashboard = () => {
     });
     return map;
   }, [storeCharges]);
+
+  const getAdvancePlanOptions = useCallback(
+    (student) => {
+      if (!student) return [];
+      const entry = feeStructure.fees?.[student.class] || {};
+      const monthly = Number(entry.monthly || 0);
+      const quarterlyRaw = Number(entry.quarterly || 0);
+      const halfYearlyRaw = Number(entry.halfYearly || 0);
+      const quarterly = quarterlyRaw > 0 ? quarterlyRaw : monthly * 3;
+      const halfYearly = halfYearlyRaw > 0 ? halfYearlyRaw : quarterly * 2 || monthly * 6;
+      const plans = [
+        { id: 'advance-monthly', label: 'Pay 1 month in advance', months: 1, cycle: 'Monthly', amount: monthly },
+        { id: 'advance-quarterly', label: 'Pay 3 months in advance', months: 3, cycle: 'Quarterly', amount: quarterly },
+        { id: 'advance-halfyearly', label: 'Pay 6 months in advance', months: 6, cycle: 'Half-Yearly', amount: halfYearly },
+      ].filter((plan) => plan.amount > 0);
+      if (!plans.length) return [];
+      const coverageEnd = parseDateValue(student.advance_plan_end);
+      const hasActiveCoverage = coverageEnd && coverageEnd.getTime() > Date.now();
+      return plans.map((plan) => ({
+        ...plan,
+        helperText: hasActiveCoverage
+          ? `Advance active until ${coverageEnd.toLocaleDateString('en-IN')}`
+          : `₹${Number(plan.amount || 0).toLocaleString('en-IN')}`,
+        disabled: hasActiveCoverage,
+      }));
+    },
+    [feeStructure],
+  );
+
+  const getAdvanceStatus = useCallback((student) => {
+    if (!student) return null;
+    const endDate = parseDateValue(student.advance_plan_end);
+    if (!endDate || endDate.getTime() <= Date.now()) {
+      return null;
+    }
+    const label = student.advance_plan_cycle ||
+      (student.advance_plan_months ? `${student.advance_plan_months} months` : 'Advance plan');
+    return {
+      label,
+      endDate,
+      message: `${label ? `${label} · ` : ''}Paid till ${endDate.toLocaleDateString('en-IN')}`,
+    };
+  }, []);
 
   const requestExtrasByStudent = useMemo(() => {
     const map = new Map();
@@ -413,6 +549,7 @@ const ParentDashboard = () => {
   const selectedStudentCharges = selectedStudent
     ? chargesByStudent.get(selectedStudent.id) || []
     : [];
+  const selectedStudentAdvanceStatus = getAdvanceStatus(selectedStudent);
   const selectedStudentRequestExtras = (() => {
     if (!selectedStudent) return { store: [], others: [] };
     const key = selectedStudent.studentId || selectedStudent.id;
@@ -499,12 +636,22 @@ const ParentDashboard = () => {
     return groups;
   }, [selectedStudent, selectedStudentCharges, selectedStudentRequestExtras]);
 
-  const totalSelectedAmount = useMemo(() => {
+  const outstandingSelectedAmount = useMemo(() => {
     if (!paymentContext.open) return 0;
     return paymentContext.selections
       .filter((item) => item.selected)
       .reduce((sum, item) => sum + Number(item.amount || 0), 0);
   }, [paymentContext]);
+
+  const advanceSelectionAmount = useMemo(() => {
+    if (!paymentContext.open) return 0;
+    const plan = (paymentContext.advanceOptions || []).find(
+      (option) => option.id === paymentContext.selectedAdvanceId,
+    );
+    return Number(plan?.amount || 0);
+  }, [paymentContext]);
+
+  const totalSelectedAmount = outstandingSelectedAmount + advanceSelectionAmount;
 
   const handleOpenPayment = (student) => {
     if (!student) return;
@@ -586,10 +733,14 @@ const ParentDashboard = () => {
       ...requestExtraItems,
     ];
 
+    const advanceOptions = getAdvancePlanOptions(student);
+
     setPaymentContext({
       open: true,
       student,
       selections,
+      advanceOptions,
+      selectedAdvanceId: null,
     });
   };
 
@@ -602,19 +753,52 @@ const ParentDashboard = () => {
     }));
   };
 
+  const handleAdvanceSelection = (planId) => {
+    setPaymentContext((prev) => ({
+      ...prev,
+      selectedAdvanceId: planId,
+    }));
+  };
+
+  const handleClearAdvanceSelection = () => {
+    setPaymentContext((prev) => ({
+      ...prev,
+      selectedAdvanceId: null,
+    }));
+  };
+
   const handleClosePayment = () => {
-    setPaymentContext({ open: false, student: null, selections: [] });
+    setPaymentContext({
+      open: false,
+      student: null,
+      selections: [],
+      advanceOptions: [],
+      selectedAdvanceId: null,
+    });
     setPaymentProcessing(false);
   };
 
   const handleProcessPayment = async () => {
     if (!paymentContext.student || totalSelectedAmount <= 0) return;
+    const advancePlan = (paymentContext.advanceOptions || []).find(
+      (plan) => plan.id === paymentContext.selectedAdvanceId,
+    );
     if (typeof window === 'undefined' || !window.Razorpay) {
       alert('Payment gateway is still loading. Please try again in a moment.');
       return;
     }
     setPaymentProcessing(true);
     const selectedItems = paymentContext.selections.filter((item) => item.selected);
+    if (advancePlan) {
+      selectedItems.push({
+        label: advancePlan.label,
+        amount: Number(advancePlan.amount || 0),
+        selected: true,
+        type: 'advance',
+        months: advancePlan.months,
+        cycle: advancePlan.cycle,
+      });
+    }
     try {
       const orderResponse = await fetch('/api/createOrder', {
         method: 'POST',
@@ -628,6 +812,14 @@ const ParentDashboard = () => {
           parentEmail: user.email,
           breakdown: selectedItems,
           term: settings.currentTerm || '',
+          advancePayment: advancePlan
+            ? {
+                months: advancePlan.months,
+                cycle: advancePlan.cycle,
+                amount: Number(advancePlan.amount || 0),
+                label: advancePlan.label,
+              }
+            : null,
         }),
       });
       const orderData = await orderResponse.json();
@@ -640,6 +832,7 @@ const ParentDashboard = () => {
           tuition: 'Tuition',
           store: 'Store',
           others: 'Others',
+          advance: 'Advance',
         };
         const categories = Array.from(
           new Set(
@@ -684,6 +877,14 @@ const ParentDashboard = () => {
                     : selectedItems[0]?.label || 'Tuition',
                 breakdown: selectedItems,
                 paymentMode: 'Online',
+                advancePayment: advancePlan
+                  ? {
+                      months: advancePlan.months,
+                      cycle: advancePlan.cycle,
+                      amount: Number(advancePlan.amount || 0),
+                      label: advancePlan.label,
+                    }
+                  : null,
               }),
             });
             const verifyData = await verifyResponse.json();
@@ -925,6 +1126,7 @@ const ParentDashboard = () => {
               );
               const tuitionDue = Number(student.balance ?? student.fee_amount ?? 0);
               const totalDue = tuitionDue + storeChargeTotal;
+              const advanceStatus = getAdvanceStatus(student);
               return (
                 <div
                   key={student.id}
@@ -964,6 +1166,9 @@ const ParentDashboard = () => {
                     <p>Store charges: ₹{storeChargeTotal.toLocaleString('en-IN')}</p>
                     <p>Fee cycle: {student.fee_cycle || 'Monthly'}</p>
                     <p>Due date: {student.due_date || 'Not scheduled'}</p>
+                    {advanceStatus && (
+                      <p className="text-xs font-semibold text-emerald-600">{advanceStatus.message}</p>
+                    )}
                   </div>
                   <div className="mt-5 flex flex-wrap gap-2">
                     <button
@@ -1011,6 +1216,11 @@ const ParentDashboard = () => {
                   </p>
                   <p className="mt-1">Fee cycle: {selectedStudent.fee_cycle || 'Monthly'}</p>
                   <p className="mt-1">Due date: {selectedStudent.due_date || '—'}</p>
+                  {selectedStudentAdvanceStatus && (
+                    <p className="mt-1 text-xs font-semibold text-emerald-600">
+                      {selectedStudentAdvanceStatus.message}
+                    </p>
+                  )}
                 </div>
                 <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
                   <p className="text-xs uppercase tracking-wide text-slate-500">Fee Breakdown</p>
@@ -1315,15 +1525,19 @@ const ParentDashboard = () => {
         </section>
       </main>
 
-      <PayNowModal
-        open={paymentContext.open}
-        student={paymentContext.student}
-        selections={paymentContext.selections}
-        onToggle={handleToggleSelection}
-        onClose={handleClosePayment}
-        onConfirm={handleProcessPayment}
-        processing={paymentProcessing}
-        total={totalSelectedAmount}
+        <PayNowModal
+          open={paymentContext.open}
+          student={paymentContext.student}
+          selections={paymentContext.selections}
+          advanceOptions={paymentContext.advanceOptions}
+          selectedAdvanceId={paymentContext.selectedAdvanceId}
+          onAdvanceSelect={handleAdvanceSelection}
+          onClearAdvance={handleClearAdvanceSelection}
+          onToggle={handleToggleSelection}
+          onClose={handleClosePayment}
+          onConfirm={handleProcessPayment}
+          processing={paymentProcessing}
+          total={totalSelectedAmount}
       />
     </div>
   );
