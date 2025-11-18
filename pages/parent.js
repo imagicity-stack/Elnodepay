@@ -282,6 +282,7 @@ const ParentDashboard = () => {
     advanceEnabled: false,
   });
   const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
 
   const handleSignOut = useCallback(async () => {
     try {
@@ -294,6 +295,10 @@ const ParentDashboard = () => {
       router.replace('/');
     }
   }, [router]); // fix: define before effects to avoid init issues
+  const handleConfirmSignOut = useCallback(() => {
+    setSignOutConfirmOpen(false);
+    handleSignOut();
+  }, [handleSignOut]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
@@ -1177,7 +1182,7 @@ const ParentDashboard = () => {
             </button>
             <button
               type="button"
-              onClick={handleSignOut}
+              onClick={() => setSignOutConfirmOpen(true)}
               className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
             >
               Sign Out
@@ -1634,21 +1639,50 @@ const ParentDashboard = () => {
         </section>
       </main>
 
-        <PayNowModal
-          open={paymentContext.open}
-          student={paymentContext.student}
-          selections={paymentContext.selections}
-          advanceOptions={paymentContext.advanceOptions}
-          selectedAdvanceId={paymentContext.selectedAdvanceId}
-          advanceEnabled={paymentContext.advanceEnabled}
-          onAdvanceSelect={handleAdvanceSelection}
-          onAdvanceToggle={handleToggleAdvance}
-          onToggle={handleToggleSelection}
-          onClose={handleClosePayment}
-          onConfirm={handleProcessPayment}
-          processing={paymentProcessing}
-          total={totalSelectedAmount}
+      <PayNowModal
+        open={paymentContext.open}
+        student={paymentContext.student}
+        selections={paymentContext.selections}
+        advanceOptions={paymentContext.advanceOptions}
+        selectedAdvanceId={paymentContext.selectedAdvanceId}
+        advanceEnabled={paymentContext.advanceEnabled}
+        onAdvanceSelect={handleAdvanceSelection}
+        onAdvanceToggle={handleToggleAdvance}
+        onToggle={handleToggleSelection}
+        onClose={handleClosePayment}
+        onConfirm={handleProcessPayment}
+        processing={paymentProcessing}
+        total={totalSelectedAmount}
       />
+
+      {signOutConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-900">Sign Out</h3>
+            <p className="mt-2 text-sm text-slate-600">Do you really want to sign out?</p>
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setSignOutConfirmOpen(false)}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              >
+                No
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSignOut}
+                className="rounded-full bg-cardinal px-4 py-2 text-sm font-semibold text-white transition hover:bg-cardinal/90"
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

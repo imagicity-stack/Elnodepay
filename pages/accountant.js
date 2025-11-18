@@ -1279,6 +1279,7 @@ const AccountantDashboard = () => {
     error: '',
   });
   const [toast, setToast] = useState(null);
+  const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
   const secondaryAuthRef = useRef(null);
   const toastTimerRef = useRef(null);
 
@@ -1293,6 +1294,11 @@ const AccountantDashboard = () => {
       router.replace('/');
     }
   }, [router]); // fix: define before effects to avoid init issues
+
+  const handleConfirmSignOut = useCallback(() => {
+    setSignOutConfirmOpen(false);
+    handleSignOut();
+  }, [handleSignOut]);
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -4200,80 +4206,84 @@ const resolveTransactionMonthLabel = (entry) => {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={handleOpenAddStudent}
-              className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
-            >
-              Add Student
-            </button>
-            <button
-              type="button"
-              onClick={openReportModal}
-              className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
-            >
-              Generate Report
-            </button>
-            <div className="relative" ref={settingsMenuRef}>
-              <button
-                type="button"
-                onClick={() => setIsSettingsMenuOpen((prev) => !prev)}
-                className="flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                aria-haspopup="true"
-                aria-expanded={isSettingsMenuOpen}
-                aria-controls="settings-menu"
-              >
-                Settings
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  className={`h-4 w-4 transition-transform ${isSettingsMenuOpen ? 'rotate-180' : ''}`}
-                  aria-hidden="true"
+            {activeSection === 'fees' && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleOpenAddStudent}
+                  className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
                 >
-                  <path
-                    fillRule="evenodd"
-                    d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.25a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </button>
-              {isSettingsMenuOpen && (
-                <div
-                  id="settings-menu"
-                  className="absolute right-0 z-10 mt-2 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
-                  role="menu"
-                  aria-label="Settings"
+                  Add Student
+                </button>
+                <button
+                  type="button"
+                  onClick={openReportModal}
+                  className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
                 >
-                  {[
-                    { id: 'fee-settings', label: 'Fee Settings' },
-                    { id: 'settings', label: 'Automation Settings' },
-                    { id: 'house-settings', label: 'House Settings' },
-                  ].map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => handleSettingsNavigate(item.id)}
-                      className="block w-full px-4 py-2 text-left text-sm text-slate-700 transition hover:bg-cardinal/10"
-                      role="menuitem"
+                  Generate Report
+                </button>
+                <div className="relative" ref={settingsMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsSettingsMenuOpen((prev) => !prev)}
+                    className="flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    aria-haspopup="true"
+                    aria-expanded={isSettingsMenuOpen}
+                    aria-controls="settings-menu"
+                  >
+                    Settings
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className={`h-4 w-4 transition-transform ${isSettingsMenuOpen ? 'rotate-180' : ''}`}
+                      aria-hidden="true"
                     >
-                      {item.label}
-                    </button>
-                  ))}
+                      <path
+                        fillRule="evenodd"
+                        d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.25a.75.75 0 01-1.06 0L5.218 8.29a.75.75 0 01.02-1.08z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                  {isSettingsMenuOpen && (
+                    <div
+                      id="settings-menu"
+                      className="absolute right-0 z-10 mt-2 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                      role="menu"
+                      aria-label="Settings"
+                    >
+                      {[
+                        { id: 'fee-settings', label: 'Fee Settings' },
+                        { id: 'settings', label: 'Automation Settings' },
+                        { id: 'house-settings', label: 'House Settings' },
+                      ].map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => handleSettingsNavigate(item.id)}
+                          className="block w-full px-4 py-2 text-left text-sm text-slate-700 transition hover:bg-cardinal/10"
+                          role="menuitem"
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+                <button
+                  type="button"
+                  onClick={handleClearPaymentData}
+                  disabled={clearingDemoData}
+                  className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {clearingDemoData ? 'Clearing…' : 'Clear Payment Data'}
+                </button>
+              </>
+            )}
             <button
               type="button"
-              onClick={handleClearPaymentData}
-              disabled={clearingDemoData}
-              className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {clearingDemoData ? 'Clearing…' : 'Clear Payment Data'}
-            </button>
-            <button
-              type="button"
-              onClick={handleSignOut}
+              onClick={() => setSignOutConfirmOpen(true)}
               className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
             >
               Sign Out
@@ -4282,6 +4292,7 @@ const resolveTransactionMonthLabel = (entry) => {
         </div>
         </header>
       )}
+
 
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="flex flex-wrap gap-3">
@@ -6469,6 +6480,35 @@ const resolveTransactionMonthLabel = (entry) => {
           onClose={handleCloseFeeRequest}
           isSubmitting={feeRequestSubmitting}
         />
+      )}
+
+      {signOutConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-900">Sign Out</h3>
+            <p className="mt-2 text-sm text-slate-600">Do you really want to sign out?</p>
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setSignOutConfirmOpen(false)}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              >
+                No
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSignOut}
+                className="rounded-full bg-cardinal px-4 py-2 text-sm font-semibold text-white transition hover:bg-cardinal/90"
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {toast && (
