@@ -32,6 +32,39 @@ const parseDateValue = (value) => {
   return Number.isFinite(parsed.getTime()) ? parsed : null;
 };
 
+const buildRequestLabel = (request) => {
+  if (!request) return 'Fee request';
+  const breakdown =
+    request.breakdown && typeof request.breakdown === 'object' ? request.breakdown : {};
+  const labelParts = [];
+  const pushLabel = (item, fallback) => {
+    if (!item) return;
+    const amount = Number(item.amount || 0);
+    if (!(amount > 0)) return;
+    labelParts.push(item.label || fallback);
+  };
+  pushLabel(
+    breakdown.tuition,
+    request.fee_cycle ? `${request.fee_cycle} Fee` : 'Tuition Fee',
+  );
+  pushLabel(breakdown.custom, 'Custom Fee');
+  pushLabel(breakdown.store, 'Store Charge');
+  pushLabel(breakdown.others, 'Other Charge');
+  const fallbackLabel =
+    request.title ||
+    request.reason ||
+    request.note ||
+    request.fee_cycle ||
+    request.cycle ||
+    'Fee request';
+  const baseLabel = labelParts.length ? labelParts.join(' + ') : fallbackLabel;
+  const dueDateLabel = (() => {
+    const parsed = parseDateValue(request.due_date);
+    return parsed ? parsed.toLocaleDateString('en-IN') : '';
+  })();
+  return dueDateLabel ? `${baseLabel} · Due ${dueDateLabel}` : baseLabel;
+};
+
 const normaliseFeeStructure = (data = {}) => {
   const formattedFees = {};
   const rawFees = data?.fees || {};
@@ -498,80 +531,67 @@ const ParentDashboard = () => {
     };
   }, []);
 
-  const requestExtrasByStudent = useMemo(() => {
+  const activeFeeRequests = useMemo(() => {
+    const safeFeeRequests = Array.isArray(feeRequests) ? feeRequests : [];
+    return safeFeeRequests.filter(
+      (request) =>
+        request && request.status !== 'Paid' && Number(request.balance ?? request.amount_total ?? 0) > 0,
+    );
+  }, [feeRequests]);
+
+  const activeRequestsByStudent = useMemo(() => {
     const map = new Map();
-    const formatDateLabel = (raw) => {
-      const parsed = parseDateValue(raw);
-      return parsed ? parsed.toLocaleDateString('en-IN') : '';
-    };
-    feeRequests.forEach((request) => {
-      const key = request.studentId || request.student_doc_id || request.studentDocId;
+    activeFeeRequests.forEach((request) => {
+      const key = request.student_doc_id || request.studentId || request.studentDocId;
       if (!key) return;
-      if (request.status === 'Paid') return;
-      const outstanding = Number(
-        request.balance ?? request.amount_due ?? request.amount_total ?? request.amount ?? 0,
-      );
-      if (!Number.isFinite(outstanding) || outstanding <= 0) return;
       if (!map.has(key)) {
-        map.set(key, { store: [], others: [], requests: [] });
+        map.set(key, []);
       }
-      const groups = map.get(key);
-      const storeBreakdown = request.breakdown?.store;
-      const othersBreakdown = request.breakdown?.others;
-      if (storeBreakdown && Number(storeBreakdown.amount || 0) > 0) {
-        groups.store.push({
-          id: `${request.id}-store`,
-          label: storeBreakdown.label || 'Store Item',
-          amount: Number(storeBreakdown.amount || 0),
-          created_at: request.created_at,
-          due_date: request.due_date,
-        });
-      }
-      if (othersBreakdown && Number(othersBreakdown.amount || 0) > 0) {
-        groups.others.push({
-          id: `${request.id}-others`,
-          label: othersBreakdown.label || 'Others',
-          amount: Number(othersBreakdown.amount || 0),
-          created_at: request.created_at,
-          due_date: request.due_date,
-        });
-      }
-      const breakdown =
-        request.breakdown && typeof request.breakdown === 'object' ? request.breakdown : {};
-      const labelParts = [];
-      const pushLabel = (item, fallback) => {
-        if (!item) return;
-        const amount = Number(item.amount || 0);
-        if (!(amount > 0)) return;
-        labelParts.push(item.label || fallback);
-      };
-      pushLabel(
-        breakdown.tuition,
-        request.fee_cycle ? `${request.fee_cycle} Fee` : 'Tuition Fee',
-      );
-      pushLabel(breakdown.custom, 'Custom Fee');
-      pushLabel(breakdown.store, 'Store Charge');
-      pushLabel(breakdown.others, 'Other Charge');
-      const fallbackLabel =
-        request.title ||
-        request.reason ||
-        request.note ||
-        request.fee_cycle ||
-        request.cycle ||
-        'Fee request';
-      const baseLabel = labelParts.length ? labelParts.join(' + ') : fallbackLabel;
-      const dueDateLabel = formatDateLabel(request.due_date);
-      const requestLabel = dueDateLabel ? `${baseLabel} · Due ${dueDateLabel}` : baseLabel;
-      groups.requests.push({
-        id: request.id,
-        label: requestLabel,
-        amount: outstanding,
-        created_at: request.created_at,
-        due_date: request.due_date,
-      });
+      map.get(key).push(request);
     });
     return map;
-  }, [feeRequests]);
+  }, [activeFeeRequests]);
+
+  const requestExtrasByStudent = useMemo(() => {
+    const map = new Map();
+
+    activeRequestsByStudent.forEach((requests, key) => {
+      const groups = { store: [], others: [], requests: [] };
+      requests.forEach((request) => {
+        const outstanding = Number(request.balance ?? request.amount_total ?? 0);
+        const storeBreakdown = request.breakdown?.store;
+        const othersBreakdown = request.breakdown?.others;
+        if (storeBreakdown && Number(storeBreakdown.amount || 0) > 0) {
+          groups.store.push({
+            id: `${request.id}-store`,
+            label: storeBreakdown.label || 'Store Item',
+            amount: Number(storeBreakdown.amount || 0),
+            created_at: request.created_at,
+            due_date: request.due_date,
+          });
+        }
+        if (othersBreakdown && Number(othersBreakdown.amount || 0) > 0) {
+          groups.others.push({
+            id: `${request.id}-others`,
+            label: othersBreakdown.label || 'Others',
+            amount: Number(othersBreakdown.amount || 0),
+            created_at: request.created_at,
+            due_date: request.due_date,
+          });
+        }
+        groups.requests.push({
+          id: request.id,
+          label: buildRequestLabel(request),
+          amount: outstanding,
+          created_at: request.created_at,
+          due_date: request.due_date,
+        });
+      });
+      map.set(key, groups);
+    });
+
+    return map;
+  }, [activeRequestsByStudent]);
 
   const paymentHistory = useMemo(() => {
     return payments.filter((payment) => {
@@ -605,11 +625,18 @@ const ParentDashboard = () => {
     ? chargesByStudent.get(selectedStudent.id) || []
     : [];
   const selectedStudentAdvanceStatus = getAdvanceStatus(selectedStudent);
-  const selectedStudentRequestExtras = (() => {
-    if (!selectedStudent) return { store: [], others: [], requests: [] };
-    const key = selectedStudent.studentId || selectedStudent.id;
-    return requestExtrasByStudent.get(key) || { store: [], others: [], requests: [] };
-  })();
+  const selectedStudentRequestExtras = useMemo(() => {
+    if (!selectedStudent) {
+      return { store: [], others: [], requests: [] };
+    }
+    const candidateKeys = [selectedStudent.studentId, selectedStudent.id].filter(Boolean);
+    for (const key of candidateKeys) {
+      if (requestExtrasByStudent.has(key)) {
+        return requestExtrasByStudent.get(key);
+      }
+    }
+    return { store: [], others: [], requests: [] };
+  }, [selectedStudent, requestExtrasByStudent]);
   const legacyStoreTotal = selectedStudentCharges.reduce(
     (sum, charge) => sum + Number(charge.amount || 0),
     0,
@@ -749,52 +776,50 @@ const ParentDashboard = () => {
     });
 
     const extraKeys = [student.studentId, student.id].filter(Boolean);
+    const matchedKey = extraKeys.find((key) => requestExtrasByStudent.has(key)) || null;
+    const matchedRequestsKey = extraKeys.find((key) => activeRequestsByStudent.has(key)) || matchedKey;
+    const extrasForStudent = matchedKey
+      ? requestExtrasByStudent.get(matchedKey)
+      : { store: [], others: [], requests: [] };
+    const studentActiveRequests = matchedRequestsKey
+      ? activeRequestsByStudent.get(matchedRequestsKey)
+      : [];
+
     const seenExtraIds = new Set();
     const requestExtraItems = [];
-    const requestSelectionItems = [];
-    const seenRequestIds = new Set();
-    extraKeys.forEach((key) => {
-      const extras = requestExtrasByStudent.get(key);
-      if (!extras) return;
-      extras.store.forEach((item) => {
-        if (seenExtraIds.has(item.id)) return;
-        seenExtraIds.add(item.id);
-        const amount = Number(item.amount || 0);
-        if (amount <= 0) return;
-        requestExtraItems.push({
-          label: item.label || 'Store charge',
-          amount,
-          selected: true,
-          type: 'store',
-        });
-      });
-      extras.others.forEach((item) => {
-        if (seenExtraIds.has(item.id)) return;
-        seenExtraIds.add(item.id);
-        const amount = Number(item.amount || 0);
-        if (amount <= 0) return;
-        requestExtraItems.push({
-          label: item.label || 'Additional charge',
-          amount,
-          selected: true,
-          type: 'others',
-        });
-      });
-      (extras.requests || []).forEach((requestItem) => {
-        if (seenRequestIds.has(requestItem.id)) return;
-        seenRequestIds.add(requestItem.id);
-        const amount = Number(requestItem.amount || 0);
-        if (amount <= 0) return;
-        requestSelectionItems.push({
-          label: requestItem.label || 'Fee request',
-          amount,
-          selected: true,
-          type: 'request',
-          requestId: requestItem.id,
-          dueDate: requestItem.due_date || requestItem.created_at,
-        });
+    (extrasForStudent.store || []).forEach((item) => {
+      if (seenExtraIds.has(item.id)) return;
+      seenExtraIds.add(item.id);
+      const amount = Number(item.amount || 0);
+      if (amount <= 0) return;
+      requestExtraItems.push({
+        label: item.label || 'Store charge',
+        amount,
+        selected: true,
+        type: 'store',
       });
     });
+    (extrasForStudent.others || []).forEach((item) => {
+      if (seenExtraIds.has(item.id)) return;
+      seenExtraIds.add(item.id);
+      const amount = Number(item.amount || 0);
+      if (amount <= 0) return;
+      requestExtraItems.push({
+        label: item.label || 'Additional charge',
+        amount,
+        selected: true,
+        type: 'others',
+      });
+    });
+
+    const requestSelectionItems = studentActiveRequests.map((requestItem) => ({
+      label: buildRequestLabel(requestItem),
+      amount: Number(requestItem.balance ?? requestItem.amount_total ?? 0),
+      selected: true,
+      type: 'request',
+      requestId: requestItem.id,
+      dueDate: requestItem.due_date || requestItem.created_at,
+    }));
 
     requestSelectionItems.sort((a, b) => {
       const dateA = parseDateValue(a.dueDate)?.getTime() || 0;
