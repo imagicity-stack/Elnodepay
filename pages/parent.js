@@ -74,6 +74,7 @@ const normaliseFeeStructure = (data = {}) => {
       monthly: Number(entry.monthly || 0),
       quarterly: Number(entry.quarterly || 0),
       halfYearly: Number(entry.halfYearly || 0),
+      annual: Number(entry.annual || 0),
     };
   });
   return {
@@ -121,6 +122,11 @@ const PayNowModal = ({
         </div>
         <div className="max-h-[70vh] overflow-y-auto px-6 py-4 text-sm text-slate-700">
           <div className="space-y-4">
+            {selections.length === 0 && (
+              <p className="rounded-2xl border border-dashed border-slate-200 bg-white p-4 text-xs text-slate-500">
+                No fee requests are pending right now. You can still schedule an advance payment below.
+              </p>
+            )}
             {selections.map((item, index) => (
               <label
                 key={`${item.label}-${index}`}
@@ -490,12 +496,15 @@ const ParentDashboard = () => {
       const monthly = Number(entry.monthly || 0);
       const quarterlyRaw = Number(entry.quarterly || 0);
       const halfYearlyRaw = Number(entry.halfYearly || 0);
+      const annualRaw = Number(entry.annual || 0);
       const quarterly = quarterlyRaw > 0 ? quarterlyRaw : monthly * 3;
       const halfYearly = halfYearlyRaw > 0 ? halfYearlyRaw : quarterly * 2 || monthly * 6;
+      const annual = annualRaw > 0 ? annualRaw : halfYearly * 2 || quarterly * 4 || monthly * 12;
       const plans = [
         { id: 'advance-monthly', label: 'Pay 1 month in advance', months: 1, cycle: 'Monthly', amount: monthly },
         { id: 'advance-quarterly', label: 'Pay 3 months in advance', months: 3, cycle: 'Quarterly', amount: quarterly },
         { id: 'advance-halfyearly', label: 'Pay 6 months in advance', months: 6, cycle: 'Half-Yearly', amount: halfYearly },
+        { id: 'advance-annual', label: 'Pay 12 months in advance', months: 12, cycle: 'Annually', amount: annual },
       ].filter((plan) => plan.amount > 0);
       if (!plans.length) return [];
       const coverageEnd = parseDateValue(student.advance_plan_end);
@@ -736,26 +745,6 @@ const ParentDashboard = () => {
   const handleOpenPayment = (student) => {
     if (!student) return;
 
-    const baseBreakdown = Array.isArray(student.fee_breakdown) && student.fee_breakdown.length > 0
-      ? student.fee_breakdown
-      : [
-          {
-            label: 'Outstanding balance',
-            amount: Number(student.balance ?? student.fee_amount ?? 0),
-            selected: true,
-          },
-        ];
-
-    const normalizeItems = (items = [], type = 'tuition') =>
-      items
-        .filter((item) => Number(item.amount || 0) > 0)
-        .map((item) => ({
-          label: item.label,
-          amount: Number(item.amount || 0),
-          selected: item.selected ?? true,
-          type,
-        }));
-
     const chargeKeys = [student.id, student.studentId].filter(Boolean);
     const seenChargeIds = new Set();
     const storeChargeItems = [];
@@ -827,13 +816,7 @@ const ParentDashboard = () => {
       return dateA - dateB;
     });
 
-    const baseItems = normalizeItems(baseBreakdown, 'tuition');
-    const useRequestSelections = requestSelectionItems.length > 0;
-    const selections = [
-      ...(useRequestSelections ? requestSelectionItems : baseItems),
-      ...storeChargeItems,
-      ...(useRequestSelections ? [] : requestExtraItems),
-    ];
+    const selections = [...requestSelectionItems, ...requestExtraItems, ...storeChargeItems];
 
     const advanceOptions = getAdvancePlanOptions(student);
 
