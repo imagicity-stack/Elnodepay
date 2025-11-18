@@ -500,6 +500,10 @@ const ParentDashboard = () => {
 
   const requestExtrasByStudent = useMemo(() => {
     const map = new Map();
+    const formatDateLabel = (raw) => {
+      const parsed = parseDateValue(raw);
+      return parsed ? parsed.toLocaleDateString('en-IN') : '';
+    };
     feeRequests.forEach((request) => {
       const key = request.studentId || request.student_doc_id || request.studentDocId;
       if (!key) return;
@@ -508,13 +512,12 @@ const ParentDashboard = () => {
         request.balance ?? request.amount_due ?? request.amount_total ?? request.amount ?? 0,
       );
       if (!Number.isFinite(outstanding) || outstanding <= 0) return;
-      const storeBreakdown = request.breakdown?.store;
-      const othersBreakdown = request.breakdown?.others;
-      if (!storeBreakdown && !othersBreakdown) return;
       if (!map.has(key)) {
-        map.set(key, { store: [], others: [] });
+        map.set(key, { store: [], others: [], requests: [] });
       }
       const groups = map.get(key);
+      const storeBreakdown = request.breakdown?.store;
+      const othersBreakdown = request.breakdown?.others;
       if (storeBreakdown && Number(storeBreakdown.amount || 0) > 0) {
         groups.store.push({
           id: `${request.id}-store`,
@@ -533,6 +536,39 @@ const ParentDashboard = () => {
           due_date: request.due_date,
         });
       }
+      const breakdown =
+        request.breakdown && typeof request.breakdown === 'object' ? request.breakdown : {};
+      const labelParts = [];
+      const pushLabel = (item, fallback) => {
+        if (!item) return;
+        const amount = Number(item.amount || 0);
+        if (!(amount > 0)) return;
+        labelParts.push(item.label || fallback);
+      };
+      pushLabel(
+        breakdown.tuition,
+        request.fee_cycle ? `${request.fee_cycle} Fee` : 'Tuition Fee',
+      );
+      pushLabel(breakdown.custom, 'Custom Fee');
+      pushLabel(breakdown.store, 'Store Charge');
+      pushLabel(breakdown.others, 'Other Charge');
+      const fallbackLabel =
+        request.title ||
+        request.reason ||
+        request.note ||
+        request.fee_cycle ||
+        request.cycle ||
+        'Fee request';
+      const baseLabel = labelParts.length ? labelParts.join(' + ') : fallbackLabel;
+      const dueDateLabel = formatDateLabel(request.due_date);
+      const requestLabel = dueDateLabel ? `${baseLabel} · Due ${dueDateLabel}` : baseLabel;
+      groups.requests.push({
+        id: request.id,
+        label: requestLabel,
+        amount: outstanding,
+        created_at: request.created_at,
+        due_date: request.due_date,
+      });
     });
     return map;
   }, [feeRequests]);
@@ -570,9 +606,9 @@ const ParentDashboard = () => {
     : [];
   const selectedStudentAdvanceStatus = getAdvanceStatus(selectedStudent);
   const selectedStudentRequestExtras = (() => {
-    if (!selectedStudent) return { store: [], others: [] };
+    if (!selectedStudent) return { store: [], others: [], requests: [] };
     const key = selectedStudent.studentId || selectedStudent.id;
-    return requestExtrasByStudent.get(key) || { store: [], others: [] };
+    return requestExtrasByStudent.get(key) || { store: [], others: [], requests: [] };
   })();
   const legacyStoreTotal = selectedStudentCharges.reduce(
     (sum, charge) => sum + Number(charge.amount || 0),
@@ -588,9 +624,7 @@ const ParentDashboard = () => {
     0,
   );
   const selectedStudentTotalDue = selectedStudent
-    ? Number(selectedStudent.balance ?? selectedStudent.fee_amount ?? 0) +
-      selectedStudentStoreTotal +
-      selectedStudentOthersTotal
+    ? Number(selectedStudent.balance ?? selectedStudent.fee_amount ?? 0) + legacyStoreTotal
     : 0;
 
   const selectedStudentExtraGroups = useMemo(() => {
@@ -717,6 +751,8 @@ const ParentDashboard = () => {
     const extraKeys = [student.studentId, student.id].filter(Boolean);
     const seenExtraIds = new Set();
     const requestExtraItems = [];
+    const requestSelectionItems = [];
+    const seenRequestIds = new Set();
     extraKeys.forEach((key) => {
       const extras = requestExtrasByStudent.get(key);
       if (!extras) return;
@@ -744,12 +780,34 @@ const ParentDashboard = () => {
           type: 'others',
         });
       });
+      (extras.requests || []).forEach((requestItem) => {
+        if (seenRequestIds.has(requestItem.id)) return;
+        seenRequestIds.add(requestItem.id);
+        const amount = Number(requestItem.amount || 0);
+        if (amount <= 0) return;
+        requestSelectionItems.push({
+          label: requestItem.label || 'Fee request',
+          amount,
+          selected: true,
+          type: 'request',
+          requestId: requestItem.id,
+          dueDate: requestItem.due_date || requestItem.created_at,
+        });
+      });
     });
 
+    requestSelectionItems.sort((a, b) => {
+      const dateA = parseDateValue(a.dueDate)?.getTime() || 0;
+      const dateB = parseDateValue(b.dueDate)?.getTime() || 0;
+      return dateA - dateB;
+    });
+
+    const baseItems = normalizeItems(baseBreakdown, 'tuition');
+    const useRequestSelections = requestSelectionItems.length > 0;
     const selections = [
-      ...normalizeItems(baseBreakdown, 'tuition'),
+      ...(useRequestSelections ? requestSelectionItems : baseItems),
       ...storeChargeItems,
-      ...requestExtraItems,
+      ...(useRequestSelections ? [] : requestExtraItems),
     ];
 
     const advanceOptions = getAdvancePlanOptions(student);
@@ -875,6 +933,7 @@ const ParentDashboard = () => {
           store: 'Store',
           others: 'Others',
           advance: 'Advance',
+          request: 'Request',
         };
         const categories = Array.from(
           new Set(
