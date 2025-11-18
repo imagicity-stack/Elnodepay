@@ -294,9 +294,11 @@ async function reconcileFeeRequests({
   const queries = [];
   if (studentDocId) {
     queries.push(fetchFeeRequests(idToken, 'student_doc_id', studentDocId));
+    queries.push(fetchFeeRequests(idToken, 'studentDocId', studentDocId));
   }
   if (studentId && studentId !== studentDocId) {
     queries.push(fetchFeeRequests(idToken, 'studentId', studentId));
+    queries.push(fetchFeeRequests(idToken, 'student_id', studentId));
   }
   const results = await Promise.all(queries.length ? queries : [Promise.resolve([])]);
   results.flat().forEach((doc) => {
