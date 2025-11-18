@@ -65,8 +65,24 @@ const STATUS_OPTIONS = ['All', 'Paid', 'Pending', 'Overdue'];
 const REQUEST_CYCLE_OPTIONS = [
   { id: 'Monthly', label: 'Monthly' },
   { id: 'Quarterly', label: 'Quarterly' },
-  { id: 'Half-Yearly', label: '6 Months' },
+  { id: 'Half-Yearly', label: 'Half-Yearly' },
+  { id: 'Annually', label: 'Annually' },
 ];
+const STANDARD_CYCLE_IDS = REQUEST_CYCLE_OPTIONS.map((option) => option.id);
+const FEE_NAV_ITEMS = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'students', label: 'Students' },
+  { id: 'fee-report', label: 'Fee Report' },
+  { id: 'payment-history', label: 'Payment History' },
+  { id: 'reminders', label: 'Reminders and Notification' },
+];
+const FEE_SECTION_TAB_IDS = [...FEE_NAV_ITEMS.map((item) => item.id), 'fee-settings', 'settings', 'house-settings'];
+const FINANCE_NAV_ITEMS = [
+  { id: 'ledger', label: 'Ledger' },
+  { id: 'expenses', label: 'Expenses' },
+  { id: 'reports', label: 'Reports' },
+];
+const FINANCE_TAB_IDS = FINANCE_NAV_ITEMS.map((item) => item.id);
 
 const SCHOOL_NAME = 'Elden Heights School - Silwar Hazaribagh';
 
@@ -108,7 +124,7 @@ const resolveRequestCycle = (request = {}) => {
     '';
   const normalised = `${rawCycle}`.toLowerCase();
   if (normalised.includes('half') || normalised.includes('6')) {
-    return '6 Months';
+    return 'Half-Yearly';
   }
   if (normalised.includes('quarter')) {
     return 'Quarterly';
@@ -116,8 +132,8 @@ const resolveRequestCycle = (request = {}) => {
   if (normalised.includes('month')) {
     return 'Monthly';
   }
-  if (normalised.includes('annual') || normalised.includes('year')) {
-    return 'Annual';
+  if (normalised.includes('annua') || normalised.includes('year')) {
+    return 'Annually';
   }
   return rawCycle || 'Other';
 };
@@ -135,6 +151,47 @@ const calculateFeeRequestTotal = (request = {}) => {
   }
   const breakdown = request.breakdown && typeof request.breakdown === 'object' ? request.breakdown : {};
   return Object.values(breakdown).reduce((sum, item) => sum + parseAmountValue(item?.amount), 0);
+};
+
+const buildHeadwiseBreakdown = (request = {}) => {
+  const breakdown = request.breakdown && typeof request.breakdown === 'object' ? request.breakdown : {};
+  const entries = [];
+  const pushEntry = (item, fallback) => {
+    if (!item && !fallback) return;
+    const amount = parseAmountValue(item?.amount);
+    if (!(amount > 0)) return;
+    entries.push({
+      key: fallback,
+      label: item?.label || fallback,
+      amount,
+    });
+  };
+  pushEntry(breakdown.tuition, request.fee_cycle ? `${request.fee_cycle} Fee` : 'Tuition Fee');
+  pushEntry(breakdown.custom, 'Custom Fee');
+  pushEntry(breakdown.store, 'Store Charge');
+  pushEntry(breakdown.others, 'Other Charge');
+  if (!entries.length) {
+    const total = calculateFeeRequestTotal(request);
+    if (total > 0) {
+      entries.push({ key: 'total', label: 'Fee', amount: total });
+    }
+  }
+  return entries;
+};
+
+const sanitiseHouseList = (houses = []) => {
+  if (!Array.isArray(houses)) return [];
+  const seen = new Set();
+  const clean = [];
+  houses.forEach((house) => {
+    const label = `${house || ''}`.trim();
+    const key = label.toLowerCase();
+    if (label && !seen.has(key)) {
+      seen.add(key);
+      clean.push(label);
+    }
+  });
+  return clean;
 };
 
 const resolveRequestBalance = (request = {}, fallbackAmount = 0) => {
@@ -260,6 +317,7 @@ const emptyStudentForm = {
   parent_phone: '',
   parent_email: '',
   fee_cycle: 'Monthly',
+  house: '',
 };
 
 const statusBadgeClasses = {
@@ -325,7 +383,15 @@ const Modal = ({ title, children, onClose, size = 'lg' }) => {
   );
 };
 
-const StudentFormModal = ({ isEditing, formState, onChange, onSubmit, onClose, isSubmitting }) => (
+const StudentFormModal = ({
+  isEditing,
+  formState,
+  onChange,
+  onSubmit,
+  onClose,
+  isSubmitting,
+  houseOptions = [],
+}) => (
   <Modal title={isEditing ? 'Edit Student' : 'Add Student'} onClose={onClose}>
     <form onSubmit={onSubmit} className="space-y-4">
       <div className="grid gap-4 md:grid-cols-2">
@@ -377,6 +443,35 @@ const StudentFormModal = ({ isEditing, formState, onChange, onSubmit, onClose, i
             className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
             placeholder="A"
           />
+        </label>
+        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+          House
+          {houseOptions.length > 0 ? (
+            <select
+              name="house"
+              value={formState.house}
+              onChange={onChange}
+              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
+s:ring-2 focus:ring-cardinal/20"
+            >
+              <option value="">No house assigned</option>
+              {houseOptions.map((house) => (
+                <option key={house} value={house}>
+                  {house}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input
+              name="house"
+              value={formState.house}
+              onChange={onChange}
+              placeholder="Add houses from Settings"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
+s:ring-2 focus:ring-cardinal/20"
+              readOnly
+            />
+          )}
         </label>
         <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
           Parent Phone
@@ -1044,8 +1139,9 @@ const AccountantDashboard = () => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
-  const [isAuditMenuOpen, setIsAuditMenuOpen] = useState(false);
-  const auditMenuRef = useRef(null);
+  const [activeSection, setActiveSection] = useState('fees');
+  const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
+  const settingsMenuRef = useRef(null);
   const [filters, setFilters] = useState({
     class: 'All',
     status: 'All',
@@ -1063,6 +1159,7 @@ const AccountantDashboard = () => {
     currentTerm: '',
     defaultDueDate: '',
     reminderTemplate: '',
+    houses: [],
   });
   const [savingSettings, setSavingSettings] = useState(false);
   const [bulkSending, setBulkSending] = useState(false);
@@ -1083,6 +1180,7 @@ const AccountantDashboard = () => {
     storeAmount: '',
   });
   const [feeRequestSubmitting, setFeeRequestSubmitting] = useState(false);
+  const [feeReportDetailContext, setFeeReportDetailContext] = useState({ open: false, student: null });
   const [commonRequestContext, setCommonRequestContext] = useState({ open: false, submitting: false });
   const [commonRequestState, setCommonRequestState] = useState(() => ({
     cycle: 'Monthly',
@@ -1106,6 +1204,13 @@ const AccountantDashboard = () => {
   });
   const [manualEntryModalOpen, setManualEntryModalOpen] = useState(false);
   const [manualEntrySubmitting, setManualEntrySubmitting] = useState(false);
+  const [newHouseName, setNewHouseName] = useState('');
+  const [houseSettingsSaving, setHouseSettingsSaving] = useState(false);
+
+  const houseOptions = useMemo(
+    () => sanitiseHouseList(settingsState.houses || []),
+    [settingsState.houses],
+  );
   const [manualEntryForm, setManualEntryForm] = useState(() => ({
     date: formatDateInput(new Date()),
     studentId: '',
@@ -1174,6 +1279,7 @@ const AccountantDashboard = () => {
     error: '',
   });
   const [toast, setToast] = useState(null);
+  const [signOutConfirmOpen, setSignOutConfirmOpen] = useState(false);
   const secondaryAuthRef = useRef(null);
   const toastTimerRef = useRef(null);
 
@@ -1189,20 +1295,25 @@ const AccountantDashboard = () => {
     }
   }, [router]); // fix: define before effects to avoid init issues
 
+  const handleConfirmSignOut = useCallback(() => {
+    setSignOutConfirmOpen(false);
+    handleSignOut();
+  }, [handleSignOut]);
+
   useEffect(() => {
     if (typeof document === 'undefined') {
       return undefined;
     }
 
     const handleClickOutside = (event) => {
-      if (auditMenuRef.current && !auditMenuRef.current.contains(event.target)) {
-        setIsAuditMenuOpen(false);
+      if (settingsMenuRef.current && !settingsMenuRef.current.contains(event.target)) {
+        setIsSettingsMenuOpen(false);
       }
     };
 
     const handleEscape = (event) => {
       if (event.key === 'Escape') {
-        setIsAuditMenuOpen(false);
+        setIsSettingsMenuOpen(false);
       }
     };
 
@@ -1214,23 +1325,6 @@ const AccountantDashboard = () => {
       document.removeEventListener('keydown', handleEscape);
     };
   }, []);
-
-  const handleAuditNavigate = useCallback(
-    (tabId) => {
-      setActiveTab(tabId);
-      setIsAuditMenuOpen(false);
-
-      if (typeof window !== 'undefined') {
-        window.requestAnimationFrame(() => {
-          const section = document.getElementById(tabId);
-          if (section) {
-            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-        });
-      }
-    },
-    []
-  );
 
   const closeStudentActions = () => {
     setStudentActionsContext({ open: false, student: null });
@@ -1254,6 +1348,7 @@ const AccountantDashboard = () => {
         monthly: entry.monthly ?? '',
         quarterly: entry.quarterly ?? '',
         halfYearly: entry.halfYearly ?? '',
+        annual: entry.annual ?? '',
       };
     });
     return {
@@ -1263,25 +1358,34 @@ const AccountantDashboard = () => {
     };
   };
 
-  const getFeeAmountFromStructure = (className, cycle) => {
-    if (!className) return 0;
-    const entry = feeStructureDraft.fees?.[className] || {};
-    const monthly = Number(entry.monthly || 0);
-    const quarterly = Number(entry.quarterly || 0);
-    const halfYearly = Number(entry.halfYearly || 0);
-    switch (cycle) {
-      case 'Monthly':
-        return monthly;
-      case 'Quarterly':
-        return quarterly;
-      case 'Half-Yearly':
-        if (halfYearly) return halfYearly;
-        if (quarterly) return quarterly * 2;
-        return monthly * 6;
-      default:
-        return 0;
-    }
-  };
+  const getFeeAmountFromStructure = useCallback(
+    (className, cycle) => {
+      if (!className) return 0;
+      const entry = feeStructureDraft.fees?.[className] || {};
+      const monthly = Number(entry.monthly || 0);
+      const quarterly = Number(entry.quarterly || 0);
+      const halfYearly = Number(entry.halfYearly || 0);
+      const annual = Number(entry.annual || 0);
+      switch (cycle) {
+        case 'Monthly':
+          return monthly;
+        case 'Quarterly':
+          return quarterly;
+        case 'Half-Yearly':
+          if (halfYearly) return halfYearly;
+          if (quarterly) return quarterly * 2;
+          return monthly * 6;
+        case 'Annually':
+          if (annual) return annual;
+          if (halfYearly) return halfYearly * 2;
+          if (quarterly) return quarterly * 4;
+          return monthly * 12;
+        default:
+          return 0;
+      }
+    },
+    [feeStructureDraft],
+  );
 
   const getMonthMeta = (dateInput) => {
     let dateValue;
@@ -1437,6 +1541,14 @@ const resolveTransactionMonthLabel = (entry) => {
   }, [router]);
 
   useEffect(() => {
+    if (FINANCE_TAB_IDS.includes(activeTab)) {
+      setActiveSection('finances');
+    } else {
+      setActiveSection('fees');
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
     if (!authChecked || !user) return;
     if (typeof window === 'undefined') return;
     if (window.localStorage.getItem('elnode-remember-me') === 'true') {
@@ -1531,6 +1643,7 @@ const resolveTransactionMonthLabel = (entry) => {
           defaultDueDate: data.defaultDueDate || '',
           reminderTemplate:
             data.reminderTemplate || 'Dear Parent, your fee payment is due on {{due_date}}. Kindly clear the dues.',
+          houses: sanitiseHouseList(data.houses || []),
         });
       }
     });
@@ -2022,7 +2135,7 @@ const resolveTransactionMonthLabel = (entry) => {
       store,
       total: base + custom + others + store,
     };
-  }, [feeRequestContext.student, feeRequestForm, feeStructureDraft]);
+  }, [feeRequestContext.student, feeRequestForm, getFeeAmountFromStructure]);
 
   const filteredStudents = useMemo(() => {
     const safeStudents = Array.isArray(students) ? students : [];
@@ -2241,6 +2354,7 @@ const resolveTransactionMonthLabel = (entry) => {
         storeAmount,
         tuitionEnabled: Boolean(request.tuition_enabled),
         lookupKeys,
+        headBreakdown: buildHeadwiseBreakdown(request),
       };
     });
   }, [activeFeeRequests, students, reminders]);
@@ -2260,6 +2374,65 @@ const resolveTransactionMonthLabel = (entry) => {
     return map;
   }, [feeRequestReportEntries]);
 
+  const feeReportEntriesByStudent = useMemo(() => {
+    const safeEntries = Array.isArray(feeRequestReportEntries) ? feeRequestReportEntries : [];
+    const map = new Map();
+    safeEntries.forEach((entry) => {
+      if (!entry.studentDocId) return;
+      if (!map.has(entry.studentDocId)) {
+        map.set(entry.studentDocId, []);
+      }
+      map.get(entry.studentDocId).push(entry);
+    });
+    return map;
+  }, [feeRequestReportEntries]);
+
+  const feeReportDetailEntries = useMemo(() => {
+    if (!feeReportDetailContext.student) {
+      return [];
+    }
+    return feeReportEntriesByStudent.get(feeReportDetailContext.student.id) || [];
+  }, [feeReportDetailContext.student, feeReportEntriesByStudent]);
+
+  const feeReportDetailBalance = useMemo(
+    () => feeReportDetailEntries.reduce((sum, entry) => sum + parseAmountValue(entry.balance), 0),
+    [feeReportDetailEntries],
+  );
+
+  const feeReportDetailHeadSummary = useMemo(() => {
+    if (!feeReportDetailEntries.length) {
+      return [];
+    }
+    const summaryMap = new Map();
+    feeReportDetailEntries.forEach((entry) => {
+      const breakdown = Array.isArray(entry.headBreakdown) ? entry.headBreakdown : [];
+      breakdown.forEach((item) => {
+        const key = item.key || item.label || 'Fee';
+        const amount = parseAmountValue(item.amount);
+        if (!(amount > 0)) return;
+        if (!summaryMap.has(key)) {
+          summaryMap.set(key, { key, label: item.label || key, amount: 0 });
+        }
+        summaryMap.get(key).amount += amount;
+      });
+    });
+    return Array.from(summaryMap.values());
+  }, [feeReportDetailEntries]);
+
+  const feeReportDetailEntriesSorted = useMemo(() => {
+    if (!feeReportDetailEntries.length) {
+      return [];
+    }
+    return [...feeReportDetailEntries].sort((a, b) => {
+      const aTime = a.dueDate ? a.dueDate.getTime() : 0;
+      const bTime = b.dueDate ? b.dueDate.getTime() : 0;
+      if (aTime === bTime) {
+        return (a.studentId || '').localeCompare(b.studentId || '');
+      }
+      return aTime - bTime;
+    });
+  }, [feeReportDetailEntries]);
+
   const filteredReportEntries = useMemo(() => {
     const safeEntries = Array.isArray(feeRequestReportEntries) ? feeRequestReportEntries : [];
     if (!safeEntries || safeEntries.length === 0) {
@@ -2273,8 +2446,12 @@ const resolveTransactionMonthLabel = (entry) => {
     const filtered = safeEntries.filter((entry) => {
       const matchesClass = reportFilters.class === 'All' || entry.class === reportFilters.class;
       const matchesStatus = reportFilters.status === 'All' || entry.statusLabel === reportFilters.status;
-      const cycleFilter = reportFilters.cycle === 'Half-Yearly' ? '6 Months' : reportFilters.cycle;
-      const matchesCycle = reportFilters.cycle === 'All' || entry.cycle === cycleFilter;
+      let matchesCycle = true;
+      if (reportFilters.cycle === 'Other') {
+        matchesCycle = !STANDARD_CYCLE_IDS.includes(entry.cycle);
+      } else if (reportFilters.cycle !== 'All') {
+        matchesCycle = entry.cycle === reportFilters.cycle;
+      }
       const matchesSession = reportFilters.session === 'All' || entry.session === reportFilters.session;
       const matchesTerm =
         normalizedTerm.length === 0 || (entry.term || '').toLowerCase().includes(normalizedTerm);
@@ -2595,6 +2772,13 @@ const resolveTransactionMonthLabel = (entry) => {
     setIsFormOpen(true);
   };
 
+  const handleOpenStudentActions = (student) => {
+    if (!student) return;
+    resetMarkPaidContext();
+    setSelectedStudentId(student.id);
+    setStudentActionsContext({ open: true, student });
+  };
+
   const handleEditStudent = (student) => {
     closeStudentActions();
     resetDeleteContext();
@@ -2607,6 +2791,7 @@ const resolveTransactionMonthLabel = (entry) => {
       parent_phone: student.parent_phone || '',
       parent_email: student.parent_email || '',
       fee_cycle: student.fee_cycle || 'Monthly',
+      house: student.house || '',
     });
     setEditingStudentId(student.id);
     setIsFormOpen(true);
@@ -2853,6 +3038,7 @@ const resolveTransactionMonthLabel = (entry) => {
         parent_phone: formState.parent_phone.trim(),
         parent_email: formState.parent_email.trim().toLowerCase(),
         fee_cycle: formState.fee_cycle,
+        house: formState.house || '',
         fee_amount: feeAmount,
         due_date: feeStructureDraft.defaultDueDate || '',
         status: 'Pending',
@@ -2963,10 +3149,12 @@ const resolveTransactionMonthLabel = (entry) => {
         const monthly = Number(entry.monthly || 0);
         const quarterly = Number(entry.quarterly || 0);
         const halfYearly = Number(entry.halfYearly || quarterly * 2 || monthly * 6);
+        const annual = Number(entry.annual || halfYearly * 2 || quarterly * 4 || monthly * 12);
         payload.fees[cls] = {
           monthly,
           quarterly,
           halfYearly,
+          annual,
         };
       });
       await setDoc(doc(db, 'settings', 'feestructure'), payload, { merge: true });
@@ -3022,6 +3210,18 @@ const resolveTransactionMonthLabel = (entry) => {
         alert('Unable to send reminder.');
       }
     }
+  };
+
+  const handleDetailViewHistory = async () => {
+    if (!feeReportDetailContext.student) return;
+    const student = feeReportDetailContext.student;
+    closeFeeReportDetail();
+    await openHistory(student);
+  };
+
+  const handleDetailSendReminder = () => {
+    if (!feeReportDetailContext.student) return;
+    handleSendReminder(feeReportDetailContext.student);
   };
 
   const handleBulkReminder = async () => {
@@ -3514,6 +3714,35 @@ const resolveTransactionMonthLabel = (entry) => {
     }
   };
 
+  const handleMarkPaidModeSelect = (mode) => {
+    setMarkPaidContext((prev) => ({ ...prev, mode, error: '' }));
+  };
+
+  const handleMarkPaidTransactionChange = (event) => {
+    const { value } = event.target;
+    setMarkPaidContext((prev) => ({ ...prev, transactionId: value, error: '' }));
+  };
+
+  const handleSubmitMarkPaidFromDetail = () => {
+    if (!markPaidContext.student) {
+      setMarkPaidContext((prev) => ({ ...prev, error: 'Select a student before recording payment.' }));
+      return;
+    }
+    if (!markPaidContext.mode) {
+      setMarkPaidContext((prev) => ({ ...prev, error: 'Choose a payment mode to continue.' }));
+      return;
+    }
+    if (markPaidContext.mode === 'Online' && !markPaidContext.transactionId.trim()) {
+      setMarkPaidContext((prev) => ({ ...prev, error: 'Enter the online transaction reference.' }));
+      return;
+    }
+    completeMarkPaid(
+      markPaidContext.student,
+      markPaidContext.mode,
+      markPaidContext.transactionId.trim(),
+    );
+  };
+
   const handleSettingsChange = (event) => {
     const { name, value } = event.target;
     setSettingsState((prev) => ({ ...prev, [name]: value }));
@@ -3523,12 +3752,14 @@ const resolveTransactionMonthLabel = (entry) => {
     event.preventDefault();
     setSavingSettings(true);
     try {
+      const houses = sanitiseHouseList(settingsState.houses || []);
       await setDoc(
         doc(db, 'settings', 'general'),
         {
           currentTerm: settingsState.currentTerm,
           defaultDueDate: settingsState.defaultDueDate,
           reminderTemplate: settingsState.reminderTemplate,
+          houses,
           updated_at: serverTimestamp(),
         },
         { merge: true },
@@ -3541,6 +3772,88 @@ const resolveTransactionMonthLabel = (entry) => {
       setSavingSettings(false);
     }
   };
+
+  const handleHouseNameChange = (index, value) => {
+    setSettingsState((prev) => {
+      const current = Array.isArray(prev.houses) ? [...prev.houses] : [];
+      current[index] = value;
+      return { ...prev, houses: current };
+    });
+  };
+
+  const handleRemoveHouse = (index) => {
+    setSettingsState((prev) => {
+      const current = Array.isArray(prev.houses) ? [...prev.houses] : [];
+      current.splice(index, 1);
+      return { ...prev, houses: current };
+    });
+  };
+
+  const handleAddHouseName = () => {
+    const trimmed = newHouseName.trim();
+    if (!trimmed) return;
+    setSettingsState((prev) => {
+      const current = Array.isArray(prev.houses) ? [...prev.houses] : [];
+      current.push(trimmed);
+      return { ...prev, houses: current };
+    });
+    setNewHouseName('');
+  };
+
+  const handleHouseSettingsSave = async (event) => {
+    event.preventDefault();
+    setHouseSettingsSaving(true);
+    try {
+      const houses = sanitiseHouseList(settingsState.houses || []);
+      await setDoc(
+        doc(db, 'settings', 'general'),
+        { houses, updated_at: serverTimestamp() },
+        { merge: true },
+      );
+      triggerToast('Houses updated successfully.', 'success');
+    } catch (error) {
+      console.error('House settings error', error);
+      triggerToast('Unable to update houses. Please try again.', 'error');
+    } finally {
+      setHouseSettingsSaving(false);
+    }
+  };
+
+  const handleSectionChange = (sectionId) => {
+    if (sectionId === 'finances') {
+      setActiveSection('finances');
+      if (!FINANCE_TAB_IDS.includes(activeTab)) {
+        setActiveTab('ledger');
+      }
+    } else {
+      setActiveSection('fees');
+      if (!FEE_SECTION_TAB_IDS.includes(activeTab)) {
+        setActiveTab('overview');
+      }
+    }
+    if (typeof window !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      });
+    }
+  };
+
+  const handleSettingsNavigate = useCallback(
+    (tabId) => {
+      setActiveTab(tabId);
+      setActiveSection('fees');
+      setIsSettingsMenuOpen(false);
+      if (typeof window !== 'undefined') {
+        window.requestAnimationFrame(() => {
+          const section = document.getElementById(tabId);
+          if (section) {
+            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }
+        });
+      }
+    },
+    [],
+  );
 
   const resetManualEntryForm = () => {
     setManualEntryForm({
@@ -3853,69 +4166,16 @@ const resolveTransactionMonthLabel = (entry) => {
     }
   };
 
-  const handleCheckDues = (student) => {
+  const openFeeReportDetail = (student) => {
     if (!student) return;
-    if (!feeRequestEntriesLookup || feeRequestEntriesLookup.size === 0) {
-      triggerToast('No fee records available yet.', 'info');
-      return;
-    }
+    resetMarkPaidContext();
+    setFeeReportDetailContext({ open: true, student });
+  };
 
-    const normalizeKey = (value) => (value ? `${value}`.trim().toLowerCase() : '');
-    const studentKeys = new Set(
-      [student.studentId, student.id, student.name, student.student_doc_id]
-        .map(normalizeKey)
-        .filter(Boolean),
-    );
-
-    const seen = new Set();
-    const matchingEntries = [];
-    studentKeys.forEach((key) => {
-      const entries = feeRequestEntriesLookup.get(key) || [];
-      entries.forEach((entry) => {
-        if (seen.has(entry.id)) return;
-        seen.add(entry.id);
-        matchingEntries.push(entry);
-      });
-    });
-
-    if (!matchingEntries.length) {
-      triggerToast(`No fee records found for ${student.name || 'this student'}.`, 'info');
-      return;
-    }
-
-    let tone = 'success';
-    const statusSet = new Set();
-    let outstandingAmount = 0;
-    matchingEntries.forEach((entry) => {
-      const status = entry.statusLabel || 'Pending';
-      statusSet.add(status);
-      const normalizedStatus = status.toLowerCase();
-      if (normalizedStatus === 'overdue') {
-        tone = 'error';
-      } else if (normalizedStatus === 'pending' && tone !== 'error') {
-        tone = 'info';
-      }
-      const balance = Number(entry.balance || 0);
-      if (balance > 0) {
-        outstandingAmount += balance;
-      }
-    });
-
-    const statusList = Array.from(statusSet);
-    const parts = [];
-    if (outstandingAmount > 0) {
-      parts.push(`Outstanding: ₹${outstandingAmount.toLocaleString('en-IN')}`);
-    }
-    if (statusList.length > 0) {
-      parts.push(`Statuses: ${statusList.join(', ')}`);
-    }
-
-    if (!parts.length) {
-      triggerToast(`All dues cleared for ${student.name || 'this student'}.`, 'success');
-      return;
-    }
-
-    triggerToast(`${student.name || 'Student'} · ${parts.join(' · ')}`, tone);
+  const closeFeeReportDetail = () => {
+    setFeeReportDetailContext({ open: false, student: null });
+    resetMarkPaidContext();
+    setSelectedStudentId(null);
   };
 
   if (!authChecked) {
@@ -3933,12 +4193,14 @@ const resolveTransactionMonthLabel = (entry) => {
     return null;
   }
 
+  const isFinanceSection = activeSection === 'finances';
+
   return (
     <div className="min-h-screen bg-slate-50">
       <Head>
         <title>Accountant Dashboard · EL-NODE Pay</title>
       </Head>
-      <header className="border-b border-slate-200 bg-white">
+      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
           <div className="flex items-start gap-3">
             <Image src="/elnode.png" alt="EL-NODE Pay logo" width={48} height={48} priority />
@@ -3949,81 +4211,89 @@ const resolveTransactionMonthLabel = (entry) => {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={handleOpenAddStudent}
-              className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
-            >
-              Add Student
-            </button>
-            <button
-              type="button"
-              onClick={openReportModal}
-              className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
-            >
-              Generate Report
-            </button>
-            <div className="relative" ref={auditMenuRef}>
-              <button
-                type="button"
-                onClick={() => setIsAuditMenuOpen((prev) => !prev)}
-                className="flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                aria-haspopup="true"
-                aria-expanded={isAuditMenuOpen}
-                aria-controls="audit-menu"
-              >
-                Audit
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                  className={`h-4 w-4 transition-transform ${isAuditMenuOpen ? 'rotate-180' : ''}`}
-                  aria-hidden="true"
+          <div
+            className={`flex flex-wrap items-center gap-3 ${
+              isFinanceSection ? 'justify-end md:justify-end' : ''
+            }`}
+          >
+            {!isFinanceSection && (
+              <>
+                <button
+                  type="button"
+                  onClick={handleOpenAddStudent}
+                  className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
                 >
-                  <path
-                    fillRule="evenodd"
-                    d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.25a.75.75 0 01-1.06 0L5.21 8.29a.75.75 0 01.02-1.08z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </button>
-              {isAuditMenuOpen && (
-                <div
-                  id="audit-menu"
-                  className="absolute right-0 z-10 mt-2 w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
-                  role="menu"
-                  aria-label="Audit"
+                  Add Student
+                </button>
+                <button
+                  type="button"
+                  onClick={openReportModal}
+                  className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
                 >
-                  {[
-                    { id: 'ledger', label: 'Ledger' },
-                    { id: 'expenses', label: 'Expenses' },
-                    { id: 'reports', label: 'Reports' },
-                  ].map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => handleAuditNavigate(item.id)}
-                      className="block w-full px-4 py-2 text-left text-sm text-slate-700 transition hover:bg-cardinal/10"
-                      role="menuitem"
+                  Generate Report
+                </button>
+                <div className="relative" ref={settingsMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setIsSettingsMenuOpen((prev) => !prev)}
+                    className="flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    aria-haspopup="true"
+                    aria-expanded={isSettingsMenuOpen}
+                    aria-controls="settings-menu"
+                  >
+                    Settings
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className={`h-4 w-4 transition-transform ${isSettingsMenuOpen ? 'rotate-180' : ''}`}
+                      aria-hidden="true"
                     >
-                      {item.label}
-                    </button>
-                  ))}
+                      <path
+                        fillRule="evenodd"
+                        d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.25a.75.75 0 01-1.06 0L5.218 8.29a.75.75 0 01.02-1.08z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                  {isSettingsMenuOpen && (
+                    <div
+                      id="settings-menu"
+                      className="absolute right-0 z-10 mt-2 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                      role="menu"
+                      aria-label="Settings"
+                    >
+                      {[
+                        { id: 'fee-settings', label: 'Fee Settings' },
+                        { id: 'settings', label: 'Automation Settings' },
+                        { id: 'house-settings', label: 'House Settings' },
+                      ].map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onClick={() => handleSettingsNavigate(item.id)}
+                          className="block w-full px-4 py-2 text-left text-sm text-slate-700 transition hover:bg-cardinal/10"
+                          role="menuitem"
+                        >
+                          {item.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+                <button
+                  type="button"
+                  onClick={handleClearPaymentData}
+                  disabled={clearingDemoData}
+                  className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {clearingDemoData ? 'Clearing…' : 'Clear Payment Data'}
+                </button>
+              </>
+            )}
             <button
               type="button"
-              onClick={handleClearPaymentData}
-              disabled={clearingDemoData}
-              className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {clearingDemoData ? 'Clearing…' : 'Clear Payment Data'}
-            </button>
-            <button
-              type="button"
-              onClick={handleSignOut}
+              onClick={() => setSignOutConfirmOpen(true)}
               className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
             >
               Sign Out
@@ -4032,17 +4302,29 @@ const resolveTransactionMonthLabel = (entry) => {
         </div>
       </header>
 
+
       <main className="mx-auto max-w-7xl px-6 py-8">
-        <nav className="flex flex-wrap gap-3">
-          {[ 
-            { id: 'overview', label: 'Overview' },
-            { id: 'students', label: 'Students' },
-            { id: 'fee-report', label: 'Fee Report' },
-            { id: 'payment-history', label: 'Payment History' },
-            { id: 'reminders', label: 'Reminders and Notification' },
-            { id: 'fee-settings', label: 'Fee Settings' },
-            { id: 'settings', label: 'Automation Settings' },
-          ].map((tab) => (
+        <div className="flex flex-wrap gap-3">
+          {[
+            { id: 'fees', label: 'Fees' },
+            { id: 'finances', label: 'Finances' },
+          ].map((section) => (
+            <button
+              key={section.id}
+              type="button"
+              onClick={() => handleSectionChange(section.id)}
+              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                activeSection === section.id
+                  ? 'bg-cardinal text-white shadow'
+                  : 'bg-white text-slate-600 shadow-sm hover:bg-cardinal/10'
+              }`}
+            >
+              {section.label}
+            </button>
+          ))}
+        </div>
+        <nav className="mt-4 flex flex-wrap gap-3">
+          {(activeSection === 'finances' ? FINANCE_NAV_ITEMS : FEE_NAV_ITEMS).map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -4316,7 +4598,7 @@ const resolveTransactionMonthLabel = (entry) => {
           </section>
         )}
 
-        {activeTab === 'students' && (
+        {activeSection === 'fees' && activeTab === 'students' && (
           <section className="mt-8 space-y-6">
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -4343,24 +4625,17 @@ const resolveTransactionMonthLabel = (entry) => {
               <div className="mt-6">
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {filteredStudents.map((student) => {
-                    const isSelected = selectedStudentId === student.id;
                     const advanceNotice = buildAdvancePlanNotice(student);
+                    const isSelected = selectedStudentId === student.id;
+                    const statusLabel = student.status || 'Pending';
                     return (
                       <div
                         key={student.id}
-                        className={`relative rounded-3xl border ${
+                        className={`rounded-3xl border ${
                           isSelected ? 'border-cardinal ring-2 ring-cardinal/20' : 'border-slate-200'
                         } bg-white p-5 shadow-sm transition hover:shadow-md`}
                       >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            resetMarkPaidContext();
-                            setSelectedStudentId(student.id);
-                            setStudentActionsContext({ open: true, student });
-                          }}
-                          className="flex w-full flex-col gap-3 text-left"
-                        >
+                        <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="text-sm font-medium text-slate-500">{student.studentId || student.id}</p>
                             <h3 className="mt-1 text-lg font-semibold text-slate-900">{student.name}</h3>
@@ -4368,33 +4643,37 @@ const resolveTransactionMonthLabel = (entry) => {
                               Class {student.class || '—'}
                               {student.section ? ` · Section ${student.section}` : ''}
                             </p>
-                          </div>
-                          <div className="space-y-1 text-xs text-slate-500">
-                            {student.parent_email && (
-                              <p>
-                                Email: <span className="font-medium text-slate-700">{student.parent_email}</span>
-                              </p>
-                            )}
-                            {student.parent_phone && (
-                              <p>
-                                Phone: <span className="font-medium text-slate-700">{student.parent_phone}</span>
+                            {student.house && (
+                              <p className="text-xs text-slate-500">
+                                House: <span className="font-medium text-slate-700">{student.house}</span>
                               </p>
                             )}
                             {advanceNotice && (
-                              <p className="font-semibold text-emerald-600">{advanceNotice}</p>
+                              <p className="text-xs font-semibold text-emerald-600">{advanceNotice}</p>
                             )}
                           </div>
-                        </button>
-                        <div className="mt-4 flex justify-end">
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                              statusBadgeClasses[statusLabel] || 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {statusLabel}
+                          </span>
+                        </div>
+                        <div className="mt-4 flex flex-wrap gap-3">
                           <button
                             type="button"
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              handleCheckDues(student);
-                            }}
-                            className="rounded-full border border-cardinal px-4 py-1.5 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
+                            onClick={() => handleOpenStudentActions(student)}
+                            className="rounded-full border border-cardinal px-4 py-2 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
                           >
-                            Fee status
+                            Manage
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => openHistory(student)}
+                            className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
+                          >
+                            View History
                           </button>
                         </div>
                       </div>
@@ -4427,25 +4706,42 @@ const resolveTransactionMonthLabel = (entry) => {
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {filteredStudents.map((student) => {
                     const balance = Number(student.balance ?? student.fee_amount ?? 0);
-                    const total = Number(student.fee_amount ?? 0);
-                    const paid = Math.max(total - balance, 0);
                     const hasOutstanding = balance > 0;
-                    const isMarking = markPaidContext.student?.id === student.id;
                     const statusLabel = hasOutstanding ? student.status || 'Pending' : 'Paid';
                     const advanceNotice = buildAdvancePlanNotice(student);
+                    const isDetailOpen =
+                      feeReportDetailContext.open && feeReportDetailContext.student?.id === student.id;
+                    const studentRequestEntries = feeReportEntriesByStudent.get(student.id) || [];
+                    const requestCount = studentRequestEntries.length;
+                    const outstandingRequests = studentRequestEntries.filter(
+                      (entry) => entry.statusLabel !== 'Paid',
+                    ).length;
+                    const latestDueDate = studentRequestEntries
+                      .map((entry) => entry.dueDate)
+                      .filter(Boolean)
+                      .sort((a, b) => a - b)[0];
                     return (
-                      <div
+                      <button
+                        type="button"
                         key={`${student.id}-fee-report`}
-                        className={`rounded-3xl border ${
-                          isMarking ? 'border-cardinal ring-2 ring-cardinal/20' : 'border-slate-200'
+                        onClick={() => openFeeReportDetail(student)}
+                        className={`text-left rounded-3xl border ${
+                          isDetailOpen ? 'border-cardinal ring-2 ring-cardinal/20' : 'border-slate-200'
                         } bg-white p-5 shadow-sm transition hover:shadow-md`}
                       >
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <h3 className="text-lg font-semibold text-slate-900">{student.name}</h3>
-                            <p className="mt-1 text-sm text-slate-500">
-                              {student.studentId || student.id} · Class {student.class || '—'}
+                            <p className="text-sm font-medium text-slate-500">{student.studentId || student.id}</p>
+                            <h3 className="mt-1 text-lg font-semibold text-slate-900">{student.name}</h3>
+                            <p className="text-sm text-slate-500">
+                              Class {student.class || '—'}
+                              {student.section ? ` · Section ${student.section}` : ''}
                             </p>
+                            {student.house && (
+                              <p className="text-xs text-slate-500">
+                                House: <span className="font-medium text-slate-700">{student.house}</span>
+                              </p>
+                            )}
                             {advanceNotice && (
                               <p className="text-xs font-semibold text-emerald-600">{advanceNotice}</p>
                             )}
@@ -4458,143 +4754,29 @@ const resolveTransactionMonthLabel = (entry) => {
                             {statusLabel}
                           </span>
                         </div>
-                        <div className="mt-4 grid grid-cols-3 gap-3 text-xs">
-                          <div className="rounded-2xl bg-slate-50 p-3 text-center">
-                            <dt className="text-slate-500">Fee</dt>
-                            <dd className="mt-1 text-sm font-semibold text-slate-900">
-                              ₹{total.toLocaleString('en-IN')}
-                            </dd>
+                        <div className="mt-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                          <div className="flex items-center justify-between text-xs text-slate-500">
+                            <span>Outstanding balance</span>
+                            <span>
+                              {requestCount > 0
+                                ? `${outstandingRequests}/${requestCount} requests pending`
+                                : 'No fee requests yet'}
+                            </span>
                           </div>
-                          <div className="rounded-2xl bg-slate-50 p-3 text-center">
-                            <dt className="text-slate-500">Paid</dt>
-                            <dd className="mt-1 text-sm font-semibold text-emerald-600">
-                              ₹{paid.toLocaleString('en-IN')}
-                            </dd>
-                          </div>
-                          <div className="rounded-2xl bg-slate-50 p-3 text-center">
-                            <dt className="text-slate-500">Balance</dt>
-                            <dd className="mt-1 text-sm font-semibold ${hasOutstanding ? 'text-rose-600' : 'text-emerald-600'}">
-                              ₹{balance.toLocaleString('en-IN')}
-                            </dd>
-                          </div>
+                          <p
+                            className={`mt-1 text-2xl font-semibold ${
+                              hasOutstanding ? 'text-rose-600' : 'text-emerald-600'
+                            }`}
+                          >
+                            ₹{balance.toLocaleString('en-IN')}
+                          </p>
+                          <p className="mt-2 text-xs text-slate-500">
+                            {latestDueDate
+                              ? `Next due: ${latestDueDate.toLocaleDateString('en-IN')}`
+                              : 'Tap to view head-wise details.'}
+                          </p>
                         </div>
-                        <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
-                          <button
-                            type="button"
-                            onClick={() => openHistory(student)}
-                            className="rounded-full border border-slate-200 px-3 py-1.5 text-slate-700 transition hover:bg-slate-100"
-                          >
-                            View History
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => beginMarkPaidFlow(student)}
-                            disabled={!hasOutstanding || markPaidContext.submitting}
-                            className={`rounded-full border px-3 py-1.5 transition ${
-                              !hasOutstanding
-                                ? 'border-slate-200 text-slate-400'
-                                : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-                            } disabled:cursor-not-allowed disabled:opacity-60`}
-                          >
-                            Mark as Paid
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSendReminder(student)}
-                            disabled={!hasOutstanding || markPaidContext.submitting}
-                            className="rounded-full border border-cardinal px-3 py-1.5 text-cardinal transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            Send Reminder
-                          </button>
-                        </div>
-                        {isMarking && (
-                          <div className="mt-4 space-y-3 rounded-2xl border border-cardinal bg-cardinal/5 p-4 text-sm text-slate-700">
-                            {markPaidContext.step === 'mode' ? (
-                              <>
-                                <p className="font-semibold text-slate-900">What was the mode of payment?</p>
-                                <div className="flex flex-wrap gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={() => completeMarkPaid(student, 'Cash')}
-                                    disabled={markPaidContext.submitting}
-                                    className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-semibold text-white shadow transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    Cash
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setMarkPaidContext((prev) => ({
-                                        ...prev,
-                                        step: 'transaction',
-                                        mode: 'Online',
-                                        transactionId: '',
-                                        error: '',
-                                      }))
-                                    }
-                                    disabled={markPaidContext.submitting}
-                                    className="rounded-lg bg-sky-600 px-4 py-2 text-xs font-semibold text-white shadow transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    Online
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={resetMarkPaidContext}
-                                    disabled={markPaidContext.submitting}
-                                    className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
-                                  >
-                                    Cancel
-                                  </button>
-                                </div>
-                              </>
-                            ) : (
-                              <>
-                                <p className="font-semibold text-slate-900">Enter the online transaction ID.</p>
-                                <input
-                                  value={markPaidContext.transactionId}
-                                  onChange={(event) =>
-                                    setMarkPaidContext((prev) => ({
-                                      ...prev,
-                                      transactionId: event.target.value,
-                                      error: '',
-                                    }))
-                                  }
-                                  placeholder="Transaction ID"
-                                  className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                                />
-                                {markPaidContext.error && <p className="text-sm text-rose-600">{markPaidContext.error}</p>}
-                                <div className="flex justify-end gap-2">
-                                  <button
-                                    type="button"
-                                    onClick={resetMarkPaidContext}
-                                    disabled={markPaidContext.submitting}
-                                    className="rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
-                                  >
-                                    Cancel
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (!markPaidContext.transactionId.trim()) {
-                                        setMarkPaidContext((prev) => ({ ...prev, error: 'Transaction ID is required.' }));
-                                        return;
-                                      }
-                                      completeMarkPaid(student, 'Online', markPaidContext.transactionId.trim());
-                                    }}
-                                    disabled={markPaidContext.submitting}
-                                    className="rounded-lg bg-cardinal px-4 py-2 text-xs font-semibold text-white shadow transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-60"
-                                  >
-                                    Confirm Payment
-                                  </button>
-                                </div>
-                              </>
-                            )}
-                            {markPaidContext.submitting && (
-                              <p className="text-xs text-slate-500">Recording payment…</p>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -4647,7 +4829,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   </label>
                   <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
                     <p className="font-medium text-slate-900">Fee Cycle Notes</p>
-                    <p className="mt-1">Half-yearly dues are auto-calculated from quarterly fees.</p>
+                    <p className="mt-1">Half-yearly and annual dues are auto-calculated when left blank.</p>
                   </div>
                 </div>
                 <div className="overflow-x-auto">
@@ -4657,6 +4839,8 @@ const resolveTransactionMonthLabel = (entry) => {
                         <th className="px-4 py-3 text-left">Class</th>
                         <th className="px-4 py-3 text-left">Monthly Fee (₹)</th>
                         <th className="px-4 py-3 text-left">Quarterly Fee (₹)</th>
+                        <th className="px-4 py-3 text-left">Half-Yearly Fee (₹)</th>
+                        <th className="px-4 py-3 text-left">Annual Fee (₹)</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -4676,6 +4860,24 @@ const resolveTransactionMonthLabel = (entry) => {
                             <input
                               value={feeStructureDraft.fees?.[item]?.quarterly ?? ''}
                               onChange={(event) => handleFeeValueChange(item, 'quarterly', event.target.value)}
+                              placeholder="0"
+                              inputMode="decimal"
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              value={feeStructureDraft.fees?.[item]?.halfYearly ?? ''}
+                              onChange={(event) => handleFeeValueChange(item, 'halfYearly', event.target.value)}
+                              placeholder="0"
+                              inputMode="decimal"
+                              className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                            />
+                          </td>
+                          <td className="px-4 py-3">
+                            <input
+                              value={feeStructureDraft.fees?.[item]?.annual ?? ''}
+                              onChange={(event) => handleFeeValueChange(item, 'annual', event.target.value)}
                               placeholder="0"
                               inputMode="decimal"
                               className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
@@ -5502,6 +5704,70 @@ const resolveTransactionMonthLabel = (entry) => {
             />
           </section>
         )}
+
+        {activeTab === 'house-settings' && (
+          <section id="house-settings" className="mt-8 space-y-6">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-col gap-2">
+                <h2 className="text-lg font-semibold text-slate-900">House Settings</h2>
+                <p className="text-sm text-slate-500">
+                  Manage the list of school houses. These names appear while adding or editing students.
+                </p>
+              </div>
+              <form className="mt-6 space-y-5" onSubmit={handleHouseSettingsSave}>
+                <div className="space-y-3">
+                  {(settingsState.houses || []).length > 0 ? (
+                    settingsState.houses.map((house, index) => (
+                      <div key={`${house}-${index}`} className="flex flex-col gap-2 sm:flex-row">
+                        <input
+                          value={house}
+                          onChange={(event) => handleHouseNameChange(index, event.target.value)}
+                          className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                          placeholder="House name"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveHouse(index)}
+                          className="rounded-xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+                      No houses added yet. Use the field below to add your first house.
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <input
+                    value={newHouseName}
+                    onChange={(event) => setNewHouseName(event.target.value)}
+                    className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    placeholder="Add a house name"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAddHouseName}
+                    className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+                  >
+                    Add House
+                  </button>
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={houseSettingsSaving}
+                    className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {houseSettingsSaving ? 'Saving…' : 'Save Houses'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </section>
+        )}
       </main>
 
       {manualEntryModalOpen && (
@@ -5774,7 +6040,6 @@ const resolveTransactionMonthLabel = (entry) => {
                       {option.label}
                     </option>
                   ))}
-                  <option value="Annual">Annual</option>
                   <option value="Other">Other</option>
                 </select>
               </label>
@@ -5916,6 +6181,7 @@ const resolveTransactionMonthLabel = (entry) => {
           onSubmit={handleStudentSubmit}
           onClose={() => setIsFormOpen(false)}
           isSubmitting={formSubmitting}
+          houseOptions={houseOptions}
         />
       )}
 
@@ -5983,6 +6249,235 @@ const resolveTransactionMonthLabel = (entry) => {
         />
       )}
 
+      {feeReportDetailContext.open && feeReportDetailContext.student && (
+        <Modal
+          title={`Fee Details · ${feeReportDetailContext.student.name || feeReportDetailContext.student.studentId || 'Student'}`}
+          onClose={closeFeeReportDetail}
+          size="xl"
+        >
+          {(() => {
+            const detailStudent = feeReportDetailContext.student;
+            const recordBalance = Number(detailStudent.balance ?? detailStudent.fee_amount ?? 0);
+            const outstandingFromRequests = feeReportDetailBalance;
+            const hasOutstanding = recordBalance > 0 || outstandingFromRequests > 0;
+            const markPaidActive = markPaidContext.student?.id === detailStudent.id;
+            const parentName = detailStudent.parent_name || detailStudent.parentName || 'Parent';
+            const parentEmail = detailStudent.parent_email || '—';
+            const dueDateLabel = detailStudent.due_date
+              ? new Date(detailStudent.due_date).toLocaleDateString('en-IN')
+              : 'Not set';
+            return (
+              <div className="space-y-6 text-sm text-slate-700">
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-100 bg-white p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Student</p>
+                    <h4 className="mt-1 text-base font-semibold text-slate-900">{detailStudent.name}</h4>
+                    <p className="text-xs text-slate-500">
+                      ID: {detailStudent.studentId || detailStudent.id} · Class {detailStudent.class || '—'}
+                      {detailStudent.section ? ` · Section ${detailStudent.section}` : ''}
+                    </p>
+                    {detailStudent.house && (
+                      <p className="text-xs text-slate-500">
+                        House: <span className="font-medium text-slate-900">{detailStudent.house}</span>
+                      </p>
+                    )}
+                    <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-3 text-xs">
+                      <p className="font-semibold text-slate-600">Parent Contact</p>
+                      <p className="text-slate-900">{parentName}</p>
+                      <p className="text-slate-500">{parentEmail}</p>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-100 bg-white p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Balances</p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                        <p className="text-xs text-slate-500">Student record</p>
+                        <p className={`text-2xl font-semibold ${recordBalance > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                          {formatCurrency(recordBalance)}
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                        <p className="text-xs text-slate-500">Fee requests</p>
+                        <p className={`text-2xl font-semibold ${outstandingFromRequests > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                          {formatCurrency(outstandingFromRequests)}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="mt-3 text-xs text-slate-500">Due date on record: {dueDateLabel}</p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <p className="text-sm font-semibold text-slate-900">Head-wise summary</p>
+                  {feeReportDetailHeadSummary.length === 0 ? (
+                    <p className="mt-2 text-xs text-slate-500">No head-wise breakdown is available for this student.</p>
+                  ) : (
+                    <ul className="mt-3 space-y-2 text-sm">
+                      {feeReportDetailHeadSummary.map((entry) => (
+                        <li key={entry.key} className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
+                          <span className="font-medium text-slate-700">{entry.label}</span>
+                          <span className="font-semibold text-slate-900">{formatCurrency(entry.amount)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">
+                    Requests ({feeReportDetailEntriesSorted.length})
+                  </p>
+                  {feeReportDetailEntriesSorted.length === 0 ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      No fee requests found for this student yet.
+                    </p>
+                  ) : (
+                    <div className="mt-3 space-y-3">
+                      {feeReportDetailEntriesSorted.map((entry) => (
+                        <div key={entry.id} className="rounded-2xl border border-slate-100 bg-white p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-slate-900">{entry.term || entry.cycle || 'Fee Request'}</p>
+                              <p className="text-xs text-slate-500">
+                                Due: {entry.dueDate ? entry.dueDate.toLocaleDateString('en-IN') : '—'} · Cycle: {entry.cycle || '—'}
+                              </p>
+                            </div>
+                            <span
+                              className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                                statusBadgeClasses[entry.statusLabel] || 'bg-slate-100 text-slate-600'
+                              }`}
+                            >
+                              {entry.statusLabel}
+                            </span>
+                          </div>
+                          <div className="mt-3 grid gap-3 text-xs sm:grid-cols-3">
+                            <div>
+                              <p className="font-semibold text-slate-500">Amount</p>
+                              <p className="text-slate-900">{formatCurrency(entry.amount)}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-slate-500">Balance</p>
+                              <p className="text-slate-900">{formatCurrency(entry.balance)}</p>
+                            </div>
+                            <div>
+                              <p className="font-semibold text-slate-500">Payment Mode</p>
+                              <p className="text-slate-900">{entry.paymentModeLabel || '—'}</p>
+                            </div>
+                          </div>
+                          {Array.isArray(entry.headBreakdown) && entry.headBreakdown.length > 0 && (
+                            <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-100 bg-slate-50 text-xs">
+                              {entry.headBreakdown.map((item) => (
+                                <li key={`${entry.id}-${item.label}`} className="flex items-center justify-between px-3 py-2">
+                                  <span className="text-slate-600">{item.label}</span>
+                                  <span className="font-semibold text-slate-900">{formatCurrency(item.amount)}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-100 bg-white p-4">
+                    <p className="text-sm font-semibold text-slate-900">Quick actions</p>
+                    <div className="mt-3 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={handleDetailViewHistory}
+                        className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                      >
+                        View History
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleDetailSendReminder}
+                        disabled={!hasOutstanding}
+                        className="rounded-full border border-cardinal px-4 py-2 text-xs font-semibold transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        Send Reminder
+                      </button>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-100 bg-white p-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-slate-900">Mark as paid</p>
+                      {markPaidActive && (
+                        <button
+                          type="button"
+                          onClick={resetMarkPaidContext}
+                          className="text-xs font-semibold text-slate-500 hover:text-slate-700"
+                        >
+                          Cancel
+                        </button>
+                      )}
+                    </div>
+                    {!hasOutstanding && (
+                      <p className="mt-2 text-xs text-slate-500">All dues are already cleared for this student.</p>
+                    )}
+                    {hasOutstanding && !markPaidActive && (
+                      <button
+                        type="button"
+                        onClick={() => beginMarkPaidFlow(detailStudent)}
+                        className="mt-3 w-full rounded-full bg-cardinal px-4 py-2 text-xs font-semibold text-white transition hover:bg-cardinal/90"
+                      >
+                        Start mark as paid
+                      </button>
+                    )}
+                    {hasOutstanding && markPaidActive && (
+                      <div className="mt-3 space-y-3 text-xs">
+                        <div className="flex flex-wrap gap-2">
+                          {['Cash', 'Online'].map((modeOption) => (
+                            <button
+                              key={modeOption}
+                              type="button"
+                              onClick={() => handleMarkPaidModeSelect(modeOption)}
+                              className={`rounded-full px-3 py-1 font-semibold transition ${
+                                markPaidContext.mode === modeOption
+                                  ? 'bg-cardinal text-white'
+                                  : 'border border-slate-200 text-slate-600 hover:bg-slate-100'
+                              }`}
+                            >
+                              {modeOption}
+                            </button>
+                          ))}
+                        </div>
+                        {markPaidContext.mode === 'Online' && (
+                          <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
+                            Transaction Reference
+                            <input
+                              value={markPaidContext.transactionId}
+                              onChange={handleMarkPaidTransactionChange}
+                              placeholder="Razorpay payment ID"
+                              className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                            />
+                          </label>
+                        )}
+                        {markPaidContext.error && (
+                          <p className="text-xs text-rose-600">{markPaidContext.error}</p>
+                        )}
+                        <div className="flex justify-end gap-3">
+                          <button
+                            type="button"
+                            onClick={handleSubmitMarkPaidFromDetail}
+                            disabled={markPaidContext.submitting}
+                            className="rounded-full bg-cardinal px-4 py-2 text-xs font-semibold text-white transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                          >
+                            {markPaidContext.submitting ? 'Recording…' : 'Confirm payment'}
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+        </Modal>
+      )}
+
       {feeRequestContext.open && (
         <FeeRequestModal
           student={feeRequestContext.student}
@@ -5994,6 +6489,35 @@ const resolveTransactionMonthLabel = (entry) => {
           onClose={handleCloseFeeRequest}
           isSubmitting={feeRequestSubmitting}
         />
+      )}
+
+      {signOutConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
+            <h3 className="text-lg font-semibold text-slate-900">Sign Out</h3>
+            <p className="mt-2 text-sm text-slate-600">Do you really want to sign out?</p>
+            <div className="mt-6 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setSignOutConfirmOpen(false)}
+                className="rounded-full border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              >
+                No
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSignOut}
+                className="rounded-full bg-cardinal px-4 py-2 text-sm font-semibold text-white transition hover:bg-cardinal/90"
+              >
+                Yes
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {toast && (
