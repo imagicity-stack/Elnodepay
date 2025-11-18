@@ -498,20 +498,24 @@ const ParentDashboard = () => {
     };
   }, []);
 
+  const activeFeeRequests = useMemo(() => {
+    const safeFeeRequests = Array.isArray(feeRequests) ? feeRequests : [];
+    const activeRequests = safeFeeRequests.filter(
+      (r) => r && r.status !== 'Paid' && Number(r.balance ?? r.amount_total ?? 0) > 0,
+    );
+    return activeRequests;
+  }, [feeRequests]);
+
   const requestExtrasByStudent = useMemo(() => {
     const map = new Map();
     const formatDateLabel = (raw) => {
       const parsed = parseDateValue(raw);
       return parsed ? parsed.toLocaleDateString('en-IN') : '';
     };
-    feeRequests.forEach((request) => {
+    activeFeeRequests.forEach((request) => {
       const key = request.studentId || request.student_doc_id || request.studentDocId;
       if (!key) return;
-      if (request.status === 'Paid') return;
-      const outstanding = Number(
-        request.balance ?? request.amount_due ?? request.amount_total ?? request.amount ?? 0,
-      );
-      if (!Number.isFinite(outstanding) || outstanding <= 0) return;
+      const outstanding = Number(request.balance ?? request.amount_total ?? 0);
       if (!map.has(key)) {
         map.set(key, { store: [], others: [], requests: [] });
       }
@@ -571,7 +575,7 @@ const ParentDashboard = () => {
       });
     });
     return map;
-  }, [feeRequests]);
+  }, [activeFeeRequests]);
 
   const paymentHistory = useMemo(() => {
     return payments.filter((payment) => {

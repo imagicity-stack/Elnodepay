@@ -1582,6 +1582,14 @@ const resolveTransactionMonthLabel = (entry) => {
     }
   }, []);
 
+  const activeFeeRequests = useMemo(() => {
+    const safeFeeRequests = Array.isArray(feeRequests) ? feeRequests : [];
+    const activeRequests = safeFeeRequests.filter(
+      (r) => r && r.status !== 'Paid' && Number(r.balance ?? r.amount_total ?? 0) > 0,
+    );
+    return activeRequests;
+  }, [feeRequests]);
+
   const monthMetrics = useMemo(() => {
     const safeTransactions = Array.isArray(transactionsLog) ? transactionsLog : [];
     const safeReminders = Array.isArray(reminders) ? reminders : [];
@@ -2104,7 +2112,7 @@ const resolveTransactionMonthLabel = (entry) => {
   }, [payments, paymentModeFilter]);
 
   const feeRequestReportEntries = useMemo(() => {
-    const safeFeeRequests = Array.isArray(feeRequests) ? feeRequests : [];
+    const safeFeeRequests = Array.isArray(activeFeeRequests) ? activeFeeRequests : [];
     const safeStudents = Array.isArray(students) ? students : [];
     const safeReminders = Array.isArray(reminders) ? reminders : [];
     if (!safeFeeRequests || safeFeeRequests.length === 0) {
@@ -2235,7 +2243,7 @@ const resolveTransactionMonthLabel = (entry) => {
         lookupKeys,
       };
     });
-  }, [feeRequests, students, reminders]);
+  }, [activeFeeRequests, students, reminders]);
 
   const feeRequestEntriesLookup = useMemo(() => {
     const safeEntries = Array.isArray(feeRequestReportEntries) ? feeRequestReportEntries : [];
