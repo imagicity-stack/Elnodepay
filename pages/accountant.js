@@ -1058,6 +1058,7 @@ const AccountantDashboard = () => {
   const [reportDownloadState, setReportDownloadState] = useState({ format: null, loading: false });
   const [historyContext, setHistoryContext] = useState({ open: false, student: null, entries: [] });
   const [paymentModeFilter, setPaymentModeFilter] = useState('All');
+  const [clearingDemoData, setClearingDemoData] = useState(false);
   const [settingsState, setSettingsState] = useState({
     currentTerm: '',
     defaultDueDate: '',
@@ -3318,6 +3319,42 @@ const resolveTransactionMonthLabel = (entry) => {
     }
   };
 
+  const handleClearPaymentData = async () => {
+    if (clearingDemoData) return;
+    if (typeof window !== 'undefined') {
+      const confirmed = window.confirm(
+        'This will permanently delete all payment history and fee requests. Continue?',
+      );
+      if (!confirmed) {
+        return;
+      }
+    }
+    setClearingDemoData(true);
+    const deleteCollectionDocs = async (collectionName) => {
+      const snapshot = await getDocs(collection(db, collectionName));
+      if (!snapshot.size) return 0;
+      await Promise.all(
+        snapshot.docs.map((docSnap) => deleteDoc(doc(db, collectionName, docSnap.id))),
+      );
+      return snapshot.size;
+    };
+    try {
+      const [paymentsDeleted, requestsDeleted] = await Promise.all([
+        deleteCollectionDocs('payments'),
+        deleteCollectionDocs('fee_requests'),
+      ]);
+      const parts = [];
+      parts.push(`${paymentsDeleted} payment${paymentsDeleted === 1 ? '' : 's'}`);
+      parts.push(`${requestsDeleted} request${requestsDeleted === 1 ? '' : 's'}`);
+      triggerToast(`Cleared ${parts.join(' & ')}.`, 'success');
+    } catch (error) {
+      console.error('Error clearing payment data', error);
+      triggerToast('Unable to clear payment data. Please try again.', 'error');
+    } finally {
+      setClearingDemoData(false);
+    }
+  };
+
   const deleteStudentRecord = async (student) => {
     if (!student) return;
     await deleteDoc(doc(db, 'students', student.id));
@@ -3968,6 +4005,14 @@ const resolveTransactionMonthLabel = (entry) => {
                 </div>
               )}
             </div>
+            <button
+              type="button"
+              onClick={handleClearPaymentData}
+              disabled={clearingDemoData}
+              className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {clearingDemoData ? 'Clearing…' : 'Clear Payment Data'}
+            </button>
             <button
               type="button"
               onClick={handleSignOut}
