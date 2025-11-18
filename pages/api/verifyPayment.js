@@ -287,31 +287,23 @@ async function reconcileFeeRequests({
   paymentMode,
   transactionId,
 }) {
-  if (!(amountPaid > 0) || (!studentDocId && !studentId)) {
+  if (!(amountPaid > 0)) {
     return;
   }
-  const documents = new Map();
-  const queries = [];
-  if (studentDocId) {
-    queries.push(fetchFeeRequests(idToken, 'student_doc_id', studentDocId));
-    queries.push(fetchFeeRequests(idToken, 'studentDocId', studentDocId));
+  const queryField = studentDocId ? 'student_doc_id' : studentId ? 'studentId' : null;
+  const queryValue = studentDocId || studentId;
+
+  if (!queryField || !queryValue) {
+    return;
   }
-  if (studentId && studentId !== studentDocId) {
-    queries.push(fetchFeeRequests(idToken, 'studentId', studentId));
-    queries.push(fetchFeeRequests(idToken, 'student_id', studentId));
-  }
-  const results = await Promise.all(queries.length ? queries : [Promise.resolve([])]);
-  results.flat().forEach((doc) => {
-    if (doc?.id && !documents.has(doc.id)) {
-      documents.set(doc.id, doc);
-    }
-  });
-  if (!documents.size) {
+
+  const feeRequests = await fetchFeeRequests(idToken, queryField, queryValue);
+  if (!feeRequests.length) {
     return;
   }
 
   const nowIso = timestampNow();
-  const sorted = Array.from(documents.values()).sort((a, b) => {
+  const sorted = feeRequests.sort((a, b) => {
     const dueA = parseDateInput(a.due_date) || parseDateInput(a.created_at) || new Date(0);
     const dueB = parseDateInput(b.due_date) || parseDateInput(b.created_at) || new Date(0);
     return dueA.getTime() - dueB.getTime();
