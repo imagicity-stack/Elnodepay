@@ -55,8 +55,9 @@ const PayNowModal = ({
   selections,
   advanceOptions = [],
   selectedAdvanceId,
+  advanceEnabled,
   onAdvanceSelect,
-  onClearAdvance,
+  onAdvanceToggle,
   onToggle,
   onClose,
   onConfirm,
@@ -64,6 +65,10 @@ const PayNowModal = ({
   total,
 }) => {
   if (!open || !student) return null;
+
+  const advanceUnavailable = advanceOptions.every((plan) => plan.disabled);
+  const availableAdvanceOptions = advanceOptions.filter((plan) => !plan.disabled);
+  const selectedAdvancePlan = advanceOptions.find((plan) => plan.id === selectedAdvanceId);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-8">
@@ -105,48 +110,56 @@ const PayNowModal = ({
             ))}
           </div>
           {advanceOptions.length > 0 && (
-            <div className="mt-6 space-y-3">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-900">Pay fees in advance</p>
-                {selectedAdvanceId && (
-                  <button
-                    type="button"
-                    onClick={onClearAdvance}
-                    className="text-xs font-semibold text-cardinal underline"
-                  >
-                    Clear selection
-                  </button>
-                )}
-              </div>
-              {advanceOptions.map((plan) => {
-                const checked = selectedAdvanceId === plan.id;
-                return (
-                  <label
-                    key={plan.id}
-                    className={`flex items-center justify-between gap-3 rounded-2xl border px-4 py-3 ${
-                      plan.disabled ? 'border-slate-200 bg-slate-50 opacity-70' : 'border-cardinal/30 bg-cardinal/5'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="radio"
-                        name="advance-plan"
-                        checked={checked}
-                        onChange={() => onAdvanceSelect(plan.id)}
-                        disabled={plan.disabled}
-                        className="h-4 w-4 border-slate-300 text-cardinal focus:ring-cardinal"
-                      />
-                      <div>
-                        <p className="font-medium text-slate-900">{plan.label}</p>
-                        <p className="text-xs text-slate-500">{plan.helperText}</p>
-                      </div>
-                    </div>
-                    <span className="text-sm font-semibold text-slate-900">
-                      ₹{Number(plan.amount || 0).toLocaleString('en-IN')}
-                    </span>
+            <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <label className="flex items-center gap-3 text-sm font-semibold text-slate-900">
+                <input
+                  type="checkbox"
+                  checked={advanceEnabled}
+                  onChange={(event) => onAdvanceToggle(event.target.checked)}
+                  disabled={advanceUnavailable}
+                  className="h-4 w-4 rounded border-slate-300 text-cardinal focus:ring-cardinal disabled:opacity-50"
+                />
+                Pay advance
+              </label>
+              <p className="mt-1 text-xs text-slate-500">
+                Reserve upcoming fee cycles for {student.name} in one go.
+              </p>
+              {advanceUnavailable && advanceOptions[0]?.helperText && (
+                <p className="mt-3 text-xs font-medium text-emerald-600">
+                  {advanceOptions[0].helperText}
+                </p>
+              )}
+              {advanceEnabled && availableAdvanceOptions.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <label className="text-xs font-semibold text-slate-500" htmlFor="advance-term">
+                    Select payment term
                   </label>
-                );
-              })}
+                  <div className="relative">
+                    <select
+                      id="advance-term"
+                      value={selectedAdvanceId || ''}
+                      onChange={(event) => onAdvanceSelect(event.target.value)}
+                      className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    >
+                      {availableAdvanceOptions.map((plan) => (
+                        <option key={plan.id} value={plan.id}>
+                          {plan.dropdownLabel || plan.label}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400">
+                      ▾
+                    </span>
+                  </div>
+                  {selectedAdvancePlan && (
+                    <p className="text-xs text-slate-500">
+                      Paying ₹{Number(selectedAdvancePlan.amount || 0).toLocaleString('en-IN')} to cover
+                      {' '}
+                      {selectedAdvancePlan.months} month{selectedAdvancePlan.months > 1 ? 's' : ''} ({selectedAdvancePlan.cycle}).
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           )}
           <div className="mt-6 rounded-2xl border border-cardinal bg-cardinal/5 px-4 py-3 text-slate-800">
@@ -227,6 +240,7 @@ const ParentDashboard = () => {
     selections: [],
     advanceOptions: [],
     selectedAdvanceId: null,
+    advanceEnabled: false,
   });
   const [paymentProcessing, setPaymentProcessing] = useState(false);
 
@@ -453,13 +467,18 @@ const ParentDashboard = () => {
       if (!plans.length) return [];
       const coverageEnd = parseDateValue(student.advance_plan_end);
       const hasActiveCoverage = coverageEnd && coverageEnd.getTime() > Date.now();
-      return plans.map((plan) => ({
-        ...plan,
-        helperText: hasActiveCoverage
-          ? `Advance active until ${coverageEnd.toLocaleDateString('en-IN')}`
-          : `₹${Number(plan.amount || 0).toLocaleString('en-IN')}`,
-        disabled: hasActiveCoverage,
-      }));
+      return plans.map((plan) => {
+        const amountLabel = `₹${Number(plan.amount || 0).toLocaleString('en-IN')}`;
+        const monthsLabel = `${plan.months} month${plan.months > 1 ? 's' : ''}`;
+        return {
+          ...plan,
+          helperText: hasActiveCoverage
+            ? `Advance active until ${coverageEnd.toLocaleDateString('en-IN')}`
+            : amountLabel,
+          dropdownLabel: `${monthsLabel} (${plan.cycle}) · ${amountLabel}`,
+          disabled: hasActiveCoverage,
+        };
+      });
     },
     [feeStructure],
   );
@@ -644,7 +663,7 @@ const ParentDashboard = () => {
   }, [paymentContext]);
 
   const advanceSelectionAmount = useMemo(() => {
-    if (!paymentContext.open) return 0;
+    if (!paymentContext.open || !paymentContext.advanceEnabled) return 0;
     const plan = (paymentContext.advanceOptions || []).find(
       (option) => option.id === paymentContext.selectedAdvanceId,
     );
@@ -741,6 +760,7 @@ const ParentDashboard = () => {
       selections,
       advanceOptions,
       selectedAdvanceId: null,
+      advanceEnabled: false,
     });
   };
 
@@ -754,17 +774,36 @@ const ParentDashboard = () => {
   };
 
   const handleAdvanceSelection = (planId) => {
-    setPaymentContext((prev) => ({
-      ...prev,
-      selectedAdvanceId: planId,
-    }));
+    setPaymentContext((prev) => {
+      const isValid = (prev.advanceOptions || []).some(
+        (option) => option.id === planId && !option.disabled,
+      );
+      if (!isValid) {
+        return prev;
+      }
+      return {
+        ...prev,
+        selectedAdvanceId: planId,
+      };
+    });
   };
 
-  const handleClearAdvanceSelection = () => {
-    setPaymentContext((prev) => ({
-      ...prev,
-      selectedAdvanceId: null,
-    }));
+  const handleToggleAdvance = (enabled) => {
+    setPaymentContext((prev) => {
+      if (!enabled) {
+        return { ...prev, advanceEnabled: false, selectedAdvanceId: null };
+      }
+      const validOptions = (prev.advanceOptions || []).filter((option) => !option.disabled);
+      if (!validOptions.length) {
+        return { ...prev, advanceEnabled: false, selectedAdvanceId: null };
+      }
+      const fallbackPlan = validOptions.find((option) => option.id === prev.selectedAdvanceId);
+      return {
+        ...prev,
+        advanceEnabled: true,
+        selectedAdvanceId: (fallbackPlan || validOptions[0]).id,
+      };
+    });
   };
 
   const handleClosePayment = () => {
@@ -774,15 +813,18 @@ const ParentDashboard = () => {
       selections: [],
       advanceOptions: [],
       selectedAdvanceId: null,
+      advanceEnabled: false,
     });
     setPaymentProcessing(false);
   };
 
   const handleProcessPayment = async () => {
     if (!paymentContext.student || totalSelectedAmount <= 0) return;
-    const advancePlan = (paymentContext.advanceOptions || []).find(
-      (plan) => plan.id === paymentContext.selectedAdvanceId,
-    );
+    const advancePlan = paymentContext.advanceEnabled
+      ? (paymentContext.advanceOptions || []).find(
+          (plan) => plan.id === paymentContext.selectedAdvanceId,
+        )
+      : null;
     if (typeof window === 'undefined' || !window.Razorpay) {
       alert('Payment gateway is still loading. Please try again in a moment.');
       return;
@@ -1531,8 +1573,9 @@ const ParentDashboard = () => {
           selections={paymentContext.selections}
           advanceOptions={paymentContext.advanceOptions}
           selectedAdvanceId={paymentContext.selectedAdvanceId}
+          advanceEnabled={paymentContext.advanceEnabled}
           onAdvanceSelect={handleAdvanceSelection}
-          onClearAdvance={handleClearAdvanceSelection}
+          onAdvanceToggle={handleToggleAdvance}
           onToggle={handleToggleSelection}
           onClose={handleClosePayment}
           onConfirm={handleProcessPayment}
