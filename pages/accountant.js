@@ -4155,71 +4155,6 @@ const resolveTransactionMonthLabel = (entry) => {
     }
   };
 
-  const handleCheckDues = (student) => {
-    if (!student) return;
-    if (!feeRequestEntriesLookup || feeRequestEntriesLookup.size === 0) {
-      triggerToast('No fee records available yet.', 'info');
-      return;
-    }
-
-    const normalizeKey = (value) => (value ? `${value}`.trim().toLowerCase() : '');
-    const studentKeys = new Set(
-      [student.studentId, student.id, student.name, student.student_doc_id]
-        .map(normalizeKey)
-        .filter(Boolean),
-    );
-
-    const seen = new Set();
-    const matchingEntries = [];
-    studentKeys.forEach((key) => {
-      const entries = feeRequestEntriesLookup.get(key) || [];
-      entries.forEach((entry) => {
-        if (seen.has(entry.id)) return;
-        seen.add(entry.id);
-        matchingEntries.push(entry);
-      });
-    });
-
-    if (!matchingEntries.length) {
-      triggerToast(`No fee records found for ${student.name || 'this student'}.`, 'info');
-      return;
-    }
-
-    let tone = 'success';
-    const statusSet = new Set();
-    let outstandingAmount = 0;
-    matchingEntries.forEach((entry) => {
-      const status = entry.statusLabel || 'Pending';
-      statusSet.add(status);
-      const normalizedStatus = status.toLowerCase();
-      if (normalizedStatus === 'overdue') {
-        tone = 'error';
-      } else if (normalizedStatus === 'pending' && tone !== 'error') {
-        tone = 'info';
-      }
-      const balance = Number(entry.balance || 0);
-      if (balance > 0) {
-        outstandingAmount += balance;
-      }
-    });
-
-    const statusList = Array.from(statusSet);
-    const parts = [];
-    if (outstandingAmount > 0) {
-      parts.push(`Outstanding: ₹${outstandingAmount.toLocaleString('en-IN')}`);
-    }
-    if (statusList.length > 0) {
-      parts.push(`Statuses: ${statusList.join(', ')}`);
-    }
-
-    if (!parts.length) {
-      triggerToast(`All dues cleared for ${student.name || 'this student'}.`, 'success');
-      return;
-    }
-
-    triggerToast(`${student.name || 'Student'} · ${parts.join(' · ')}`, tone);
-  };
-
   const openFeeReportDetail = (student) => {
     if (!student) return;
     resetMarkPaidContext();
@@ -4252,8 +4187,9 @@ const resolveTransactionMonthLabel = (entry) => {
       <Head>
         <title>Accountant Dashboard · EL-NODE Pay</title>
       </Head>
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
+      {activeSection === 'fees' && (
+        <header className="border-b border-slate-200 bg-white">
+          <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
           <div className="flex items-start gap-3">
             <Image src="/elnode.png" alt="EL-NODE Pay logo" width={48} height={48} priority />
             <div>
@@ -4344,7 +4280,8 @@ const resolveTransactionMonthLabel = (entry) => {
             </button>
           </div>
         </div>
-      </header>
+        </header>
+      )}
 
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="flex flex-wrap gap-3">
@@ -4641,7 +4578,7 @@ const resolveTransactionMonthLabel = (entry) => {
           </section>
         )}
 
-        {activeTab === 'students' && (
+        {activeSection === 'fees' && activeTab === 'students' && (
           <section className="mt-8 space-y-6">
             <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -4668,15 +4605,9 @@ const resolveTransactionMonthLabel = (entry) => {
               <div className="mt-6">
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {filteredStudents.map((student) => {
-                    const balance = Number(student.balance ?? student.fee_amount ?? 0);
-                    const hasOutstanding = balance > 0;
-                    const statusLabel = hasOutstanding ? student.status || 'Pending' : 'Paid';
                     const advanceNotice = buildAdvancePlanNotice(student);
                     const isSelected = selectedStudentId === student.id;
-                    const parentName = student.parent_name || student.parentName || 'Parent';
-                    const parentEmail = student.parent_email || '—';
-                    const dueDate = parseDateValue(student.due_date);
-                    const dueDateLabel = dueDate ? dueDate.toLocaleDateString('en-IN') : 'Not set';
+                    const statusLabel = student.status || 'Pending';
                     return (
                       <div
                         key={student.id}
@@ -4701,55 +4632,28 @@ const resolveTransactionMonthLabel = (entry) => {
                               <p className="text-xs font-semibold text-emerald-600">{advanceNotice}</p>
                             )}
                           </div>
-                          <div className="flex flex-col items-end gap-2">
-                            <span
-                              className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
-                                statusBadgeClasses[statusLabel] || 'bg-slate-100 text-slate-600'
-                              }`}
-                            >
-                              {statusLabel}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleOpenStudentActions(student)}
-                              className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
-                            >
-                              Manage
-                            </button>
-                          </div>
-                        </div>
-                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
-                            <p className="text-xs text-slate-500">Balance</p>
-                            <p
-                              className={`mt-1 text-2xl font-semibold ${
-                                hasOutstanding ? 'text-rose-600' : 'text-emerald-600'
-                              }`}
-                            >
-                              ₹{balance.toLocaleString('en-IN')}
-                            </p>
-                            <p className="mt-1 text-xs text-slate-500">Due date: {dueDateLabel}</p>
-                          </div>
-                          <div className="rounded-2xl border border-slate-100 bg-white p-4">
-                            <p className="text-xs text-slate-500">Parent Contact</p>
-                            <p className="mt-1 text-sm font-semibold text-slate-900">{parentName}</p>
-                            <p className="text-xs text-slate-500">{parentEmail}</p>
-                          </div>
+                          <span
+                            className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${
+                              statusBadgeClasses[statusLabel] || 'bg-slate-100 text-slate-600'
+                            }`}
+                          >
+                            {statusLabel}
+                          </span>
                         </div>
                         <div className="mt-4 flex flex-wrap gap-3">
                           <button
                             type="button"
-                            onClick={() => handleCheckDues(student)}
+                            onClick={() => handleOpenStudentActions(student)}
                             className="rounded-full border border-cardinal px-4 py-2 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
                           >
-                            Check Dues
+                            Manage
                           </button>
                           <button
                             type="button"
-                            onClick={() => openFeeReportDetail(student)}
+                            onClick={() => openHistory(student)}
                             className="rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-100"
                           >
-                            Fee Report
+                            View History
                           </button>
                         </div>
                       </div>
