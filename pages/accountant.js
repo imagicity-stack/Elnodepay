@@ -4195,8 +4195,9 @@ const resolveTransactionMonthLabel = (entry) => {
       <Head>
         <title>Accountant Dashboard · EL-NODE Pay</title>
       </Head>
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
+      {activeSection === 'fees' && (
+        <header className="border-b border-slate-200 bg-white">
+          <div className="mx-auto flex max-w-7xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
           <div className="flex items-start gap-3">
             <Image src="/elnode.png" alt="EL-NODE Pay logo" width={48} height={48} priority />
             <div>
@@ -4295,7 +4296,8 @@ const resolveTransactionMonthLabel = (entry) => {
             </button>
           </div>
         </div>
-      </header>
+        </header>
+      )}
 
 
       <main className="mx-auto max-w-7xl px-6 py-8">
