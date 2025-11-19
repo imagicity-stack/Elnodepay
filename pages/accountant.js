@@ -4194,6 +4194,15 @@ const resolveTransactionMonthLabel = (entry) => {
   }
 
   const isFinanceSection = activeSection === 'finances';
+  const headerCopy = isFinanceSection
+    ? {
+        title: 'Finance Workspace',
+        description: 'Monitor expense ledgers, inflows, and outflows.',
+      }
+    : {
+        title: 'Accountant Dashboard',
+        description: 'Bird’s-eye view of fee collections and student payments.',
+      };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -4205,10 +4214,8 @@ const resolveTransactionMonthLabel = (entry) => {
           <div className="flex items-start gap-3">
             <Image src="/elnode.png" alt="EL-NODE Pay logo" width={48} height={48} priority />
             <div>
-              <h1 className="text-2xl font-semibold text-slate-900">Accountant Dashboard</h1>
-              <p className="text-sm text-slate-600">
-                Bird’s-eye view of fee collections and student payments.
-              </p>
+              <h1 className="text-2xl font-semibold text-slate-900">{headerCopy.title}</h1>
+              <p className="text-sm text-slate-600">{headerCopy.description}</p>
             </div>
           </div>
           <div
@@ -4300,10 +4307,7 @@ const resolveTransactionMonthLabel = (entry) => {
             </button>
           </div>
         </div>
-        </header>
-      )}
-
-
+      </header>
 
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="flex flex-wrap gap-3">
