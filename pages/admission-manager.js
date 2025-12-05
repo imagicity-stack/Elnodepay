@@ -27,29 +27,6 @@ const NAV_TABS = [
   { id: 'settings', label: 'Settings' },
 ];
 
-const MobileTabScroller = ({ tabs = [], activeTab, onChange }) => {
-  if (!tabs.length) return null;
-
-  return (
-    <div className="flex gap-2 overflow-x-auto pb-4 sm:hidden" role="tablist" aria-label="Admissions navigation">
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          onClick={() => onChange(tab.id)}
-          className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition ${
-            activeTab === tab.id ? 'bg-cardinal text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-          }`}
-          role="tab"
-          aria-selected={activeTab === tab.id}
-        >
-          {tab.label}
-        </button>
-      ))}
-    </div>
-  );
-};
-
 const CLASS_OPTIONS = ['Nursery', 'UKG', 'LKG', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
 const createDefaultInquiryForm = (activeAcademicYear) => ({
@@ -1677,10 +1654,6 @@ export default function AdminManagerPortal() {
             </div>
           </div>
         </header>
-
-      <div className="mx-auto max-w-6xl px-4 sm:hidden">
-        <MobileTabScroller tabs={NAV_TABS} activeTab={activeTab} onChange={setActiveTab} />
-      </div>
 
       <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
         {activeTab === 'new' && (
