@@ -159,9 +159,9 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
     onSubmit(payload, () => setForm(createDefaultInquiryForm(activeAcademicYear)));
   };
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+    return (
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Student Information</h3>
@@ -370,6 +370,7 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
               rows={3}
             />
           </div>
+
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Communication Preference</h3>
@@ -386,18 +387,18 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
             </div>
           </div>
         </div>
-      </div>
-      <div className="flex justify-end">
-        <button
-          type="submit"
-          disabled={submitting}
-          className="flex items-center gap-2 rounded-xl bg-cardinal px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-cardinal/90 disabled:opacity-60"
-        >
-          {submitting ? 'Saving inquiry...' : 'Create Inquiry'}
-        </button>
-      </div>
-    </form>
-  );
+
+        <div className="flex justify-end">
+          <button
+            type="submit"
+            disabled={submitting}
+            className="flex items-center gap-2 rounded-xl bg-cardinal px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-cardinal/90 disabled:opacity-60"
+          >
+            {submitting ? 'Saving inquiry...' : 'Create Inquiry'}
+          </button>
+        </div>
+      </form>
+    );
 };
 
 const InquiryDetail = ({ inquiry, payments, timelineEntries, onAddNote, onEdit, onInitiatePayment }) => {
