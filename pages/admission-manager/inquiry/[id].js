@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Head from 'next/head';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { onAuthStateChanged } from 'firebase/auth';
 import jsPDF from 'jspdf';
@@ -203,15 +204,15 @@ const InquiryProfilePage = () => {
   const { loading } = useAdmissionGuard();
   const [inquiry, setInquiry] = useState(null);
 
-  const loadInquiry = async () => {
+  const loadInquiry = useCallback(async () => {
     if (!id) return;
     const data = await fetchInquiry(id);
     setInquiry(data);
-  };
+  }, [id]);
 
   useEffect(() => {
     loadInquiry();
-  }, [id]);
+  }, [loadInquiry]);
 
   const handleSave = async () => {
     await saveInquiry(id, inquiry);
@@ -303,9 +304,9 @@ const InquiryProfilePage = () => {
             <h1 className="text-3xl font-semibold text-slate-900">{inquiry.studentName}</h1>
           </div>
           <div className="flex gap-2 text-sm font-semibold text-cardinal">
-            <a href="/admission-manager/inquiries" className="hover:underline">
+            <Link href="/admission-manager/inquiries" className="hover:underline">
               Back to list
-            </a>
+            </Link>
             <button onClick={handleSave} className="rounded-xl bg-cardinal px-3 py-2 text-white shadow hover:bg-cardinal/90">
               Save changes
             </button>

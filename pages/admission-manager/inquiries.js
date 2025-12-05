@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Head from 'next/head';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { onAuthStateChanged } from 'firebase/auth';
 import Filters from '../../components/Filters';
@@ -34,19 +35,19 @@ const InquiryListPage = () => {
   const [search, setSearch] = useState('');
   const [inquiries, setInquiries] = useState([]);
 
-  const load = async () => {
-    const data = await fetchInquiries(
-      {
-        ...filters,
-        dateFrom: filters.dateFrom ? new Date(filters.dateFrom) : undefined,
-        dateTo: filters.dateTo ? new Date(filters.dateTo) : undefined,
-      },
-      search,
-    );
-    setInquiries(data);
-  };
-
   useEffect(() => {
+    const load = async () => {
+      const data = await fetchInquiries(
+        {
+          ...filters,
+          dateFrom: filters.dateFrom ? new Date(filters.dateFrom) : undefined,
+          dateTo: filters.dateTo ? new Date(filters.dateTo) : undefined,
+        },
+        search,
+      );
+      setInquiries(data);
+    };
+
     load();
   }, [filters, search]);
 
@@ -63,9 +64,9 @@ const InquiryListPage = () => {
             <p className="text-xs uppercase tracking-wide text-slate-500">Admission Manager Portal</p>
             <h1 className="text-3xl font-semibold text-slate-900">Inquiry list</h1>
           </div>
-          <a href="/admission-manager" className="text-sm font-semibold text-cardinal hover:underline">
+          <Link href="/admission-manager" className="text-sm font-semibold text-cardinal hover:underline">
             Back to dashboard
-          </a>
+          </Link>
         </div>
         <div className="mt-4">
           <Filters onChange={setFilters} />

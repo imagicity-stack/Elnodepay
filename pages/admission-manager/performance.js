@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Head from 'next/head';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { onAuthStateChanged } from 'firebase/auth';
 import PerformanceCard from '../../components/PerformanceCard';
@@ -48,9 +49,9 @@ const PerformancePage = () => {
             <p className="text-xs uppercase tracking-wide text-slate-500">Admission Manager Portal</p>
             <h1 className="text-3xl font-semibold text-slate-900">Team performance</h1>
           </div>
-          <a href="/admission-manager" className="text-sm font-semibold text-cardinal hover:underline">
+          <Link href="/admission-manager" className="text-sm font-semibold text-cardinal hover:underline">
             Back to dashboard
-          </a>
+          </Link>
         </div>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {stats.map((entry) => (

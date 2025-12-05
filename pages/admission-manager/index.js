@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Head from 'next/head';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
@@ -49,6 +50,7 @@ const DashboardCard = ({ label, value, accent }) => (
 
 const AdmissionDashboard = () => {
   const { loading } = useAdmissionGuard();
+  const router = useRouter();
   const [analytics, setAnalytics] = useState({});
   const [pipeline, setPipeline] = useState({});
   const [notifications, setNotifications] = useState([]);
@@ -82,18 +84,18 @@ const AdmissionDashboard = () => {
             <h1 className="text-3xl font-semibold text-slate-900">Dashboard</h1>
           </div>
           <div className="flex gap-2 text-sm font-semibold text-cardinal">
-            <a href="/admission-manager/inquiries" className="hover:underline">
+            <Link href="/admission-manager/inquiries" className="hover:underline">
               Inquiry list
-            </a>
-            <a href="/admission-manager/performance" className="hover:underline">
+            </Link>
+            <Link href="/admission-manager/performance" className="hover:underline">
               Team performance
-            </a>
-            <a href="/admission-manager/bulk-actions" className="hover:underline">
+            </Link>
+            <Link href="/admission-manager/bulk-actions" className="hover:underline">
               Bulk actions
-            </a>
-            <a href="/admission-manager/settings" className="hover:underline">
+            </Link>
+            <Link href="/admission-manager/settings" className="hover:underline">
               Integration settings
-            </a>
+            </Link>
           </div>
         </div>
 
@@ -109,12 +111,12 @@ const AdmissionDashboard = () => {
         <div className="mt-8">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold text-slate-900">Conversion pipeline</h2>
-            <a href="/admission-manager/inquiries" className="text-sm font-semibold text-cardinal hover:underline">
+            <Link href="/admission-manager/inquiries" className="text-sm font-semibold text-cardinal hover:underline">
               View inquiry list
-            </a>
+            </Link>
           </div>
           <div className="mt-4">
-            <PipelineBoard data={pipeline} onMove={handleMove} onOpen={(id) => (window.location.href = `/admission-manager/inquiry/${id}`)} />
+            <PipelineBoard data={pipeline} onMove={handleMove} onOpen={(id) => router.push(`/admission-manager/inquiry/${id}`)} />
           </div>
         </div>
 

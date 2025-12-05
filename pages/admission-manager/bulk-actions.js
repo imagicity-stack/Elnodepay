@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import Head from 'next/head';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
 import { onAuthStateChanged } from 'firebase/auth';
 import { auth } from '../../lib/firebase';
@@ -80,9 +81,9 @@ const BulkActionsPage = () => {
             <p className="text-xs uppercase tracking-wide text-slate-500">Admission Manager Portal</p>
             <h1 className="text-3xl font-semibold text-slate-900">Bulk actions</h1>
           </div>
-          <a href="/admission-manager" className="text-sm font-semibold text-cardinal hover:underline">
+          <Link href="/admission-manager" className="text-sm font-semibold text-cardinal hover:underline">
             Back to dashboard
-          </a>
+          </Link>
         </div>
 
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
