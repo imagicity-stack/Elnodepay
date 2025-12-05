@@ -17,8 +17,8 @@ const useAdmissionGuard = () => {
         router.push('/unauthorized');
         return;
       }
-      const roles = await fetchUserRole(user.uid);
-      if (!roles.includes('admission_manager')) {
+      const role = await fetchUserRole(user.uid);
+      if (role !== 'admission_manager') {
         router.push('/unauthorized');
         return;
       }
