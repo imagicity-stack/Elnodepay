@@ -2229,11 +2229,16 @@ const resolveTransactionMonthLabel = (entry) => {
 
   const filteredPaymentsByMode = useMemo(() => {
     const safePayments = Array.isArray(payments) ? payments : [];
+    const sortedPayments = [...safePayments].sort((a, b) => {
+      const dateA = parseDateValue(a?.date)?.getTime() || 0;
+      const dateB = parseDateValue(b?.date)?.getTime() || 0;
+      return dateB - dateA;
+    });
     if (paymentModeFilter === 'All') {
-      return safePayments;
+      return sortedPayments;
     }
     const normalizedFilter = paymentModeFilter.toLowerCase();
-    return safePayments.filter(
+    return sortedPayments.filter(
       (payment) => (payment.mode || 'Online').toLowerCase() === normalizedFilter,
     );
   }, [payments, paymentModeFilter]);
@@ -3907,11 +3912,41 @@ const resolveTransactionMonthLabel = (entry) => {
       const selectedStudent = manualEntryForm.studentId
         ? students.find((student) => student.id === manualEntryForm.studentId)
         : null;
+      const parentContact = normaliseParentContact(selectedStudent || {});
+      const safeStudent = selectedStudent
+        ? { ...selectedStudent, ...parentContact }
+        : {
+            id: 'misc-income',
+            studentId: 'misc-income',
+            name: 'Misc Income',
+            class: '',
+            parent_uid: '',
+            parent_email: '',
+            parent_phone: '',
+          };
+      const entryDate = manualEntryForm.date ? new Date(manualEntryForm.date) : new Date();
+      const manualTransactionId =
+        manualEntryForm.paymentMode === 'Online' ? 'manual-entry' : 'manual';
+      await addDoc(collection(db, 'payments'), {
+        studentId: safeStudent.studentId || safeStudent.id,
+        student_name: safeStudent.name,
+        class: safeStudent.class,
+        parent_uid: safeStudent.parent_uid || '',
+        parent_email: safeStudent.parent_email || '',
+        parent_phone: safeStudent.parent_phone || '',
+        amount: amountValue,
+        mode: manualEntryForm.paymentMode,
+        date: entryDate,
+        term: settingsState.currentTerm || '',
+        fee_type: manualEntryForm.feeType,
+        status: 'Success',
+        transaction_id: manualTransactionId,
+      });
       await logTransactionEntry({
         student: selectedStudent || null,
         amount: amountValue,
         mode: manualEntryForm.paymentMode,
-        transactionId: manualEntryForm.paymentMode === 'Online' ? 'manual-entry' : 'manual',
+        transactionId: manualTransactionId,
         status: 'Paid',
         feeType: manualEntryForm.feeType,
         notes: manualEntryForm.notes,
