@@ -1443,6 +1443,35 @@ const resolveTransactionMonthLabel = (entry) => {
     return getMonthMeta(entry.date).label;
   };
 
+  const normaliseParentContact = (student = {}) => {
+    const rawEmail = student.parent_email || student.parentEmail || student.email || '';
+    const parentEmail = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : '';
+    const parentPhone = student.parent_phone || student.parentPhone || student.phone || '';
+    const parentUid = student.parent_uid || student.parentUid || '';
+    return { parent_email: parentEmail, parent_phone: parentPhone, parent_uid: parentUid };
+  };
+
+  const resolveOutstandingForStudent = useCallback(
+    (student) => {
+      if (!student) return 0;
+      const studentKeys = [student.id, student.studentId, student.student_id]
+        .filter(Boolean)
+        .map((value) => `${value}`);
+      let balanceFromRequests = 0;
+      feeRequests.forEach((request) => {
+        const requestKeys = [request.student_doc_id, request.studentId, request.student_id]
+          .filter(Boolean)
+          .map((value) => `${value}`);
+        const hasMatch = requestKeys.some((key) => studentKeys.includes(key));
+        if (!hasMatch) return;
+        balanceFromRequests += Number(request.balance ?? request.amount_total ?? 0);
+      });
+      const studentBalance = Number(student.balance ?? student.fee_amount ?? 0);
+      return balanceFromRequests > 0 ? balanceFromRequests : studentBalance;
+    },
+    [feeRequests],
+  );
+
   const logTransactionEntry = async ({
     student,
     amount,
@@ -1457,7 +1486,13 @@ const resolveTransactionMonthLabel = (entry) => {
     recordedBy,
     date,
   }) => {
-    const safeStudent = student || {
+    const normalizedStudent = student
+      ? {
+          ...student,
+          ...normaliseParentContact(student),
+        }
+      : null;
+    const safeStudent = normalizedStudent || {
       id: 'misc-income',
       studentId: 'misc-income',
       name: 'Misc Income',
@@ -3644,7 +3679,7 @@ const resolveTransactionMonthLabel = (entry) => {
   const completeMarkPaid = async (student, mode, transactionId = '') => {
     if (!student) return;
     const normalizedMode = mode === 'Online' ? 'Online' : 'Cash';
-    const amountToClear = Number(student.balance ?? student.fee_amount ?? 0);
+    const amountToClear = resolveOutstandingForStudent(student);
     if (amountToClear <= 0) {
       triggerToast('No outstanding balance for this student.', 'error');
       resetMarkPaidContext();
@@ -3658,14 +3693,18 @@ const resolveTransactionMonthLabel = (entry) => {
         status: 'Paid',
         updated_at: serverTimestamp(),
       });
+      const parentContact = normaliseParentContact(student);
       await addDoc(collection(db, 'payments'), {
         studentId: student.studentId || student.id,
+        student_doc_id: student.id,
         student_name: student.name,
         class: student.class,
-        parent_uid: student.parent_uid || '',
-        parent_email: student.parent_email || '',
+        parent_uid: parentContact.parent_uid,
+        parent_email: parentContact.parent_email,
+        parent_phone: parentContact.parent_phone,
         amount: amountToClear,
         mode: normalizedMode,
+        payment_mode: normalizedMode,
         date: serverTimestamp(),
         term: settingsState.currentTerm || '',
         fee_type: 'Manual Adjustment',
