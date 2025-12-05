@@ -46,6 +46,7 @@ import { Bar, Line, Pie } from 'react-chartjs-2';
 import { auth, db } from '../lib/firebase';
 import { getCollectionsInRange, groupByMonth, makeExpenseId, makeVoucherNo } from '../lib/reports';
 import { toCSV } from '../lib/csv';
+import SalaryModule from '../components/SalaryModule';
 
 ChartJS.register(
   ArcElement,
@@ -83,6 +84,10 @@ const FINANCE_NAV_ITEMS = [
   { id: 'reports', label: 'Reports' },
 ];
 const FINANCE_TAB_IDS = FINANCE_NAV_ITEMS.map((item) => item.id);
+const SALARY_NAV_ITEMS = [
+  { id: 'salary', label: 'Salary' },
+];
+const SALARY_TAB_IDS = SALARY_NAV_ITEMS.map((item) => item.id);
 
 const SCHOOL_NAME = 'Elden Heights School - Silwar Hazaribagh';
 
@@ -3846,6 +3851,11 @@ const resolveTransactionMonthLabel = (entry) => {
       if (!FINANCE_TAB_IDS.includes(activeTab)) {
         setActiveTab('ledger');
       }
+    } else if (sectionId === 'salary') {
+      setActiveSection('salary');
+      if (!SALARY_TAB_IDS.includes(activeTab)) {
+        setActiveTab('salary');
+      }
     } else {
       setActiveSection('fees');
       if (!FEE_SECTION_TAB_IDS.includes(activeTab)) {
@@ -4245,15 +4255,22 @@ const resolveTransactionMonthLabel = (entry) => {
   }
 
   const isFinanceSection = activeSection === 'finances';
+  const isSalarySection = activeSection === 'salary';
   const headerCopy = isFinanceSection
     ? {
         title: 'Finance Workspace',
         description: 'Monitor expense ledgers, inflows, and outflows.',
       }
-    : {
-        title: 'Accountant Dashboard',
-        description: 'Bird’s-eye view of fee collections and student payments.',
-      };
+    : isSalarySection
+      ? {
+          title: 'Salary Workspace',
+          description: 'Process payroll, configure structures, and download slips.',
+        }
+      : {
+          title: 'Accountant Dashboard',
+          description: 'Bird’s-eye view of fee collections and student payments.',
+        };
+  const showFeeActions = activeSection === 'fees';
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -4271,10 +4288,10 @@ const resolveTransactionMonthLabel = (entry) => {
           </div>
           <div
             className={`flex flex-wrap items-center gap-3 ${
-              isFinanceSection ? 'justify-end md:justify-end' : ''
+              activeSection !== 'fees' ? 'justify-end md:justify-end' : ''
             }`}
           >
-            {!isFinanceSection && (
+            {showFeeActions && (
               <>
                 <button
                   type="button"
@@ -4364,6 +4381,7 @@ const resolveTransactionMonthLabel = (entry) => {
         <div className="flex flex-wrap gap-3">
           {[
             { id: 'fees', label: 'Fees' },
+            { id: 'salary', label: 'Salary' },
             { id: 'finances', label: 'Finances' },
           ].map((section) => (
             <button
@@ -4381,7 +4399,12 @@ const resolveTransactionMonthLabel = (entry) => {
           ))}
         </div>
         <nav className="mt-4 flex flex-wrap gap-3">
-          {(activeSection === 'finances' ? FINANCE_NAV_ITEMS : FEE_NAV_ITEMS).map((tab) => (
+          {(activeSection === 'finances'
+            ? FINANCE_NAV_ITEMS
+            : activeSection === 'salary'
+              ? SALARY_NAV_ITEMS
+              : FEE_NAV_ITEMS
+          ).map((tab) => (
             <button
               key={tab.id}
               type="button"
@@ -4396,6 +4419,8 @@ const resolveTransactionMonthLabel = (entry) => {
             </button>
           ))}
         </nav>
+
+        {activeSection === 'salary' && activeTab === 'salary' && <SalaryModule processorUid={user?.uid} />}
 
         {activeTab === 'overview' && (
           <section className="mt-8 space-y-8">
