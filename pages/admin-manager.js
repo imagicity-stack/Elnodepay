@@ -627,6 +627,14 @@ export default function AdminManagerPortal() {
   );
 
   useEffect(() => {
+    if (!router.isReady) return;
+    const { inquiryId } = router.query || {};
+    if (inquiryId && inquiryId !== selectedInquiryId) {
+      setSelectedInquiryId(String(inquiryId));
+    }
+  }, [router.isReady, router.query, selectedInquiryId]);
+
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
         setAuthChecked(true);
