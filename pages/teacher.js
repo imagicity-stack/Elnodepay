@@ -127,22 +127,31 @@ const TeacherDashboard = () => {
         return;
       }
 
+      // Wait for the Firestore role document before deciding access. No custom claims are used.
       setRoleState({ loading: true, error: null });
-      const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      const role = userDoc.exists() ? (userDoc.data()?.role || '').toString().toLowerCase() : '';
 
-      if (role === 'teacher') {
-        setUser(currentUser);
-        setRoleState({ loading: false, error: null });
+      try {
+        const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+        const role = userDoc.exists() ? (userDoc.data()?.role || '').toString().toLowerCase().trim() : '';
+
+        if (role === 'teacher') {
+          setUser(currentUser);
+          setRoleState({ loading: false, error: null });
+          setAuthChecked(true);
+          return;
+        }
+
+        setUser(null);
+        setRoleState({ loading: false, error: 'Role not assigned. Contact administrator.' });
+        await signOut(auth);
+        router.push('/unauthorized');
+      } catch (error) {
+        console.error('Unable to verify teacher role', error);
+        setUser(null);
+        setRoleState({ loading: false, error: 'Unable to verify role. Please try again.' });
+      } finally {
         setAuthChecked(true);
-        return;
       }
-
-      setUser(null);
-      setRoleState({ loading: false, error: 'Role not assigned. Contact administrator.' });
-      setAuthChecked(true);
-      await signOut(auth);
-      router.push('/unauthorized');
     });
     return () => unsub();
   }, [router]);
