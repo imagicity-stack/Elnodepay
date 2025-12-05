@@ -161,8 +161,7 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="grid gap-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6 lg:grid-cols-3">
-        <div className="space-y-4 lg:col-span-2">
+      <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Student Information</h3>
@@ -371,21 +370,20 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
               rows={3}
             />
           </div>
-        </div>
-
-        <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Communication Preference</h3>
-            <p className="mt-2 text-xs text-slate-600">We will reach out using the channel they prefer.</p>
-            <div className="mt-4 space-y-3">
-              <p className="text-sm font-semibold text-slate-900">{form.preferredContact || 'Pending preference'}</p>
-              <p className="text-xs text-slate-500">Best time: {form.bestTime || 'Not shared yet'}</p>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Communication Preference</h3>
+              <p className="mt-2 text-xs text-slate-600">We will reach out using the channel they prefer.</p>
+              <div className="mt-4 space-y-3">
+                <p className="text-sm font-semibold text-slate-900">{form.preferredContact || 'Pending preference'}</p>
+                <p className="text-xs text-slate-500">Best time: {form.bestTime || 'Not shared yet'}</p>
+              </div>
             </div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Inquiry Intent</h3>
-            <p className="mt-2 text-sm font-semibold text-slate-900">{form.purpose || 'Awaiting details'}</p>
-            <p className="text-xs text-slate-500">Source: {form.inquirySource || 'Not captured'}</p>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Inquiry Intent</h3>
+              <p className="mt-2 text-sm font-semibold text-slate-900">{form.purpose || 'Awaiting details'}</p>
+              <p className="text-xs text-slate-500">Source: {form.inquirySource || 'Not captured'}</p>
+            </div>
           </div>
         </div>
       </div>
@@ -652,14 +650,38 @@ const InquiryDetail = ({ inquiry, payments, timelineEntries, onAddNote, onEdit, 
   );
 };
 
-const PaymentPopup = ({ open, inquiry, defaultAmount, onClose, onConfirm, processing }) => {
+const PaymentPopup = ({ open, inquiry, defaultAmount = 500, onClose, onConfirm, processing }) => {
   const [amount, setAmount] = useState(defaultAmount || 0);
+  const [mode, setMode] = useState('online');
+  const [onlineMethod, setOnlineMethod] = useState('now');
+  const [transactionId, setTransactionId] = useState('');
+  const [cashConfirmed, setCashConfirmed] = useState('');
 
   useEffect(() => {
     setAmount(defaultAmount || 0);
-  }, [defaultAmount, inquiry]);
+    setMode('online');
+    setOnlineMethod('now');
+    setTransactionId('');
+    setCashConfirmed('');
+  }, [defaultAmount, inquiry, open]);
 
   if (!open || !inquiry) return null;
+
+  const numericAmount = Number(amount);
+  const validAmount = Number.isFinite(numericAmount) && numericAmount > 0;
+  const canSubmit =
+    mode === 'online'
+      ? onlineMethod === 'website'
+        ? validAmount && transactionId.trim().length > 0
+        : validAmount
+      : validAmount && cashConfirmed === 'yes';
+
+  const primaryLabel =
+    processing || !canSubmit
+      ? 'Processing...'
+      : mode === 'online' && onlineMethod === 'now'
+        ? 'Start payment'
+        : 'Log payment';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-8">
@@ -678,20 +700,113 @@ const PaymentPopup = ({ open, inquiry, defaultAmount, onClose, onConfirm, proces
           </button>
         </div>
         <div className="px-6 py-5 text-sm text-slate-700">
-          <p className="text-sm text-slate-600">Enter the token amount to collect via Razorpay.</p>
-          <div className="mt-4">
-            <label className="text-xs font-semibold text-slate-500" htmlFor="token-amount">
-              Amount (INR)
+          <p className="text-sm text-slate-600">Choose how you want to collect the token.</p>
+
+          <div className="mt-4 space-y-2">
+            <label className="text-xs font-semibold text-slate-500" htmlFor="token-mode">
+              Collect token
             </label>
-            <input
-              id="token-amount"
-              type="number"
-              min="1"
-              value={amount}
-              onChange={(event) => setAmount(event.target.value)}
-              className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            />
+            <select
+              id="token-mode"
+              value={mode}
+              onChange={(event) => setMode(event.target.value)}
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            >
+              <option value="online">Online</option>
+              <option value="cash">Cash</option>
+            </select>
           </div>
+
+          {mode === 'online' && (
+            <div className="mt-4 space-y-3">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Online options</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setOnlineMethod('now')}
+                  className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${
+                    onlineMethod === 'now'
+                      ? 'border-cardinal bg-cardinal/10 text-cardinal'
+                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-cardinal/40'
+                  }`}
+                >
+                  Collect now (Razorpay)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOnlineMethod('website')}
+                  className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${
+                    onlineMethod === 'website'
+                      ? 'border-cardinal bg-cardinal/10 text-cardinal'
+                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-cardinal/40'
+                  }`}
+                >
+                  Logged via website
+                </button>
+              </div>
+            </div>
+          )}
+
+          {(mode === 'online' || mode === 'cash') && (
+            <div className="mt-4">
+              <label className="text-xs font-semibold text-slate-500" htmlFor="token-amount">
+                Amount (INR)
+              </label>
+              <input
+                id="token-amount"
+                type="number"
+                min="1"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+            </div>
+          )}
+
+          {mode === 'online' && onlineMethod === 'website' && (
+            <div className="mt-4">
+              <label className="text-xs font-semibold text-slate-500" htmlFor="transaction-id">
+                Enter transaction ID
+              </label>
+              <input
+                id="transaction-id"
+                value={transactionId}
+                onChange={(event) => setTransactionId(event.target.value)}
+                placeholder="Transaction reference"
+                className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+            </div>
+          )}
+
+          {mode === 'cash' && (
+            <div className="mt-4 space-y-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+              <p className="text-sm font-semibold text-amber-800">Are you sure you want to collect cash?</p>
+              <div className="flex flex-wrap items-center gap-4 text-xs font-semibold text-slate-700">
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="cash-confirm"
+                    value="yes"
+                    checked={cashConfirmed === 'yes'}
+                    onChange={(event) => setCashConfirmed(event.target.value)}
+                    className="h-4 w-4 rounded border-slate-300 text-cardinal focus:ring-cardinal/60"
+                  />
+                  Yes
+                </label>
+                <label className="inline-flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="cash-confirm"
+                    value="no"
+                    checked={cashConfirmed === 'no'}
+                    onChange={(event) => setCashConfirmed(event.target.value)}
+                    className="h-4 w-4 rounded border-slate-300 text-cardinal focus:ring-cardinal/60"
+                  />
+                  No
+                </label>
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex justify-end gap-2 border-t border-slate-200 px-6 py-4">
           <button
@@ -703,11 +818,19 @@ const PaymentPopup = ({ open, inquiry, defaultAmount, onClose, onConfirm, proces
           </button>
           <button
             type="button"
-            disabled={processing || !(Number(amount) > 0)}
-            onClick={() => onConfirm(Number(amount))}
+            disabled={processing || !canSubmit}
+            onClick={() =>
+              onConfirm({
+                mode,
+                onlineMethod,
+                amount: numericAmount,
+                transactionId: transactionId.trim(),
+                cashConfirmed: cashConfirmed === 'yes',
+              })
+            }
             className="rounded-lg bg-cardinal px-4 py-2 text-xs font-semibold text-white shadow hover:bg-cardinal/90 disabled:opacity-60"
           >
-            {processing ? 'Processing...' : 'Start payment'}
+            {primaryLabel}
           </button>
         </div>
       </div>
@@ -1284,8 +1407,87 @@ export default function AdminManagerPortal() {
   }, []);
 
   const handleProcessPayment = useCallback(
-    async (amount) => {
-      if (!paymentContext.inquiry || !user) return;
+    async ({ mode, onlineMethod, amount, transactionId, cashConfirmed }) => {
+      if (!paymentContext.inquiry || !user || !(Number(amount) > 0)) return;
+
+      if (mode === 'cash') {
+        if (!cashConfirmed) {
+          alert('Please confirm cash collection.');
+          return;
+        }
+        setPaymentProcessing(true);
+        try {
+          const inquiryRef = doc(db, 'inquiries', paymentContext.inquiry.id);
+          await addDoc(collection(db, 'payments'), {
+            inquiry_id: paymentContext.inquiry.id,
+            amount,
+            status: 'paid',
+            mode: 'Cash',
+            transaction_id: transactionId || `cash-${Date.now()}`,
+            method: 'cash',
+            date: serverTimestamp(),
+          });
+          await updateDoc(inquiryRef, {
+            status: 'registered',
+            tokenStatus: 'paid',
+          });
+          await addDoc(collection(inquiryRef, 'timeline'), {
+            message: 'Token payment recorded (cash)',
+            text: 'Token payment recorded (cash)',
+            type: 'payment',
+            userId: user.uid,
+            createdAt: serverTimestamp(),
+          });
+          alert('Cash token collection logged.');
+        } catch (error) {
+          console.error(error);
+          alert(error.message || 'Unable to log cash payment.');
+        } finally {
+          setPaymentProcessing(false);
+          setPaymentContext({ open: false, inquiry: null });
+        }
+        return;
+      }
+
+      if (mode === 'online' && onlineMethod === 'website') {
+        if (!transactionId) {
+          alert('Please enter the website transaction ID.');
+          return;
+        }
+        setPaymentProcessing(true);
+        try {
+          const inquiryRef = doc(db, 'inquiries', paymentContext.inquiry.id);
+          await addDoc(collection(db, 'payments'), {
+            inquiry_id: paymentContext.inquiry.id,
+            amount,
+            status: 'paid',
+            mode: 'Online',
+            method: 'website',
+            transaction_id: transactionId,
+            date: serverTimestamp(),
+          });
+          await updateDoc(inquiryRef, {
+            status: 'registered',
+            tokenStatus: 'paid',
+          });
+          await addDoc(collection(inquiryRef, 'timeline'), {
+            message: 'Token payment recorded (website)',
+            text: 'Token payment recorded (website)',
+            type: 'payment',
+            userId: user.uid,
+            createdAt: serverTimestamp(),
+          });
+          alert('Online payment logged with transaction ID.');
+        } catch (error) {
+          console.error(error);
+          alert(error.message || 'Unable to log online payment.');
+        } finally {
+          setPaymentProcessing(false);
+          setPaymentContext({ open: false, inquiry: null });
+        }
+        return;
+      }
+
       if (typeof window === 'undefined' || !window.Razorpay) {
         alert('Payment gateway is still loading. Please try again in a moment.');
         return;
@@ -1639,7 +1841,7 @@ export default function AdminManagerPortal() {
       <PaymentPopup
         open={paymentContext.open}
         inquiry={paymentContext.inquiry}
-        defaultAmount={5000}
+        defaultAmount={500}
         processing={paymentProcessing}
         onClose={() => setPaymentContext({ open: false, inquiry: null })}
         onConfirm={handleProcessPayment}
