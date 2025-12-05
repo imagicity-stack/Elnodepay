@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/router';
 import {
   arrayUnion,
+  addDoc,
   collection,
   doc,
   getDoc,
@@ -213,7 +214,7 @@ const ManualInquiryForm = ({ onSubmit, submitting }) => {
   );
 };
 
-const InquiryDetail = ({ inquiry, payments, onAddNote, onEdit, onInitiatePayment }) => {
+const InquiryDetail = ({ inquiry, payments, timelineEntries, onAddNote, onEdit, onInitiatePayment }) => {
   const [noteText, setNoteText] = useState('');
   const [editMode, setEditMode] = useState(false);
   const [editForm, setEditForm] = useState(inquiry || {});
@@ -243,8 +244,8 @@ const InquiryDetail = ({ inquiry, payments, onAddNote, onEdit, onInitiatePayment
     setEditForm((prev) => ({ ...prev, [name]: value }));
   };
 
-  const timelineEntries = Array.isArray(inquiry.timeline) ? inquiry.timeline : [];
   const notes = Array.isArray(inquiry.notes) ? inquiry.notes : [];
+  const displayTimeline = Array.isArray(timelineEntries) ? timelineEntries : [];
 
   return (
     <div className="space-y-6">
@@ -323,8 +324,8 @@ const InquiryDetail = ({ inquiry, payments, onAddNote, onEdit, onInitiatePayment
             <p className="text-sm font-semibold text-slate-900">Timeline</p>
           </div>
           <div className="mt-3 space-y-3">
-            {timelineEntries.length === 0 && <p className="text-xs text-slate-500">No timeline entries yet.</p>}
-            {timelineEntries
+            {displayTimeline.length === 0 && <p className="text-xs text-slate-500">No timeline entries yet.</p>}
+            {displayTimeline
               .slice()
               .sort((a, b) => {
                 const aDate = parseDate(a.createdAt)?.getTime() || 0;
@@ -610,6 +611,7 @@ export default function AdminManagerPortal() {
   const [inquiries, setInquiries] = useState([]);
   const [payments, setPayments] = useState([]);
   const [selectedInquiryId, setSelectedInquiryId] = useState(null);
+  const [timelineEntries, setTimelineEntries] = useState([]);
   const [creating, setCreating] = useState(false);
   const [paymentContext, setPaymentContext] = useState({ open: false, inquiry: null });
   const [paymentProcessing, setPaymentProcessing] = useState(false);
@@ -679,6 +681,20 @@ export default function AdminManagerPortal() {
     return () => unsub();
   }, [user]);
 
+  useEffect(() => {
+    if (!user || !selectedInquiryId) {
+      setTimelineEntries([]);
+      return undefined;
+    }
+    const timelineRef = collection(db, 'inquiries', selectedInquiryId, 'timeline');
+    const q = query(timelineRef, orderBy('createdAt', 'desc'));
+    const unsub = onSnapshot(q, (snapshot) => {
+      const entries = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setTimelineEntries(entries);
+    });
+    return () => unsub();
+  }, [selectedInquiryId, user]);
+
   const handleSignOut = useCallback(async () => {
     await signOut(auth);
     router.replace('/');
@@ -704,9 +720,11 @@ export default function AdminManagerPortal() {
         const inquiryId = await getNextInquiryId();
         const docRef = doc(collection(db, 'inquiries'), inquiryId);
         const timelineEntry = {
+          message: `Inquiry created manually by ${profile?.name || user.email}`,
           text: `Inquiry created manually by ${profile?.name || user.email}`,
           type: 'inquiry_created',
           actor: profile?.name || user.email,
+          userId: user.uid,
           createdAt: serverTimestamp(),
         };
         const noteEntry = form.notes
@@ -724,9 +742,9 @@ export default function AdminManagerPortal() {
           status: 'inquiry',
           tokenStatus: 'pending',
           createdAt: serverTimestamp(),
-          timeline: [timelineEntry],
           notes: noteEntry,
         });
+        await addDoc(collection(docRef, 'timeline'), timelineEntry);
         setSelectedInquiryId(docRef.id);
         setActiveTab('inquiry-list');
         reset();
@@ -746,11 +764,13 @@ export default function AdminManagerPortal() {
       const inquiryRef = doc(db, 'inquiries', selectedInquiry.id);
       await updateDoc(inquiryRef, {
         notes: arrayUnion({ text: note, author: profile?.name || user.email, createdAt: serverTimestamp() }),
-        timeline: arrayUnion({
-          text: `Note added by ${profile?.name || user.email}`,
-          type: 'note',
-          createdAt: serverTimestamp(),
-        }),
+      });
+      await addDoc(collection(inquiryRef, 'timeline'), {
+        message: `Note added by ${profile?.name || user.email}`,
+        text: `Note added by ${profile?.name || user.email}`,
+        type: 'note',
+        userId: user.uid,
+        createdAt: serverTimestamp(),
       });
     },
     [profile?.name, selectedInquiry, user],
@@ -768,11 +788,13 @@ export default function AdminManagerPortal() {
         studentName: updated.studentName || '',
         classApplied: updated.classApplied || '',
         updatedAt: serverTimestamp(),
-        timeline: arrayUnion({
-          text: `Inquiry updated by ${profile?.name || user.email}`,
-          type: 'update',
-          createdAt: serverTimestamp(),
-        }),
+      });
+      await addDoc(collection(inquiryRef, 'timeline'), {
+        message: `Inquiry updated by ${profile?.name || user.email}`,
+        text: `Inquiry updated by ${profile?.name || user.email}`,
+        type: 'update',
+        userId: user.uid,
+        createdAt: serverTimestamp(),
       });
     },
     [profile?.name, selectedInquiry, user],
@@ -932,11 +954,13 @@ export default function AdminManagerPortal() {
               await updateDoc(doc(db, 'inquiries', paymentContext.inquiry.id), {
                 status: 'registered',
                 tokenStatus: 'paid',
-                timeline: arrayUnion({
-                  text: 'Token payment received',
-                  type: 'payment',
-                  createdAt: serverTimestamp(),
-                }),
+              });
+              await addDoc(collection(db, 'inquiries', paymentContext.inquiry.id, 'timeline'), {
+                message: 'Token payment received',
+                text: 'Token payment received',
+                type: 'payment',
+                userId: user.uid,
+                createdAt: serverTimestamp(),
               });
               alert('Token payment received. Inquiry registered.');
             } catch (error) {
@@ -1076,6 +1100,7 @@ export default function AdminManagerPortal() {
               <InquiryDetail
                 inquiry={selectedInquiry}
                 payments={payments}
+                timelineEntries={timelineEntries}
                 onAddNote={handleAddNote}
                 onEdit={handleEditInquiry}
                 onInitiatePayment={handleInitiatePayment}

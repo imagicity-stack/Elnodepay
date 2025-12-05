@@ -236,26 +236,26 @@ async function markInquiryRegistered(idToken, { inquiryId, paymentId, amount }) 
   if (!inquiryId) {
     return;
   }
-  const inquiryDoc = await firestoreGetDocument(idToken, `inquiries/${inquiryId}`);
-  const existingTimeline = Array.isArray(inquiryDoc?.timeline) ? inquiryDoc.timeline : [];
-  const updatedTimeline = [
-    ...existingTimeline,
-    { text: 'Token payment received', type: 'payment', createdAt: timestampNow() },
-  ];
   const payload = {
     status: 'registered',
     tokenStatus: 'paid',
     token_payment_id: paymentId || '',
     token_amount: roundCurrency(amount),
     registered_at: timestampNow(),
-    timeline: updatedTimeline,
   };
   await firestoreUpdateDocument(
     idToken,
     `inquiries/${inquiryId}`,
     payload,
-    ['status', 'tokenStatus', 'token_payment_id', 'token_amount', 'registered_at', 'timeline'],
+    ['status', 'tokenStatus', 'token_payment_id', 'token_amount', 'registered_at'],
   );
+  await firestoreCreateDocument(idToken, `inquiries/${inquiryId}/timeline`, {
+    message: 'Token payment received',
+    text: 'Token payment received',
+    type: 'payment',
+    userId: 'system',
+    createdAt: timestampNow(),
+  });
 }
 
 async function updateStudentAccount(idToken, studentDocId, amountPaid) {
