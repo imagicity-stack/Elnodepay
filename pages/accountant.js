@@ -1457,7 +1457,16 @@ const resolveTransactionMonthLabel = (entry) => {
     recordedBy,
     date,
   }) => {
-    const safeStudent = student || {
+    const normalizedStudent = student
+      ? {
+          ...student,
+          parent_email:
+            student.parent_email || student.parentEmail || student.email || '',
+          parent_phone: student.parent_phone || student.parentPhone || student.phone || '',
+          parent_uid: student.parent_uid || student.parentUid || '',
+        }
+      : null;
+    const safeStudent = normalizedStudent || {
       id: 'misc-income',
       studentId: 'misc-income',
       name: 'Misc Income',
@@ -3658,12 +3667,16 @@ const resolveTransactionMonthLabel = (entry) => {
         status: 'Paid',
         updated_at: serverTimestamp(),
       });
+      const parentEmail = student.parent_email || student.parentEmail || student.email || '';
+      const parentUid = student.parent_uid || student.parentUid || '';
+      const parentPhone = student.parent_phone || student.parentPhone || student.phone || '';
       await addDoc(collection(db, 'payments'), {
         studentId: student.studentId || student.id,
         student_name: student.name,
         class: student.class,
-        parent_uid: student.parent_uid || '',
-        parent_email: student.parent_email || '',
+        parent_uid: parentUid,
+        parent_email: parentEmail,
+        parent_phone: parentPhone,
         amount: amountToClear,
         mode: normalizedMode,
         date: serverTimestamp(),
