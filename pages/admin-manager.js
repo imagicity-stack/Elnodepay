@@ -222,6 +222,14 @@ const InquiryDetail = ({ inquiry, payments, onAddNote, onEdit, onInitiatePayment
     setEditForm(inquiry || {});
   }, [inquiry]);
 
+  const latestPayment = useMemo(
+    () =>
+      inquiry
+        ? payments.find((payment) => payment.inquiry_id === inquiry.id || payment.inquiry_id === inquiry.inquiryId)
+        : null,
+    [payments, inquiry],
+  );
+
   if (!inquiry) {
     return (
       <div className="rounded-3xl border border-dashed border-slate-200 bg-white p-6 text-sm text-slate-500">
@@ -229,11 +237,6 @@ const InquiryDetail = ({ inquiry, payments, onAddNote, onEdit, onInitiatePayment
       </div>
     );
   }
-
-  const latestPayment = useMemo(
-    () => payments.find((payment) => payment.inquiry_id === inquiry.id || payment.inquiry_id === inquiry.inquiryId),
-    [payments, inquiry],
-  );
 
   const handleEditChange = (event) => {
     const { name, value } = event.target;
