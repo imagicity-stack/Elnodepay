@@ -26,21 +26,31 @@ const NAV_TABS = [
   { id: 'receipts', label: 'Receipts' },
 ];
 
-const defaultInquiryForm = {
+const CLASS_OPTIONS = ['Nursery', 'UKG', 'LKG', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+
+const createDefaultInquiryForm = (activeAcademicYear) => ({
   parentName: '',
   parentPhone: '',
   parentEmail: '',
   parentAddress: '',
+  parentRelationship: '',
   studentName: '',
-  gender: '',
   dob: '',
+  currentClass: '',
   classApplied: '',
-  academicYear: '',
+  academicYear: activeAcademicYear || '',
   inquirySource: 'Walk-in',
-  counselorName: '',
   notes: '',
   referenceName: '',
-};
+  city: '',
+  locality: '',
+  currentSchool: '',
+  board: '',
+  purpose: '',
+  preferredContact: '',
+  bestTime: '',
+  shortMessage: '',
+});
 
 const parseDate = (value) => {
   if (!value) return null;
@@ -64,8 +74,12 @@ const useRazorpayScript = () => {
   }, []);
 };
 
-const ManualInquiryForm = ({ onSubmit, submitting }) => {
-  const [form, setForm] = useState(defaultInquiryForm);
+const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademicYear }) => {
+  const [form, setForm] = useState(() => createDefaultInquiryForm(activeAcademicYear));
+
+  useEffect(() => {
+    setForm((prev) => ({ ...prev, academicYear: activeAcademicYear || prev.academicYear }));
+  }, [activeAcademicYear]);
 
   const handleChange = (event) => {
     const { name, value } = event.target;
@@ -74,131 +88,238 @@ const ManualInquiryForm = ({ onSubmit, submitting }) => {
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    onSubmit(form, () => setForm(defaultInquiryForm));
+    const payload = { ...form, notes: form.shortMessage || form.notes };
+    onSubmit(payload, () => setForm(createDefaultInquiryForm(activeAcademicYear)));
   };
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
-      <div className="grid gap-4 rounded-3xl border border-slate-200 bg-white p-6 shadow-sm md:grid-cols-2">
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Parent Details</h3>
-          <input
-            name="parentName"
-            value={form.parentName}
-            onChange={handleChange}
-            placeholder="Parent Name"
-            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            required
-          />
-          <input
-            name="parentPhone"
-            value={form.parentPhone}
-            onChange={handleChange}
-            placeholder="Parent Phone"
-            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            required
-          />
-          <input
-            type="email"
-            name="parentEmail"
-            value={form.parentEmail}
-            onChange={handleChange}
-            placeholder="Parent Email"
-            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-          />
-          <textarea
-            name="parentAddress"
-            value={form.parentAddress}
-            onChange={handleChange}
-            placeholder="Parent Address"
-            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            rows={3}
-          />
+      <div className="grid gap-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6 lg:grid-cols-3">
+        <div className="space-y-4 lg:col-span-2">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Student Information</h3>
+              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">Quick add</span>
+            </div>
+            <input
+              name="studentName"
+              value={form.studentName}
+              onChange={handleChange}
+              placeholder="Student name"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              required
+            />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <input
+                type="date"
+                name="dob"
+                value={form.dob}
+                onChange={handleChange}
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+              <input
+                name="currentClass"
+                value={form.currentClass}
+                onChange={handleChange}
+                placeholder="Current class"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <select
+                name="classApplied"
+                value={form.classApplied}
+                onChange={handleChange}
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              >
+                <option value="">Class applying for</option>
+                {CLASS_OPTIONS.map((classOption) => (
+                  <option key={classOption} value={classOption}>
+                    {classOption}
+                  </option>
+                ))}
+              </select>
+              <select
+                name="academicYear"
+                value={form.academicYear}
+                onChange={handleChange}
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              >
+                <option value="">Academic year for admission</option>
+                {academicYears.map((year) => (
+                  <option key={year} value={year} disabled={year !== activeAcademicYear}>
+                    {year} {year === activeAcademicYear ? '(current)' : '(inactive)'}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid gap-4 rounded-2xl border border-slate-100 bg-slate-50/60 p-4 sm:grid-cols-2">
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Parent / Guardian</h3>
+              <input
+                name="parentName"
+                value={form.parentName}
+                onChange={handleChange}
+                placeholder="Name"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                required
+              />
+              <input
+                name="parentPhone"
+                value={form.parentPhone}
+                onChange={handleChange}
+                placeholder="Mobile number"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                required
+              />
+              <input
+                type="email"
+                name="parentEmail"
+                value={form.parentEmail}
+                onChange={handleChange}
+                placeholder="Email"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+              <select
+                name="parentRelationship"
+                value={form.parentRelationship}
+                onChange={handleChange}
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              >
+                <option value="">Relationship to student</option>
+                <option value="Mother">Mother</option>
+                <option value="Father">Father</option>
+                <option value="Guardian">Guardian</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Basic Location</h3>
+              <input
+                name="city"
+                value={form.city}
+                onChange={handleChange}
+                placeholder="City"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+              <input
+                name="locality"
+                value={form.locality}
+                onChange={handleChange}
+                placeholder="Area or locality"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+              <textarea
+                name="parentAddress"
+                value={form.parentAddress}
+                onChange={handleChange}
+                placeholder="Full address (optional)"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-3 rounded-2xl border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Academic Snapshot</h3>
+              <input
+                name="currentSchool"
+                value={form.currentSchool}
+                onChange={handleChange}
+                placeholder="Current school name"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+              <input
+                name="board"
+                value={form.board}
+                onChange={handleChange}
+                placeholder="Board"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+            </div>
+
+            <div className="space-y-3 rounded-2xl border border-slate-200 p-4">
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Admission Intent</h3>
+              <input
+                name="purpose"
+                value={form.purpose}
+                onChange={handleChange}
+                placeholder="Purpose of inquiry"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <select
+                  name="preferredContact"
+                  value={form.preferredContact}
+                  onChange={handleChange}
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                >
+                  <option value="">Preferred contact mode</option>
+                  <option value="Call">Call</option>
+                  <option value="WhatsApp">WhatsApp</option>
+                  <option value="Email">Email</option>
+                </select>
+                <input
+                  name="bestTime"
+                  value={form.bestTime}
+                  onChange={handleChange}
+                  placeholder="Best time to reach"
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                />
+              </div>
+              <select
+                name="inquirySource"
+                value={form.inquirySource}
+                onChange={handleChange}
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              >
+                <option value="">How they found you</option>
+                <option value="Walk-in">Walk-in</option>
+                <option value="Phone Call">Phone Call</option>
+                <option value="Referral">Referral</option>
+                <option value="Social Media">Social Media</option>
+                <option value="Website">Website</option>
+                <option value="Event">Event</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-dashed border-cardinal/40 bg-cardinal/5 p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-cardinal">Additional Note</h3>
+                <p className="text-xs text-cardinal/80">Keep it short so families can submit quickly.</p>
+              </div>
+              <span className="rounded-full bg-cardinal/10 px-3 py-1 text-[11px] font-semibold text-cardinal">Optional</span>
+            </div>
+            <textarea
+              name="shortMessage"
+              value={form.shortMessage}
+              onChange={handleChange}
+              placeholder="Short message or questions"
+              className="w-full rounded-xl border border-cardinal/30 bg-white px-4 py-3 text-sm text-slate-900 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              rows={3}
+            />
+          </div>
         </div>
-        <div className="space-y-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Student Details</h3>
-          <input
-            name="studentName"
-            value={form.studentName}
-            onChange={handleChange}
-            placeholder="Student Name"
-            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            required
-          />
-          <div className="grid gap-3 md:grid-cols-2">
-            <select
-              name="gender"
-              value={form.gender}
-              onChange={handleChange}
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            >
-              <option value="">Gender</option>
-              <option value="Male">Male</option>
-              <option value="Female">Female</option>
-              <option value="Other">Other</option>
-            </select>
-            <input
-              type="date"
-              name="dob"
-              value={form.dob}
-              onChange={handleChange}
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            />
+
+        <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Communication Preference</h3>
+            <p className="mt-2 text-xs text-slate-600">We will reach out using the channel they prefer.</p>
+            <div className="mt-4 space-y-3">
+              <p className="text-sm font-semibold text-slate-900">{form.preferredContact || 'Pending preference'}</p>
+              <p className="text-xs text-slate-500">Best time: {form.bestTime || 'Not shared yet'}</p>
+            </div>
           </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <input
-              name="classApplied"
-              value={form.classApplied}
-              onChange={handleChange}
-              placeholder="Class Applied"
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            />
-            <input
-              name="academicYear"
-              value={form.academicYear}
-              onChange={handleChange}
-              placeholder="Academic Year"
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            />
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Inquiry Intent</h3>
+            <p className="mt-2 text-sm font-semibold text-slate-900">{form.purpose || 'Awaiting details'}</p>
+            <p className="text-xs text-slate-500">Source: {form.inquirySource || 'Not captured'}</p>
           </div>
-        </div>
-        <div className="space-y-3 md:col-span-2">
-          <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Admission Details</h3>
-          <div className="grid gap-3 md:grid-cols-3">
-            <select
-              name="inquirySource"
-              value={form.inquirySource}
-              onChange={handleChange}
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            >
-              <option value="Walk-in">Walk-in</option>
-              <option value="Phone Call">Phone Call</option>
-              <option value="Referral">Referral</option>
-              <option value="Manual">Manual</option>
-            </select>
-            <input
-              name="counselorName"
-              value={form.counselorName}
-              onChange={handleChange}
-              placeholder="Counselor Name"
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            />
-            <input
-              name="referenceName"
-              value={form.referenceName}
-              onChange={handleChange}
-              placeholder="Reference Name"
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            />
-          </div>
-          <textarea
-            name="notes"
-            value={form.notes}
-            onChange={handleChange}
-            placeholder="Notes"
-            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            rows={4}
-          />
         </div>
       </div>
       <div className="flex justify-end">
@@ -527,6 +648,133 @@ const PaymentPopup = ({ open, inquiry, defaultAmount, onClose, onConfirm, proces
   );
 };
 
+const AcademicSettings = ({ academicYears, activeAcademicYear, onCreateYear, onSelectYear }) => {
+  const [newYear, setNewYear] = useState('');
+
+  return (
+    <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Settings</p>
+          <h3 className="text-lg font-semibold text-slate-900">Academic Year</h3>
+          <p className="text-xs text-slate-500">Syncs with the inquiry form automatically.</p>
+        </div>
+        <span className="rounded-full bg-cardinal/10 px-3 py-1 text-[11px] font-semibold text-cardinal">Mobile Ready</span>
+      </div>
+
+      <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current</p>
+        <p className="text-lg font-bold text-cardinal">{activeAcademicYear}</p>
+        <p className="text-xs text-slate-600">Other years stay visible but are disabled on the inquiry form.</p>
+      </div>
+
+      <div className="space-y-2">
+        {academicYears.map((year) => (
+          <button
+            key={year}
+            type="button"
+            onClick={() => onSelectYear(year)}
+            className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-sm transition ${
+              year === activeAcademicYear
+                ? 'border-cardinal bg-cardinal/5 text-cardinal'
+                : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-cardinal/40'
+            }`}
+          >
+            <span>{year}</span>
+            {year === activeAcademicYear && <span className="text-xs font-semibold">Active</span>}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-3 rounded-2xl border border-dashed border-cardinal/30 bg-cardinal/5 p-4">
+        <p className="text-sm font-semibold text-cardinal">Create new academic year</p>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            value={newYear}
+            onChange={(event) => setNewYear(event.target.value)}
+            placeholder="e.g., 2027-28"
+            className="w-full rounded-xl border border-cardinal/30 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (!newYear.trim()) return;
+              onCreateYear(newYear.trim());
+              setNewYear('');
+            }}
+            className="inline-flex items-center justify-center rounded-xl bg-cardinal px-4 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-cardinal/90"
+          >
+            Add & set active
+          </button>
+        </div>
+        <p className="text-xs text-cardinal/80">New years appear immediately and previous ones grey out on the form.</p>
+      </div>
+    </div>
+  );
+};
+
+const MobileSliderMenu = ({ open, onClose, activeTab, onSelectTab, academicYears, activeAcademicYear }) => (
+  <div
+    className={`fixed inset-0 z-50 transform bg-slate-900/40 transition duration-300 md:hidden ${
+      open ? 'visible opacity-100' : 'invisible opacity-0'
+    }`}
+  >
+    <div className="absolute inset-0" onClick={onClose} aria-hidden="true" />
+    <div
+      className={`absolute right-0 top-0 h-full w-72 translate-x-full bg-white shadow-2xl transition-transform duration-300 ${
+        open ? 'translate-x-0' : ''
+      }`}
+    >
+      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-slate-500">Menu</p>
+          <p className="text-sm font-semibold text-slate-900">Quick navigation</p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700"
+        >
+          Close
+        </button>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="space-y-2">
+          {NAV_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => {
+                onSelectTab(tab.id);
+                onClose();
+              }}
+              className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                activeTab === tab.id
+                  ? 'border-cardinal bg-cardinal/10 text-cardinal'
+                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-cardinal/40'
+              }`}
+            >
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Active Year</p>
+          <p className="text-sm font-bold text-cardinal">{activeAcademicYear}</p>
+          <p className="text-[11px] text-slate-500">Other years shown in the form are disabled.</p>
+          <div className="mt-2 space-y-1 text-[11px] text-slate-600">
+            {academicYears.map((year) => (
+              <p key={year} className={year === activeAcademicYear ? 'font-semibold text-cardinal' : ''}>
+                {year}
+              </p>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
 const Receipts = ({ inquiries, payments, onPrintInquiry, onPrintToken, onPrintRegistration }) => {
   const lookupInquiry = (payment) =>
     inquiries.find((item) => item.id === payment.inquiry_id || item.inquiryId === payment.inquiry_id);
@@ -615,6 +863,9 @@ export default function AdminManagerPortal() {
   const [creating, setCreating] = useState(false);
   const [paymentContext, setPaymentContext] = useState({ open: false, inquiry: null });
   const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [academicYears, setAcademicYears] = useState(['2025-26', '2026-27', '2027-28']);
+  const [activeAcademicYear, setActiveAcademicYear] = useState('2026-27');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   useRazorpayScript();
 
@@ -626,6 +877,22 @@ export default function AdminManagerPortal() {
   const registeredInquiries = useMemo(
     () => inquiries.filter((item) => item.status === 'registered' || item.tokenStatus === 'paid'),
     [inquiries],
+  );
+
+  const handleCreateAcademicYear = useCallback((year) => {
+    setAcademicYears((prev) => {
+      if (prev.includes(year)) return prev;
+      return [...prev, year];
+    });
+    setActiveAcademicYear(year);
+  }, []);
+
+  const handleSelectAcademicYear = useCallback(
+    (year) => {
+      setActiveAcademicYear((prev) => (year ? year : prev));
+      setAcademicYears((prev) => (prev.includes(year) ? prev : [...prev, year]));
+    },
+    [],
   );
 
   useEffect(() => {
@@ -1026,6 +1293,13 @@ export default function AdminManagerPortal() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-700 transition hover:bg-slate-200 md:hidden"
+            >
+              <span className="text-sm font-semibold">☰</span>
+            </button>
             <div className="text-right">
               <p className="text-sm font-semibold text-slate-900">{profile?.name || 'Admission Team'}</p>
               <p className="text-xs text-slate-500">{user.email}</p>
@@ -1040,7 +1314,7 @@ export default function AdminManagerPortal() {
           </div>
         </div>
         <div className="mx-auto max-w-6xl px-4">
-          <div className="flex gap-2 overflow-x-auto pb-2">
+          <div className="hidden gap-2 overflow-x-auto pb-2 md:flex">
             {NAV_TABS.map((tab) => (
               <button
                 key={tab.id}
@@ -1060,7 +1334,24 @@ export default function AdminManagerPortal() {
       </header>
 
       <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
-        {activeTab === 'new' && <ManualInquiryForm onSubmit={handleCreateInquiry} submitting={creating} />}
+        {activeTab === 'new' && (
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="lg:col-span-2">
+              <ManualInquiryForm
+                onSubmit={handleCreateInquiry}
+                submitting={creating}
+                academicYears={academicYears}
+                activeAcademicYear={activeAcademicYear}
+              />
+            </div>
+            <AcademicSettings
+              academicYears={academicYears}
+              activeAcademicYear={activeAcademicYear}
+              onCreateYear={handleCreateAcademicYear}
+              onSelectYear={handleSelectAcademicYear}
+            />
+          </div>
+        )}
 
         {activeTab === 'inquiry-list' && (
           <div className="grid gap-4 lg:grid-cols-3">
@@ -1186,6 +1477,15 @@ export default function AdminManagerPortal() {
           />
         )}
       </main>
+
+      <MobileSliderMenu
+        open={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        academicYears={academicYears}
+        activeAcademicYear={activeAcademicYear}
+      />
 
       <PaymentPopup
         open={paymentContext.open}
