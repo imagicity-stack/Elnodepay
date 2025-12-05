@@ -904,6 +904,133 @@ const AcademicSettings = ({ academicYears, activeAcademicYear, onCreateYear, onS
   );
 };
 
+const AcademicSettings = ({ academicYears, activeAcademicYear, onCreateYear, onSelectYear }) => {
+  const [newYear, setNewYear] = useState('');
+
+  return (
+    <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Settings</p>
+          <h3 className="text-lg font-semibold text-slate-900">Academic Year</h3>
+          <p className="text-xs text-slate-500">Syncs with the inquiry form automatically.</p>
+        </div>
+        <span className="rounded-full bg-cardinal/10 px-3 py-1 text-[11px] font-semibold text-cardinal">Mobile Ready</span>
+      </div>
+
+      <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current</p>
+        <p className="text-lg font-bold text-cardinal">{activeAcademicYear}</p>
+        <p className="text-xs text-slate-600">Other years stay visible but are disabled on the inquiry form.</p>
+      </div>
+
+      <div className="space-y-2">
+        {academicYears.map((year) => (
+          <button
+            key={year}
+            type="button"
+            onClick={() => onSelectYear(year)}
+            className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-sm transition ${
+              year === activeAcademicYear
+                ? 'border-cardinal bg-cardinal/5 text-cardinal'
+                : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-cardinal/40'
+            }`}
+          >
+            <span>{year}</span>
+            {year === activeAcademicYear && <span className="text-xs font-semibold">Active</span>}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-3 rounded-2xl border border-dashed border-cardinal/30 bg-cardinal/5 p-4">
+        <p className="text-sm font-semibold text-cardinal">Create new academic year</p>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            value={newYear}
+            onChange={(event) => setNewYear(event.target.value)}
+            placeholder="e.g., 2027-28"
+            className="w-full rounded-xl border border-cardinal/30 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (!newYear.trim()) return;
+              onCreateYear(newYear.trim());
+              setNewYear('');
+            }}
+            className="inline-flex items-center justify-center rounded-xl bg-cardinal px-4 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-cardinal/90"
+          >
+            Add & set active
+          </button>
+        </div>
+        <p className="text-xs text-cardinal/80">New years appear immediately and previous ones grey out on the form.</p>
+      </div>
+    </div>
+  );
+};
+
+const MobileSliderMenu = ({ open, onClose, activeTab, onSelectTab, academicYears, activeAcademicYear }) => (
+  <div
+    className={`fixed inset-0 z-50 transform bg-slate-900/40 transition duration-300 md:hidden ${
+      open ? 'visible opacity-100' : 'invisible opacity-0'
+    }`}
+  >
+    <div className="absolute inset-0" onClick={onClose} aria-hidden="true" />
+    <div
+      className={`absolute right-0 top-0 h-full w-72 translate-x-full bg-white shadow-2xl transition-transform duration-300 ${
+        open ? 'translate-x-0' : ''
+      }`}
+    >
+      <div className="flex items-center justify-between border-b border-slate-100 px-4 py-4">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-slate-500">Menu</p>
+          <p className="text-sm font-semibold text-slate-900">Quick navigation</p>
+        </div>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-lg bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700"
+        >
+          Close
+        </button>
+      </div>
+      <div className="p-4 space-y-3">
+        <div className="space-y-2">
+          {NAV_TABS.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => {
+                onSelectTab(tab.id);
+                onClose();
+              }}
+              className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-sm font-semibold transition ${
+                activeTab === tab.id
+                  ? 'border-cardinal bg-cardinal/10 text-cardinal'
+                  : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-cardinal/40'
+              }`}
+            >
+              <span>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+        <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Active Year</p>
+          <p className="text-sm font-bold text-cardinal">{activeAcademicYear}</p>
+          <p className="text-[11px] text-slate-500">Other years shown in the form are disabled.</p>
+          <div className="mt-2 space-y-1 text-[11px] text-slate-600">
+            {academicYears.map((year) => (
+              <p key={year} className={year === activeAcademicYear ? 'font-semibold text-cardinal' : ''}>
+                {year}
+              </p>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
 const Receipts = ({ inquiries, payments, onPrintInquiry, onPrintToken, onPrintRegistration }) => {
   const lookupInquiry = (payment) =>
     inquiries.find((item) => item.id === payment.inquiry_id || item.inquiryId === payment.inquiry_id);
@@ -1549,6 +1676,13 @@ export default function AdminManagerPortal() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-700 transition hover:bg-slate-200 md:hidden"
+            >
+              <span className="text-sm font-semibold">☰</span>
+            </button>
             <div className="text-right">
               <p className="text-sm font-semibold text-slate-900">{profile?.name || 'Admission Team'}</p>
               <p className="text-xs text-slate-500">{user.email}</p>
@@ -1777,6 +1911,15 @@ export default function AdminManagerPortal() {
           />
         )}
       </main>
+
+      <MobileSliderMenu
+        open={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        academicYears={academicYears}
+        activeAcademicYear={activeAcademicYear}
+      />
 
       <PaymentPopup
         open={paymentContext.open}
