@@ -839,6 +839,71 @@ const PaymentPopup = ({ open, inquiry, defaultAmount = 500, onClose, onConfirm, 
   );
 };
 
+const AcademicYearSettings = ({ academicYears, activeAcademicYear, onCreateYear, onSelectYear }) => {
+  const [newYear, setNewYear] = useState('');
+
+  return (
+    <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Settings</p>
+          <h3 className="text-lg font-semibold text-slate-900">Academic Year</h3>
+          <p className="text-xs text-slate-500">Syncs with the inquiry form automatically.</p>
+        </div>
+        <span className="rounded-full bg-cardinal/10 px-3 py-1 text-[11px] font-semibold text-cardinal">Mobile Ready</span>
+      </div>
+
+      <div className="space-y-3 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Current</p>
+        <p className="text-lg font-bold text-cardinal">{activeAcademicYear}</p>
+        <p className="text-xs text-slate-600">Other years stay visible but are disabled on the inquiry form.</p>
+      </div>
+
+      <div className="space-y-2">
+        {academicYears.map((year) => (
+          <button
+            key={year}
+            type="button"
+            onClick={() => onSelectYear(year)}
+            className={`flex w-full items-center justify-between rounded-xl border px-4 py-3 text-sm transition ${
+              year === activeAcademicYear
+                ? 'border-cardinal bg-cardinal/5 text-cardinal'
+                : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-cardinal/40'
+            }`}
+          >
+            <span>{year}</span>
+            {year === activeAcademicYear && <span className="text-xs font-semibold">Active</span>}
+          </button>
+        ))}
+      </div>
+
+      <div className="space-y-3 rounded-2xl border border-dashed border-cardinal/30 bg-cardinal/5 p-4">
+        <p className="text-sm font-semibold text-cardinal">Create new academic year</p>
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <input
+            value={newYear}
+            onChange={(event) => setNewYear(event.target.value)}
+            placeholder="e.g., 2027-28"
+            className="w-full rounded-xl border border-cardinal/30 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              if (!newYear.trim()) return;
+              onCreateYear(newYear.trim());
+              setNewYear('');
+            }}
+            className="inline-flex items-center justify-center rounded-xl bg-cardinal px-4 py-3 text-sm font-semibold text-white shadow-md transition hover:bg-cardinal/90"
+          >
+            Add & set active
+          </button>
+        </div>
+        <p className="text-xs text-cardinal/80">New years appear immediately and previous ones grey out on the form.</p>
+      </div>
+    </div>
+  );
+};
+
 const AcademicSettings = ({ academicYears, activeAcademicYear, onCreateYear, onSelectYear }) => {
   const [newYear, setNewYear] = useState('');
 
@@ -1056,7 +1121,6 @@ export default function AdminManagerPortal() {
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [academicYears, setAcademicYears] = useState(['2025-26', '2026-27', '2027-28']);
   const [activeAcademicYear, setActiveAcademicYear] = useState('2026-27');
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const inquiryExportHeaders = useMemo(
     () => [
@@ -1649,6 +1713,24 @@ export default function AdminManagerPortal() {
               </button>
             ))}
           </div>
+          <div className="md:hidden">
+            <div className="flex gap-2 overflow-x-auto pb-4 pt-2 snap-x snap-mandatory">
+              {NAV_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`shrink-0 snap-start rounded-full px-4 py-2 text-sm font-semibold transition ${
+                    activeTab === tab.id
+                      ? 'bg-cardinal text-white shadow'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </header>
 
@@ -1821,7 +1903,7 @@ export default function AdminManagerPortal() {
         )}
 
         {activeTab === 'settings' && (
-          <AcademicSettings
+          <AcademicYearSettings
             academicYears={academicYears}
             activeAcademicYear={activeAcademicYear}
             onCreateYear={handleCreateAcademicYear}
