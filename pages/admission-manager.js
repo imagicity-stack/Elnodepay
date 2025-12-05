@@ -24,6 +24,7 @@ const NAV_TABS = [
   { id: 'inquiry-list', label: 'Inquiry List' },
   { id: 'registered', label: 'Registered Students' },
   { id: 'receipts', label: 'Receipts' },
+  { id: 'settings', label: 'Settings' },
 ];
 
 const CLASS_OPTIONS = ['Nursery', 'UKG', 'LKG', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -72,6 +73,72 @@ const useRazorpayScript = () => {
     script.async = true;
     document.body.appendChild(script);
   }, []);
+};
+
+const buildCsv = (rows, headers) => {
+  const headerRow = headers.map((header) => header.label).join(',');
+  const dataRows = rows.map((row) =>
+    headers
+      .map((header) => {
+        const value = row[header.key] ?? '';
+        if (typeof value === 'string' && value.includes(',')) {
+          return `"${value.replace(/"/g, '""')}"`;
+        }
+        return value;
+      })
+      .join(','),
+  );
+  return [headerRow, ...dataRows].join('\n');
+};
+
+const downloadBlob = (content, filename, type) => {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+};
+
+const downloadPdfLike = (title, rows, headers) => {
+  const html = `<!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8" />
+        <title>${title}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 16px; }
+          h1 { font-size: 18px; margin-bottom: 12px; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+          th { background: #f8fafc; }
+        </style>
+      </head>
+      <body>
+        <h1>${title}</h1>
+        <table>
+          <thead>
+            <tr>${headers.map((header) => `<th>${header.label}</th>`).join('')}</tr>
+          </thead>
+          <tbody>
+            ${rows
+              .map(
+                (row) =>
+                  `<tr>${headers
+                    .map((header) => `<td>${row[header.key] ?? ''}</td>`)
+                    .join('')}</tr>`,
+              )
+              .join('')}
+          </tbody>
+        </table>
+      </body>
+    </html>`;
+  const printable = window.open('', '_blank');
+  printable.document.write(html);
+  printable.document.close();
+  printable.focus();
+  printable.print();
 };
 
 const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademicYear }) => {
@@ -867,6 +934,31 @@ export default function AdminManagerPortal() {
   const [activeAcademicYear, setActiveAcademicYear] = useState('2026-27');
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  const inquiryExportHeaders = useMemo(
+    () => [
+      { key: 'studentName', label: 'Student Name' },
+      { key: 'classApplied', label: 'Class Applying' },
+      { key: 'academicYear', label: 'Academic Year' },
+      { key: 'parentName', label: 'Parent/Guardian' },
+      { key: 'parentPhone', label: 'Mobile' },
+      { key: 'inquirySource', label: 'Source' },
+      { key: 'status', label: 'Status' },
+    ],
+    [],
+  );
+
+  const registeredExportHeaders = useMemo(
+    () => [
+      { key: 'studentName', label: 'Student Name' },
+      { key: 'classApplied', label: 'Class' },
+      { key: 'academicYear', label: 'Academic Year' },
+      { key: 'parentName', label: 'Parent/Guardian' },
+      { key: 'parentPhone', label: 'Mobile' },
+      { key: 'tokenStatus', label: 'Token Status' },
+    ],
+    [],
+  );
+
   useRazorpayScript();
 
   const selectedInquiry = useMemo(
@@ -878,6 +970,30 @@ export default function AdminManagerPortal() {
     () => inquiries.filter((item) => item.status === 'registered' || item.tokenStatus === 'paid'),
     [inquiries],
   );
+
+  const handleDownloadInquiriesCsv = useCallback(() => {
+    const rows = inquiries.map((item) => ({
+      ...item,
+      status: item.status || 'inquiry',
+    }));
+    const csv = buildCsv(rows, inquiryExportHeaders);
+    downloadBlob(csv, 'inquiries.csv', 'text/csv');
+  }, [inquiries, inquiryExportHeaders]);
+
+  const handleDownloadInquiriesPdf = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    downloadPdfLike('Inquired Students', inquiries, inquiryExportHeaders);
+  }, [inquiries, inquiryExportHeaders]);
+
+  const handleDownloadRegisteredCsv = useCallback(() => {
+    const csv = buildCsv(registeredInquiries, registeredExportHeaders);
+    downloadBlob(csv, 'registered-students.csv', 'text/csv');
+  }, [registeredInquiries, registeredExportHeaders]);
+
+  const handleDownloadRegisteredPdf = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    downloadPdfLike('Registered Students', registeredInquiries, registeredExportHeaders);
+  }, [registeredInquiries, registeredExportHeaders]);
 
   const handleCreateAcademicYear = useCallback((year) => {
     setAcademicYears((prev) => {
@@ -1335,32 +1451,40 @@ export default function AdminManagerPortal() {
 
       <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
         {activeTab === 'new' && (
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div className="lg:col-span-2">
-              <ManualInquiryForm
-                onSubmit={handleCreateInquiry}
-                submitting={creating}
-                academicYears={academicYears}
-                activeAcademicYear={activeAcademicYear}
-              />
-            </div>
-            <AcademicSettings
-              academicYears={academicYears}
-              activeAcademicYear={activeAcademicYear}
-              onCreateYear={handleCreateAcademicYear}
-              onSelectYear={handleSelectAcademicYear}
-            />
-          </div>
+          <ManualInquiryForm
+            onSubmit={handleCreateInquiry}
+            submitting={creating}
+            academicYears={academicYears}
+            activeAcademicYear={activeAcademicYear}
+          />
         )}
 
         {activeTab === 'inquiry-list' && (
           <div className="grid gap-4 lg:grid-cols-3">
             <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm lg:col-span-1">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-slate-900">Inquiries</p>
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
-                  {inquiries.length}
-                </span>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">Inquiries</p>
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">
+                    {inquiries.length}
+                  </span>
+                </div>
+                <div className="flex flex-col items-end gap-2 text-xs font-semibold sm:flex-row sm:text-[11px]">
+                  <button
+                    type="button"
+                    onClick={handleDownloadInquiriesCsv}
+                    className="rounded-lg border border-slate-200 px-3 py-1 text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Download CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadInquiriesPdf}
+                    className="rounded-lg border border-slate-200 px-3 py-1 text-slate-700 transition hover:bg-slate-50"
+                  >
+                    Download PDF
+                  </button>
+                </div>
               </div>
               <div className="mt-4 space-y-2">
                 {inquiries.map((item) => {
@@ -1401,15 +1525,31 @@ export default function AdminManagerPortal() {
         )}
 
         {activeTab === 'registered' && (
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="flex items-center justify-between">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Registered Students</p>
                 <h3 className="text-xl font-semibold text-slate-900">Completed token payments</h3>
               </div>
-              <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                {registeredInquiries.length}
-              </span>
+              <div className="flex flex-col items-end gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={handleDownloadRegisteredCsv}
+                  className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Download CSV
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadRegisteredPdf}
+                  className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Download PDF
+                </button>
+                <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                  {registeredInquiries.length}
+                </span>
+              </div>
             </div>
             <div className="mt-4 overflow-x-auto">
               <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -1474,6 +1614,15 @@ export default function AdminManagerPortal() {
             onPrintInquiry={printInquiryReceipt}
             onPrintToken={printTokenReceipt}
             onPrintRegistration={printRegistrationReceipt}
+          />
+        )}
+
+        {activeTab === 'settings' && (
+          <AcademicSettings
+            academicYears={academicYears}
+            activeAcademicYear={activeAcademicYear}
+            onCreateYear={handleCreateAcademicYear}
+            onSelectYear={handleSelectAcademicYear}
           />
         )}
       </main>
