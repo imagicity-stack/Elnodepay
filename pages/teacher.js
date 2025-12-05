@@ -111,6 +111,7 @@ const TeacherDashboard = () => {
   const router = useRouter();
   const [authChecked, setAuthChecked] = useState(false);
   const [user, setUser] = useState(null);
+  const [roleState, setRoleState] = useState({ loading: true, error: null });
   const [teacherDoc, setTeacherDoc] = useState(null);
   const [attendance, setAttendance] = useState([]);
   const [salaryHistory, setSalaryHistory] = useState([]);
@@ -121,18 +122,27 @@ const TeacherDashboard = () => {
     const unsub = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
         setUser(null);
+        setRoleState({ loading: false, error: null });
         setAuthChecked(true);
         return;
       }
+
+      setRoleState({ loading: true, error: null });
       const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
-      const role = userDoc.exists() ? userDoc.data()?.role : null;
-      if (role !== 'teacher') {
-        await signOut(auth);
-        router.push('/unauthorized');
+      const role = userDoc.exists() ? (userDoc.data()?.role || '').toString().toLowerCase() : '';
+
+      if (role === 'teacher') {
+        setUser(currentUser);
+        setRoleState({ loading: false, error: null });
+        setAuthChecked(true);
         return;
       }
-      setUser(currentUser);
+
+      setUser(null);
+      setRoleState({ loading: false, error: 'Role not assigned. Contact administrator.' });
       setAuthChecked(true);
+      await signOut(auth);
+      router.push('/unauthorized');
     });
     return () => unsub();
   }, [router]);
