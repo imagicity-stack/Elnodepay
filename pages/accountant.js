@@ -1443,6 +1443,14 @@ const resolveTransactionMonthLabel = (entry) => {
     return getMonthMeta(entry.date).label;
   };
 
+  const normaliseParentContact = (student = {}) => {
+    const rawEmail = student.parent_email || student.parentEmail || student.email || '';
+    const parentEmail = typeof rawEmail === 'string' ? rawEmail.trim().toLowerCase() : '';
+    const parentPhone = student.parent_phone || student.parentPhone || student.phone || '';
+    const parentUid = student.parent_uid || student.parentUid || '';
+    return { parent_email: parentEmail, parent_phone: parentPhone, parent_uid: parentUid };
+  };
+
   const logTransactionEntry = async ({
     student,
     amount,
@@ -1460,10 +1468,7 @@ const resolveTransactionMonthLabel = (entry) => {
     const normalizedStudent = student
       ? {
           ...student,
-          parent_email:
-            student.parent_email || student.parentEmail || student.email || '',
-          parent_phone: student.parent_phone || student.parentPhone || student.phone || '',
-          parent_uid: student.parent_uid || student.parentUid || '',
+          ...normaliseParentContact(student),
         }
       : null;
     const safeStudent = normalizedStudent || {
@@ -3667,16 +3672,14 @@ const resolveTransactionMonthLabel = (entry) => {
         status: 'Paid',
         updated_at: serverTimestamp(),
       });
-      const parentEmail = student.parent_email || student.parentEmail || student.email || '';
-      const parentUid = student.parent_uid || student.parentUid || '';
-      const parentPhone = student.parent_phone || student.parentPhone || student.phone || '';
+      const parentContact = normaliseParentContact(student);
       await addDoc(collection(db, 'payments'), {
         studentId: student.studentId || student.id,
         student_name: student.name,
         class: student.class,
-        parent_uid: parentUid,
-        parent_email: parentEmail,
-        parent_phone: parentPhone,
+        parent_uid: parentContact.parent_uid,
+        parent_email: parentContact.parent_email,
+        parent_phone: parentContact.parent_phone,
         amount: amountToClear,
         mode: normalizedMode,
         date: serverTimestamp(),
