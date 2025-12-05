@@ -59,7 +59,7 @@ const LoginPage = () => {
         }
 
         if (role === 'admission_manager') {
-          await router.replace('/admin-manager');
+          await router.replace('/admission-manager');
           return;
         }
 
