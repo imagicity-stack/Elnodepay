@@ -134,12 +134,24 @@ const TeacherDashboard = () => {
         const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
         const role = userDoc.exists() ? (userDoc.data()?.role || '').toString().toLowerCase().trim() : '';
 
-        if (role === 'teacher') {
-          setUser(currentUser);
-          setRoleState({ loading: false, error: null });
-          setAuthChecked(true);
-          return;
-        }
+        // If doc hasn't loaded yet, DON'T LOG OUT.
+if (!userDoc.exists() || !role) {
+  setRoleState({ loading: true, error: null });
+  return;
+}
+
+// If teacher, allow access
+if (role === 'teacher') {
+  setUser(currentUser);
+  setRoleState({ loading: false, error: null });
+  setAuthChecked(true);
+  return;
+}
+
+// Wrong role AFTER loading → redirect
+setRoleState({ loading: false, error: 'Role not assigned. Contact administrator.' });
+router.push('/unauthorized');
+return;
 
         setUser(null);
         setRoleState({ loading: false, error: 'Role not assigned. Contact administrator.' });
