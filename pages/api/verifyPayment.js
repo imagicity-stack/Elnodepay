@@ -226,9 +226,36 @@ async function createPaymentEntry(idToken, payload) {
     breakdown: normalizedBreakdown,
     razorpay_order_id: payload.razorpay_order_id || '',
     razorpay_payment_id: payload.razorpay_payment_id || '',
+    inquiry_id: payload.inquiryId || '',
     status: 'Success',
   });
   return paymentDoc?.id || '';
+}
+
+async function markInquiryRegistered(idToken, { inquiryId, paymentId, amount }) {
+  if (!inquiryId) {
+    return;
+  }
+  const payload = {
+    status: 'registered',
+    tokenStatus: 'paid',
+    token_payment_id: paymentId || '',
+    token_amount: roundCurrency(amount),
+    registered_at: timestampNow(),
+  };
+  await firestoreUpdateDocument(
+    idToken,
+    `inquiries/${inquiryId}`,
+    payload,
+    ['status', 'tokenStatus', 'token_payment_id', 'token_amount', 'registered_at'],
+  );
+  await firestoreCreateDocument(idToken, `inquiries/${inquiryId}/timeline`, {
+    message: 'Token payment received',
+    text: 'Token payment received',
+    type: 'payment',
+    userId: 'system',
+    createdAt: timestampNow(),
+  });
 }
 
 async function updateStudentAccount(idToken, studentDocId, amountPaid) {
@@ -462,6 +489,7 @@ const handler = async (req, res) => {
       studentId,
       studentName,
       className,
+      inquiryId,
       parentUid,
       parentEmail,
       amount,
@@ -475,7 +503,9 @@ const handler = async (req, res) => {
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({ success: false, message: 'Incomplete Razorpay payload.' });
     }
-    if (!studentDocId) {
+    const isInquiryPayment = !!inquiryId && !studentDocId;
+
+    if (!studentDocId && !isInquiryPayment) {
       return res.status(400).json({ success: false, message: 'Missing student reference.' });
     }
     const amountPaid = roundCurrency(amount);
@@ -505,7 +535,17 @@ const handler = async (req, res) => {
       paymentMode: paymentMode || 'Online',
       razorpay_order_id,
       razorpay_payment_id,
+      inquiryId,
     });
+
+    if (isInquiryPayment) {
+      await markInquiryRegistered(idToken, {
+        inquiryId,
+        paymentId: razorpay_payment_id || paymentId,
+        amount: amountPaid,
+      });
+      return res.status(200).json({ success: true, paymentId: paymentId || razorpay_payment_id });
+    }
 
     await updateStudentAccount(idToken, studentDocId, amountPaid);
 

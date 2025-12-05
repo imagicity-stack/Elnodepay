@@ -96,7 +96,7 @@ const InquiryTable = ({ inquiries = [], searchTerm, onSearch }) => {
                     : '—'}
                 </td>
                 <td className="px-4 py-3">
-                  <Link href={`/admission-manager/inquiry/${item.id}`} className="text-cardinal hover:underline">
+                  <Link href={`/admission-manager?inquiryId=${encodeURIComponent(item.id)}`} className="text-cardinal hover:underline">
                     Open profile
                   </Link>
                 </td>
