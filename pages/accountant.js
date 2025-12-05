@@ -2229,11 +2229,16 @@ const resolveTransactionMonthLabel = (entry) => {
 
   const filteredPaymentsByMode = useMemo(() => {
     const safePayments = Array.isArray(payments) ? payments : [];
+    const sortedPayments = [...safePayments].sort((a, b) => {
+      const dateA = parseDateValue(a?.date)?.getTime() || 0;
+      const dateB = parseDateValue(b?.date)?.getTime() || 0;
+      return dateB - dateA;
+    });
     if (paymentModeFilter === 'All') {
-      return safePayments;
+      return sortedPayments;
     }
     const normalizedFilter = paymentModeFilter.toLowerCase();
-    return safePayments.filter(
+    return sortedPayments.filter(
       (payment) => (payment.mode || 'Online').toLowerCase() === normalizedFilter,
     );
   }, [payments, paymentModeFilter]);
