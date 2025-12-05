@@ -3,11 +3,18 @@ import Link from 'next/link';
 
 const PAGE_SIZE = 10;
 
+const normalizeValue = (value) => {
+  if (!value) return '';
+  if (value?.toDate) return value.toDate().getTime();
+  if (value instanceof Date) return value.getTime();
+  return value;
+};
+
 const sortData = (data, sortKey, direction) => {
   if (!sortKey) return data;
   return [...data].sort((a, b) => {
-    const valA = a[sortKey] || '';
-    const valB = b[sortKey] || '';
+    const valA = normalizeValue(a[sortKey]);
+    const valB = normalizeValue(b[sortKey]);
     if (valA > valB) return direction === 'asc' ? 1 : -1;
     if (valA < valB) return direction === 'asc' ? -1 : 1;
     return 0;

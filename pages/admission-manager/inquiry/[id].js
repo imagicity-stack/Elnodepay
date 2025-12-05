@@ -66,6 +66,13 @@ const Timeline = ({ items = [] }) => (
   </div>
 );
 
+const formatDateValue = (value) => {
+  if (!value) return null;
+  if (value?.toDate) return value.toDate();
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+};
+
 const TokenPaymentCard = ({ payment, onReminder, onUpdate }) => (
   <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
     <div className="flex items-center justify-between">
@@ -87,7 +94,7 @@ const TokenPaymentCard = ({ payment, onReminder, onUpdate }) => (
       </div>
       <div>
         <p className="font-semibold text-slate-900">Date</p>
-        <p>{payment?.date ? new Date(payment.date).toLocaleDateString('en-IN') : '—'}</p>
+        <p>{formatDateValue(payment?.date)?.toLocaleDateString('en-IN') || '—'}</p>
       </div>
     </div>
     <div className="mt-3 flex gap-2">
