@@ -1071,7 +1071,7 @@ export default function AdminManagerPortal() {
   const [authChecked, setAuthChecked] = useState(false);
   const [activeTab, setActiveTab] = useState('new');
   // Keeps mobile navigation rendering predictable even if older bundles reference the flag
-  const [mobileMenuOpen] = useState(true);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [inquiries, setInquiries] = useState([]);
   const [payments, setPayments] = useState([]);
   const [selectedInquiryId, setSelectedInquiryId] = useState(null);
@@ -1629,20 +1629,13 @@ export default function AdminManagerPortal() {
         <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
           <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
             <div className="flex items-center gap-3">
-              <Image src="/logo.png" alt="Logo" width={40} height={40} className="h-10 w-10" />
+              <Image src="/elnode.png" alt="Elnode logo" width={40} height={40} className="h-10 w-10" />
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Admission Manager</p>
               <h1 className="text-xl font-semibold text-slate-900">Manual CRM</h1>
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => setMobileMenuOpen(true)}
-              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-700 transition hover:bg-slate-200 md:hidden"
-            >
-              <span className="text-sm font-semibold">☰</span>
-            </button>
             <div className="text-right">
               <p className="text-sm font-semibold text-slate-900">{profile?.name || 'Admission Team'}</p>
               <p className="text-xs text-slate-500">{user.email}</p>
