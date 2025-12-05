@@ -58,6 +58,11 @@ const LoginPage = () => {
           return;
         }
 
+        if (role === 'admission_manager') {
+          await router.replace('/admission-manager');
+          return;
+        }
+
         alert('Role not assigned.');
         await signOut(auth);
         setCheckingAuth(false);
