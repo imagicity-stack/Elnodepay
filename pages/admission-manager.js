@@ -834,6 +834,7 @@ const PaymentPopup = ({ open, inquiry, defaultAmount = 500, onClose, onConfirm, 
             {primaryLabel}
           </button>
         </div>
+        <p className="text-xs text-cardinal/80">New years appear immediately and previous ones grey out on the form.</p>
       </div>
     </div>
   );
@@ -985,6 +986,8 @@ export default function AdminManagerPortal() {
   const [profile, setProfile] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [activeTab, setActiveTab] = useState('new');
+  // Keeps mobile navigation rendering predictable even if older bundles reference the flag
+  const [mobileMenuOpen] = useState(true);
   const [inquiries, setInquiries] = useState([]);
   const [payments, setPayments] = useState([]);
   const [selectedInquiryId, setSelectedInquiryId] = useState(null);
@@ -1549,6 +1552,13 @@ export default function AdminManagerPortal() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setMobileMenuOpen(true)}
+              className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-700 transition hover:bg-slate-200 md:hidden"
+            >
+              <span className="text-sm font-semibold">☰</span>
+            </button>
             <div className="text-right">
               <p className="text-sm font-semibold text-slate-900">{profile?.name || 'Admission Team'}</p>
               <p className="text-xs text-slate-500">{user.email}</p>
@@ -1578,6 +1588,24 @@ export default function AdminManagerPortal() {
                 {tab.label}
               </button>
             ))}
+          </div>
+          <div className={`md:hidden ${mobileMenuOpen ? '' : 'hidden'}`}>
+            <div className="flex gap-2 overflow-x-auto pb-4 pt-2 snap-x snap-mandatory">
+              {NAV_TABS.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`shrink-0 snap-start rounded-full px-4 py-2 text-sm font-semibold transition ${
+                    activeTab === tab.id
+                      ? 'bg-cardinal text-white shadow'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
       </header>
@@ -1759,6 +1787,15 @@ export default function AdminManagerPortal() {
           />
         )}
       </main>
+
+      <MobileSliderMenu
+        open={mobileMenuOpen}
+        onClose={() => setMobileMenuOpen(false)}
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        academicYears={academicYears}
+        activeAcademicYear={activeAcademicYear}
+      />
 
       <PaymentPopup
         open={paymentContext.open}
