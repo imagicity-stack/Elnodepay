@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
+import { downloadPdf } from '../lib/pdfClient';
 
 const NAV_TABS = [
   { id: 'new', label: 'New Inquiry' },
@@ -124,44 +125,23 @@ const downloadBlob = (content, filename, type) => {
   URL.revokeObjectURL(url);
 };
 
-const downloadPdfLike = (title, rows, headers) => {
-  const html = `<!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>${title}</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 16px; }
-          h1 { font-size: 18px; margin-bottom: 12px; }
-          table { width: 100%; border-collapse: collapse; font-size: 12px; }
-          th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
-          th { background: #f8fafc; }
-        </style>
-      </head>
-      <body>
-        <h1>${title}</h1>
-        <table>
-          <thead>
-            <tr>${headers.map((header) => `<th>${header.label}</th>`).join('')}</tr>
-          </thead>
-          <tbody>
-            ${rows
-              .map(
-                (row) =>
-                  `<tr>${headers
-                    .map((header) => `<td>${row[header.key] ?? ''}</td>`)
-                    .join('')}</tr>`,
-              )
-              .join('')}
-          </tbody>
-        </table>
-      </body>
-    </html>`;
-  const printable = window.open('', '_blank');
-  printable.document.write(html);
-  printable.document.close();
-  printable.focus();
-  printable.print();
+const downloadPdfLike = async (title, rows, headers) => {
+  try {
+    const fileName = `${title.toLowerCase().replace(/[^a-z0-9]+/gi, '-').replace(/(^-|-$)/g, '') || 'admissions'}.pdf`;
+    await downloadPdf({
+      type: 'admissions-table',
+      fileName,
+      payload: {
+        title,
+        rows,
+        headers,
+        generatedOn: new Date().toISOString(),
+      },
+    });
+  } catch (error) {
+    console.error('Error downloading admissions PDF', error);
+    alert('Unable to download PDF. Please try again.');
+  }
 };
 
 const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademicYear }) => {
