@@ -1571,6 +1571,8 @@ const resolveTransactionMonthLabel = (entry) => {
   useEffect(() => {
     if (FINANCE_TAB_IDS.includes(activeTab)) {
       setActiveSection('finances');
+    } else if (SALARY_TAB_IDS.includes(activeTab)) {
+      setActiveSection('salary');
     } else {
       setActiveSection('fees');
     }
