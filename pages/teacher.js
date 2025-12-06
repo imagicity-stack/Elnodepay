@@ -119,6 +119,49 @@ const TeacherDashboard = () => {
   const [slipContext, setSlipContext] = useState({ open: false, salary: null });
 
   useEffect(() => {
+    const resolveRole = async (currentUser) => {
+      const normalizeRole = (value) => (value || '').toString().toLowerCase().trim();
+
+      // 1) Doc ID == UID (primary path)
+      const directDoc = await getDoc(doc(db, 'users', currentUser.uid));
+      if (directDoc.exists()) {
+        const role = normalizeRole(directDoc.data()?.role);
+        if (role) return { role, docId: directDoc.id };
+      }
+
+      // 2) authUid field
+      const authUidSnap = await getDocs(
+        query(collection(db, 'users'), where('authUid', '==', currentUser.uid), limit(1)),
+      );
+      const authUidDoc = authUidSnap.docs[0];
+      if (authUidDoc) {
+        const role = normalizeRole(authUidDoc.data()?.role || authUidDoc.data()?.Role);
+        if (role) return { role, docId: authUidDoc.id };
+      }
+
+      // 3) uid field (some projects store uid instead of authUid)
+      const uidSnap = await getDocs(query(collection(db, 'users'), where('uid', '==', currentUser.uid), limit(1)));
+      const uidDoc = uidSnap.docs[0];
+      if (uidDoc) {
+        const role = normalizeRole(uidDoc.data()?.role || uidDoc.data()?.Role);
+        if (role) return { role, docId: uidDoc.id };
+      }
+
+      // 4) Email-based fallback for misconfigured docs
+      if (currentUser.email) {
+        const emailSnap = await getDocs(
+          query(collection(db, 'users'), where('email', '==', currentUser.email.toLowerCase()), limit(1)),
+        );
+        const emailDoc = emailSnap.docs[0];
+        if (emailDoc) {
+          const role = normalizeRole(emailDoc.data()?.role || emailDoc.data()?.Role);
+          if (role) return { role, docId: emailDoc.id };
+        }
+      }
+
+      return { role: '', docId: null };
+    };
+
     const unsub = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
         setUser(null);
@@ -127,36 +170,24 @@ const TeacherDashboard = () => {
         return;
       }
 
-      // Wait for the Firestore role document before deciding access. No custom claims are used.
       setRoleState({ loading: true, error: null });
 
       try {
-        // Prefer UID-matched document but also support authUid lookups so teachers aren’t blocked if IDs differ.
-        const directDoc = await getDoc(doc(db, 'users', currentUser.uid));
-        const directRole = directDoc.exists() ? (directDoc.data()?.role || '').toString().toLowerCase().trim() : '';
-
-        let role = directRole;
-        let resolvedDocId = directDoc.id;
-
-        if (!directRole) {
-          const altQuery = query(collection(db, 'users'), where('authUid', '==', currentUser.uid), limit(1));
-          const altSnap = await getDocs(altQuery);
-          const altDoc = altSnap.docs[0];
-          if (altDoc) {
-            role = (altDoc.data()?.role || '').toString().toLowerCase().trim();
-            resolvedDocId = altDoc.id;
-          }
-        }
+        const { role, docId } = await resolveRole(currentUser);
 
         if (role === 'teacher') {
           setUser(currentUser);
-          setRoleState({ loading: false, error: null, docId: resolvedDocId });
+          setRoleState({ loading: false, error: null, docId });
           setAuthChecked(true);
           return;
         }
 
         setUser(null);
-        setRoleState({ loading: false, error: 'Role not assigned. Contact administrator.' });
+        setRoleState({
+          loading: false,
+          error:
+            'Role not assigned. Ensure the "users" document has role "teacher" with either doc ID = UID or authUid/uid/email set.',
+        });
         await signOut(auth);
         router.push('/unauthorized');
       } catch (error) {
@@ -167,6 +198,7 @@ const TeacherDashboard = () => {
         setAuthChecked(true);
       }
     });
+
     return () => unsub();
   }, [router]);
 
