@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Head from 'next/head';
 import Image from 'next/image';
 import { useRouter } from 'next/router';
@@ -6,6 +6,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebas
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { SalarySlip } from '../components/SalaryModule';
+import { renderPdfFromHtml } from '../lib/pdf';
 
 const formatCurrency = (value = 0) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
@@ -26,6 +27,93 @@ const monthLabel = (month, year) => {
   ];
   const label = MONTHS[(month || 1) - 1] || 'Month';
   return `${label} ${year || ''}`;
+};
+
+const buildSalarySlipContent = (salary, staff, label) => {
+  const allowances = salary?.allowancesSnapshot || {};
+  const deductions = salary?.deductionsSnapshot || {};
+  const otherAllowances = Array.isArray(allowances.otherAllowances) ? allowances.otherAllowances : [];
+  const otherDeductions = Array.isArray(deductions.otherDeductions) ? deductions.otherDeductions : [];
+  const extraPayments = Array.isArray(salary?.extraPayments) ? salary.extraPayments : [];
+
+  const renderListRows = (items = []) =>
+    items
+      .map(
+        (item) =>
+          `<tr><td style="padding:8px 10px; color:#111827;">${item.label || 'Item'}</td><td style="padding:8px 10px; text-align:right; color:#111827;">${formatCurrency(item.amount)}</td></tr>`,
+      )
+      .join('');
+
+  return `
+    <section>
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:12px;">
+        <div>
+          <p style="margin:0; color:#6b7280; font-size:12px;">Salary Slip</p>
+          <h1 style="margin:2px 0 6px; font-size:22px; color:#8c191b;">${staff?.fullName || 'Staff Member'}</h1>
+          <p style="margin:0; color:#374151; font-size:13px;">Staff ID: ${staff?.staffId || '-'}</p>
+          <p style="margin:2px 0 0; color:#4b5563; font-size:13px;">${staff?.designationCategory || ''} ${staff?.subRole ? `· ${staff.subRole}` : ''}</p>
+        </div>
+        <div style="text-align:right;">
+          <p style="margin:0; font-weight:700; color:#0f172a;">${label}</p>
+          <p style="margin:4px 0 0; color:#6b7280; font-size:12px;">Generated on ${new Date().toLocaleString('en-IN')}</p>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px; margin-top:14px;">
+        <div style="border:1px solid #e5e7eb; border-radius:12px; padding:12px 14px; background:#f8fafc;">
+          <h2 style="margin:0 0 10px; font-size:16px; color:#0f172a;">Earnings</h2>
+          <table style="width:100%; border-collapse:collapse; font-size:12px;">
+            <tbody>
+              <tr><td style="padding:8px 10px; color:#111827;">Basic Pay</td><td style="padding:8px 10px; text-align:right; color:#111827;">${formatCurrency(allowances.basicPay)}</td></tr>
+              <tr><td style="padding:8px 10px; color:#111827;">HRA</td><td style="padding:8px 10px; text-align:right; color:#111827;">${formatCurrency(allowances.hra)}</td></tr>
+              <tr><td style="padding:8px 10px; color:#111827;">DA</td><td style="padding:8px 10px; text-align:right; color:#111827;">${formatCurrency(allowances.da)}</td></tr>
+              <tr><td style="padding:8px 10px; color:#111827;">Special Allowance</td><td style="padding:8px 10px; text-align:right; color:#111827;">${formatCurrency(allowances.specialAllowance)}</td></tr>
+              <tr><td style="padding:8px 10px; color:#111827;">Conveyance</td><td style="padding:8px 10px; text-align:right; color:#111827;">${formatCurrency(allowances.conveyanceAllowance)}</td></tr>
+              <tr><td style="padding:8px 10px; color:#111827;">Medical</td><td style="padding:8px 10px; text-align:right; color:#111827;">${formatCurrency(allowances.medicalAllowance)}</td></tr>
+              ${renderListRows(otherAllowances)}
+              ${salary?.overtimeAmount ? `<tr><td style="padding:8px 10px; color:#111827;">Overtime</td><td style="padding:8px 10px; text-align:right; color:#111827;">${formatCurrency(salary.overtimeAmount)}</td></tr>` : ''}
+              ${renderListRows(extraPayments)}
+              <tr style="border-top:1px solid #e5e7eb; font-weight:700;"><td style="padding:10px; color:#0f172a;">Gross Salary</td><td style="padding:10px; text-align:right; color:#0f172a;">${formatCurrency(salary?.grossSalary)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="border:1px solid #e5e7eb; border-radius:12px; padding:12px 14px; background:#f8fafc;">
+          <h2 style="margin:0 0 10px; font-size:16px; color:#0f172a;">Deductions</h2>
+          <table style="width:100%; border-collapse:collapse; font-size:12px;">
+            <tbody>
+              <tr><td style="padding:8px 10px; color:#111827;">PF (Employee)</td><td style="padding:8px 10px; text-align:right; color:#111827;">${formatCurrency(deductions.pfEmployeeContribution)}</td></tr>
+              <tr><td style="padding:8px 10px; color:#111827;">PF (Employer)</td><td style="padding:8px 10px; text-align:right; color:#111827;">${formatCurrency(deductions.pfEmployerContribution)}</td></tr>
+              <tr><td style="padding:8px 10px; color:#111827;">ESI</td><td style="padding:8px 10px; text-align:right; color:#111827;">${formatCurrency(deductions.esiContribution)}</td></tr>
+              <tr><td style="padding:8px 10px; color:#111827;">Professional Tax</td><td style="padding:8px 10px; text-align:right; color:#111827;">${formatCurrency(deductions.professionalTax)}</td></tr>
+              <tr><td style="padding:8px 10px; color:#111827;">TDS</td><td style="padding:8px 10px; text-align:right; color:#111827;">${formatCurrency(deductions.tdsAmount)}</td></tr>
+              <tr><td style="padding:8px 10px; color:#111827;">Advance Recovery</td><td style="padding:8px 10px; text-align:right; color:#111827;">${formatCurrency(deductions.advanceRecoveryPerMonth)}</td></tr>
+              ${renderListRows(otherDeductions)}
+              ${
+                salary?.penaltiesAmount
+                  ? `<tr><td style="padding:8px 10px; color:#111827;">Penalties</td><td style="padding:8px 10px; text-align:right; color:#111827;">${formatCurrency(
+                      salary.penaltiesAmount,
+                    )}</td></tr>`
+                  : ''
+              }
+              <tr style="border-top:1px solid #e5e7eb; font-weight:700;"><td style="padding:10px; color:#0f172a;">Total Deductions</td><td style="padding:10px; text-align:right; color:#0f172a;">${formatCurrency(salary?.totalDeductions)}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="margin-top:16px; padding:14px 16px; border-radius:12px; border:1px solid #e5e7eb; background:#ecfdf3; display:flex; justify-content:space-between; align-items:center;">
+        <div>
+          <p style="margin:0; font-size:13px; color:#047857;">Net Payable</p>
+          <p style="margin:4px 0 0; font-size:20px; font-weight:700; color:#065f46;">${formatCurrency(salary?.netPayable)}</p>
+        </div>
+        <div style="text-align:right; color:#4b5563; font-size:12px;">
+          <p style="margin:0;">Status: ${salary?.paymentStatus || 'Pending'}</p>
+          <p style="margin:4px 0 0;">Processed on: ${salary?.processedAt?.seconds ? new Date(salary.processedAt.seconds * 1000).toLocaleString('en-IN') : 'Draft'}</p>
+          <p style="margin:6px 0 0; color:#9ca3af;">This is a system generated slip.</p>
+        </div>
+      </div>
+    </section>
+  `;
 };
 
 const downloadCsvBlob = (rows, fileName) => {
@@ -49,7 +137,7 @@ const downloadCsvBlob = (rows, fileName) => {
   URL.revokeObjectURL(link.href);
 };
 
-const SalarySlipPreview = ({ open, salary, staff, onClose }) => {
+const SalarySlipPreview = ({ open, salary, staff, onClose, onDownloadPdf }) => {
   if (!open || !salary) return null;
   const label = monthLabel(salary.month, salary.year);
   return (
@@ -85,7 +173,7 @@ const SalarySlipPreview = ({ open, salary, staff, onClose }) => {
             </button>
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={onDownloadPdf}
               className="rounded-lg border border-cardinal px-3 py-1.5 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
             >
               Print / PDF
@@ -117,6 +205,20 @@ const StaffDashboard = () => {
   const [salaryHistory, setSalaryHistory] = useState([]);
   const [loginState, setLoginState] = useState({ email: '', password: '', error: null, loading: false });
   const [slipContext, setSlipContext] = useState({ open: false, salary: null });
+
+  const handleDownloadSalarySlipPdf = useCallback(async () => {
+    if (!slipContext.salary || !staffDoc) return;
+    try {
+      const label = monthLabel(slipContext.salary.month, slipContext.salary.year);
+      const safeId = `${staffDoc.staffId || staffDoc.fullName || 'salary-slip'}`
+        .replace(/[^a-z0-9-]/gi, '-')
+        .toLowerCase();
+      const contentHtml = buildSalarySlipContent(slipContext.salary, staffDoc, label);
+      await renderPdfFromHtml({ contentHtml, filename: `salary-slip-${safeId}.pdf` });
+    } catch (error) {
+      console.error('Unable to download salary slip PDF', error);
+    }
+  }, [slipContext.salary, staffDoc]);
 
   useEffect(() => {
     const resolveRole = async (currentUser) => {
@@ -500,6 +602,7 @@ const StaffDashboard = () => {
         open={slipContext.open}
         salary={slipContext.salary}
         staff={staffDoc}
+        onDownloadPdf={handleDownloadSalarySlipPdf}
         onClose={() => setSlipContext({ open: false, salary: null })}
       />
     </div>

@@ -46,6 +46,7 @@ import { Bar, Line, Pie } from 'react-chartjs-2';
 import { auth, db } from '../lib/firebase';
 import { getCollectionsInRange, groupByMonth, makeExpenseId, makeVoucherNo } from '../lib/reports';
 import { toCSV } from '../lib/csv';
+import { renderPdfFromHtml } from '../lib/pdf';
 import SalaryModule from '../components/SalaryModule';
 import StaffSettingsModal from '../components/StaffSettingsModal';
 
@@ -267,48 +268,6 @@ const formatCurrency = (amount) => { // fixed initialization order
   const value = Number(amount || 0);
   if (!Number.isFinite(value)) return '₹0';
   return `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
-};
-
-const renderPdfFromWrappedHtml = async ({ contentHtml, filename }) => {
-  const response = await fetch('/api/master-template');
-  if (!response.ok) {
-    throw new Error('Unable to load PDF template');
-  }
-  const template = await response.text();
-  const wrappedHtml = template.replace('{{{content}}}', contentHtml);
-  const { jsPDF } = await import('jspdf');
-  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
-
-  const container = document.createElement('div');
-  container.innerHTML = wrappedHtml;
-  container.style.position = 'fixed';
-  container.style.left = '-10000px';
-  container.style.top = '0';
-  container.style.width = '794px';
-  container.style.zIndex = '-1';
-  document.body.appendChild(container);
-
-  await new Promise((resolve, reject) => {
-    doc
-      .html(container, {
-        callback: (pdf) => {
-          pdf.save(filename);
-          document.body.removeChild(container);
-          resolve();
-        },
-        html2canvas: { scale: 0.8 },
-        margin: [20, 30, 30, 30],
-        autoPaging: 'text',
-        x: 0,
-        y: 0,
-        width: 555,
-        windowWidth: 900,
-      })
-      .catch((error) => {
-        document.body.removeChild(container);
-        reject(error);
-      });
-  });
 };
 
 const getAdvancePlanEndDate = (student = {}) => {
@@ -2801,7 +2760,7 @@ const resolveTransactionMonthLabel = (entry) => {
         `;
 
         const contentHtml = `${summaryHtml}${tableHtml}`;
-        await renderPdfFromWrappedHtml({
+        await renderPdfFromHtml({
           contentHtml,
           filename: 'fee-collection-report.pdf',
         });
@@ -3420,7 +3379,7 @@ const resolveTransactionMonthLabel = (entry) => {
           </div>`;
 
       const contentHtml = `${summaryCard}${paymentsSection}`;
-      await renderPdfFromWrappedHtml({
+      await renderPdfFromHtml({
         contentHtml,
         filename: `fee-report-${fileSafeId}.pdf`,
       });
