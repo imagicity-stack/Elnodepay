@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
+import { wrapWithMasterTemplate } from '../lib/pdfTemplate';
 
 const NAV_TABS = [
   { id: 'new', label: 'New Inquiry' },
@@ -125,38 +126,31 @@ const downloadBlob = (content, filename, type) => {
 };
 
 const downloadPdfLike = (title, rows, headers) => {
-  const html = `<!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>${title}</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 16px; }
-          h1 { font-size: 18px; margin-bottom: 12px; }
-          table { width: 100%; border-collapse: collapse; font-size: 12px; }
-          th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
-          th { background: #f8fafc; }
-        </style>
-      </head>
-      <body>
-        <h1>${title}</h1>
-        <table>
-          <thead>
-            <tr>${headers.map((header) => `<th>${header.label}</th>`).join('')}</tr>
-          </thead>
-          <tbody>
-            ${rows
-              .map(
-                (row) =>
-                  `<tr>${headers
-                    .map((header) => `<td>${row[header.key] ?? ''}</td>`)
-                    .join('')}</tr>`,
-              )
-              .join('')}
-          </tbody>
-        </table>
-      </body>
-    </html>`;
+  const content = `
+    <style>
+      body { font-family: Arial, sans-serif; padding: 16px; }
+      h1 { font-size: 18px; margin-bottom: 12px; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+      th { background: #f8fafc; }
+    </style>
+    <h1>${title}</h1>
+    <table>
+      <thead>
+        <tr>${headers.map((header) => `<th>${header.label}</th>`).join('')}</tr>
+      </thead>
+      <tbody>
+        ${rows
+          .map(
+            (row) =>
+              `<tr>${headers
+                .map((header) => `<td>${row[header.key] ?? ''}</td>`)
+                .join('')}</tr>`,
+          )
+          .join('')}
+      </tbody>
+    </table>`;
+  const html = wrapWithMasterTemplate(content);
   const printable = window.open('', '_blank');
   printable.document.write(html);
   printable.document.close();
@@ -1335,21 +1329,17 @@ export default function AdminManagerPortal() {
     if (typeof window === 'undefined') return;
     const win = window.open('', '_blank', 'width=720,height=900');
     if (!win) return;
-    win.document.write(`
-      <html>
-        <head>
-          <title>${title}</title>
-          <style>
-            body { font-family: 'Inter', Arial, sans-serif; padding: 24px; color: #0f172a; }
-            h1 { color: #A31F36; }
-            table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-            td { padding: 8px; border-bottom: 1px solid #e2e8f0; }
-            .footer { margin-top: 24px; font-size: 12px; color: #475569; }
-          </style>
-        </head>
-        <body>${html}</body>
-      </html>
-    `);
+    const content = `
+      <style>
+        body { font-family: 'Inter', Arial, sans-serif; padding: 24px; color: #0f172a; }
+        h1 { color: #A31F36; }
+        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        td { padding: 8px; border-bottom: 1px solid #e2e8f0; }
+        .footer { margin-top: 24px; font-size: 12px; color: #475569; }
+      </style>
+      ${html}`;
+    const wrapped = wrapWithMasterTemplate(content);
+    win.document.write(wrapped);
     win.document.close();
     win.print();
   }, []);

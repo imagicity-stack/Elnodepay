@@ -21,6 +21,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import { wrapWithMasterTemplate } from '../lib/pdfTemplate';
 
 const parseDateValue = (value) => {
   if (!value) return null;
@@ -1095,37 +1096,31 @@ const ParentDashboard = () => {
     const win = window.open('', '_blank', 'width=600,height=800');
     if (!win) return;
     const date = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
-    win.document.write(`
-      <html>
-        <head>
-          <title>Payment Receipt</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 24px; color: #1f2937; }
-            h1 { color: #A31F36; }
-            table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-            td { padding: 8px; border-bottom: 1px solid #e2e8f0; }
-            .total { font-weight: bold; font-size: 18px; }
-          </style>
-        </head>
-        <body>
-          <h1>Payment Receipt</h1>
-          <p>Thank you for your payment. Below are the details.</p>
-          <table>
-            <tr><td>Student</td><td>${payment.student_name}</td></tr>
-            <tr><td>Class</td><td>${payment.class || '-'}</td></tr>
-            <tr><td>Amount</td><td>₹${Number(payment.amount || 0).toLocaleString('en-IN')}</td></tr>
-            <tr><td>Date</td><td>${date.toLocaleString()}</td></tr>
-            <tr><td>Mode</td><td>${payment.mode || 'Online'}</td></tr>
-            <tr><td>Status</td><td>${payment.status}</td></tr>
-            <tr><td>Transaction ID</td><td>${
-              payment.razorpay_payment_id || payment.transaction_id || 'N/A'
-            }</td></tr>
-          </table>
-          <p class="total">Total Paid: ₹${Number(payment.amount || 0).toLocaleString('en-IN')}</p>
-          <p>— EL-NODE Pay</p>
-        </body>
-      </html>
-    `);
+    const content = `
+      <style>
+        body { font-family: Arial, sans-serif; padding: 24px; color: #1f2937; }
+        h1 { color: #A31F36; }
+        table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+        td { padding: 8px; border-bottom: 1px solid #e2e8f0; }
+        .total { font-weight: bold; font-size: 18px; }
+      </style>
+      <h1>Payment Receipt</h1>
+      <p>Thank you for your payment. Below are the details.</p>
+      <table>
+        <tr><td>Student</td><td>${payment.student_name}</td></tr>
+        <tr><td>Class</td><td>${payment.class || '-'}</td></tr>
+        <tr><td>Amount</td><td>₹${Number(payment.amount || 0).toLocaleString('en-IN')}</td></tr>
+        <tr><td>Date</td><td>${date.toLocaleString()}</td></tr>
+        <tr><td>Mode</td><td>${payment.mode || 'Online'}</td></tr>
+        <tr><td>Status</td><td>${payment.status}</td></tr>
+        <tr><td>Transaction ID</td><td>${
+          payment.razorpay_payment_id || payment.transaction_id || 'N/A'
+        }</td></tr>
+      </table>
+      <p class="total">Total Paid: ₹${Number(payment.amount || 0).toLocaleString('en-IN')}</p>
+      <p>— EL-NODE Pay</p>`;
+    const wrapped = wrapWithMasterTemplate(content);
+    win.document.write(wrapped);
     win.document.close();
     win.print();
   };
