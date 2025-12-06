@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Head from 'next/head';
 import Image from 'next/image';
 import { useRouter } from 'next/router';
@@ -6,6 +6,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebas
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { SalarySlip } from '../components/SalaryModule';
+import { wrapWithMasterTemplate } from '../lib/pdfTemplate';
 
 const formatCurrency = (value = 0) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
@@ -52,6 +53,19 @@ const downloadCsvBlob = (rows, fileName) => {
 const SalarySlipPreview = ({ open, salary, staff, onClose }) => {
   if (!open || !salary) return null;
   const label = monthLabel(salary.month, salary.year);
+  const slipRef = useRef(null);
+
+  const handlePrint = () => {
+    const printable = window.open('', '_blank', 'width=900,height=1200');
+    if (!printable) return;
+    const content = slipRef.current?.innerHTML || '';
+    const wrappedHtml = wrapWithMasterTemplate(content);
+    printable.document.write(wrappedHtml);
+    printable.document.close();
+    printable.focus();
+    printable.print();
+    printable.close();
+  };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 px-4 py-8">
       <div className="relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
@@ -85,7 +99,7 @@ const SalarySlipPreview = ({ open, salary, staff, onClose }) => {
             </button>
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={handlePrint}
               className="rounded-lg border border-cardinal px-3 py-1.5 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
             >
               Print / PDF
@@ -99,7 +113,7 @@ const SalarySlipPreview = ({ open, salary, staff, onClose }) => {
             </button>
           </div>
         </div>
-        <div className="p-6">
+        <div className="p-6" ref={slipRef}>
           <SalarySlip staff={staff} salary={salary} structure={salary.allowancesSnapshot} monthLabel={label} />
         </div>
       </div>

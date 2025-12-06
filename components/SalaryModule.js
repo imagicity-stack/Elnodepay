@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { toCSV } from '../lib/csv';
+import { wrapWithMasterTemplate } from '../lib/pdfTemplate';
 
 const MONTH_OPTIONS = [
   { id: 1, label: 'January' },
@@ -151,6 +152,19 @@ const SalarySlip = ({ staff, salary, structure, monthLabel }) => {
 
 const SalarySlipModal = ({ open, onClose, salary, staff, structure, monthLabel, onDownloadCsv }) => {
   if (!open || !salary) return null;
+  const slipRef = useRef(null);
+
+  const handlePrint = () => {
+    const printable = window.open('', '_blank', 'width=900,height=1200');
+    if (!printable) return;
+    const content = slipRef.current?.innerHTML || '';
+    const wrappedHtml = wrapWithMasterTemplate(content);
+    printable.document.write(wrappedHtml);
+    printable.document.close();
+    printable.focus();
+    printable.print();
+    printable.close();
+  };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 px-4 py-8">
       <div className="relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
@@ -169,7 +183,7 @@ const SalarySlipModal = ({ open, onClose, salary, staff, structure, monthLabel, 
             </button>
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={handlePrint}
               className="rounded-lg border border-cardinal px-3 py-1.5 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
             >
               Print / PDF
@@ -183,7 +197,7 @@ const SalarySlipModal = ({ open, onClose, salary, staff, structure, monthLabel, 
             </button>
           </div>
         </div>
-        <div className="p-6">
+        <div className="p-6" ref={slipRef}>
           <SalarySlip staff={staff} salary={salary} structure={structure} monthLabel={monthLabel} />
         </div>
       </div>
