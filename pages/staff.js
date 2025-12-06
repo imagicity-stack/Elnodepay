@@ -107,12 +107,12 @@ const SalarySlipPreview = ({ open, salary, staff, onClose }) => {
   );
 };
 
-const TeacherDashboard = () => {
+const StaffDashboard = () => {
   const router = useRouter();
   const [authChecked, setAuthChecked] = useState(false);
   const [user, setUser] = useState(null);
   const [roleState, setRoleState] = useState({ loading: true, error: null });
-  const [teacherDoc, setTeacherDoc] = useState(null);
+  const [staffDoc, setStaffDoc] = useState(null);
   const [attendance, setAttendance] = useState([]);
   const [salaryHistory, setSalaryHistory] = useState([]);
   const [loginState, setLoginState] = useState({ email: '', password: '', error: null, loading: false });
@@ -123,7 +123,7 @@ const TeacherDashboard = () => {
       const normalizeRole = (value) => (value || '').toString().toLowerCase().trim();
       const extractRole = (value) => {
         if (Array.isArray(value)) {
-          const match = value.map(normalizeRole).find((entry) => entry === 'teacher');
+          const match = value.map(normalizeRole).find((entry) => entry === 'staff');
           return match || normalizeRole(value[0]);
         }
         return normalizeRole(value);
@@ -166,7 +166,7 @@ const TeacherDashboard = () => {
         }
       }
 
-      // 5) As a last resort, infer teaching role from staff profile when users doc is misconfigured.
+      // 5) As a last resort, infer staff role from staff profile when users doc is misconfigured.
       const staffSnap = await getDocs(
         query(collection(db, 'staff'), where('authUid', '==', currentUser.uid), limit(1)),
       );
@@ -174,8 +174,8 @@ const TeacherDashboard = () => {
       if (staffDoc) {
         const subRole = extractRole(staffDoc.data()?.subRole);
         const designation = extractRole(staffDoc.data()?.designationCategory);
-        if (subRole === 'teacher' || designation === 'teaching') {
-          return { role: 'teacher', docId: staffDoc.id };
+        if (subRole === 'teacher' || designation === 'teaching' || designation === 'staff') {
+          return { role: 'staff', docId: staffDoc.id };
         }
       }
 
@@ -195,7 +195,7 @@ const TeacherDashboard = () => {
       try {
         const { role, docId } = await resolveRole(currentUser);
 
-        if (role === 'teacher') {
+        if (role === 'staff') {
           setUser(currentUser);
           setRoleState({ loading: false, error: null, docId });
           setAuthChecked(true);
@@ -206,12 +206,12 @@ const TeacherDashboard = () => {
         setRoleState({
           loading: false,
           error:
-            'Role not assigned. Ensure the "users" document has role "teacher" with either doc ID = UID or authUid/uid/email set.',
+            'Role not assigned. Ensure the "users" document has role "staff" with either doc ID = UID or authUid/uid/email set.',
         });
         await signOut(auth);
         router.push('/unauthorized');
       } catch (error) {
-        console.error('Unable to verify teacher role', error);
+        console.error('Unable to verify staff role', error);
         setUser(null);
         setRoleState({ loading: false, error: 'Unable to verify role. Please try again.' });
       } finally {
@@ -229,7 +229,7 @@ const TeacherDashboard = () => {
       const staffSnap = await getDocs(staffQuery);
       const docRef = staffSnap.docs[0];
       if (docRef) {
-        setTeacherDoc({ id: docRef.id, ...docRef.data() });
+        setStaffDoc({ id: docRef.id, ...docRef.data() });
       }
     };
     loadStaff();
@@ -237,10 +237,10 @@ const TeacherDashboard = () => {
 
   useEffect(() => {
     const loadAttendance = async () => {
-      if (!teacherDoc?.staffId) return;
+      if (!staffDoc?.staffId) return;
       const attendanceQuery = query(
         collection(db, 'staffAttendance'),
-        where('staffId', '==', teacherDoc.staffId),
+        where('staffId', '==', staffDoc.staffId),
         orderBy('year', 'desc'),
         orderBy('month', 'desc'),
       );
@@ -249,14 +249,14 @@ const TeacherDashboard = () => {
       setAttendance(rows);
     };
     loadAttendance();
-  }, [teacherDoc]);
+  }, [staffDoc]);
 
   useEffect(() => {
     const loadSalaryHistory = async () => {
-      if (!teacherDoc?.staffId) return;
+      if (!staffDoc?.staffId) return;
       const salaryQuery = query(
         collection(db, 'salaries'),
-        where('staffId', '==', teacherDoc.staffId),
+        where('staffId', '==', staffDoc.staffId),
         orderBy('year', 'desc'),
         orderBy('month', 'desc'),
       );
@@ -264,7 +264,7 @@ const TeacherDashboard = () => {
       setSalaryHistory(snapshot.docs.map((entry) => ({ id: entry.id, ...entry.data() })));
     };
     loadSalaryHistory();
-  }, [teacherDoc]);
+  }, [staffDoc]);
 
   const attendanceSummary = useMemo(() => attendance[0] || null, [attendance]);
 
@@ -274,7 +274,7 @@ const TeacherDashboard = () => {
     try {
       await signInWithEmailAndPassword(auth, loginState.email, loginState.password);
     } catch (error) {
-      console.error('Teacher login failed', error);
+      console.error('Staff login failed', error);
       setLoginState((prev) => ({ ...prev, error: 'Unable to sign in. Check credentials.', loading: false }));
       return;
     }
@@ -290,7 +290,7 @@ const TeacherDashboard = () => {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white text-cardinal">
         <Head>
-          <title>Teacher Portal</title>
+          <title>Staff Portal</title>
         </Head>
         <span className="h-8 w-8 animate-spin rounded-full border-2 border-cardinal/40 border-t-cardinal" />
       </div>
@@ -301,13 +301,13 @@ const TeacherDashboard = () => {
     return (
       <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
         <Head>
-          <title>Teacher Login · EL-NODE Pay</title>
+          <title>Staff Login · EL-NODE Pay</title>
         </Head>
         <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-xl">
           <div className="flex items-center gap-3">
             <Image src="/elnode.png" alt="EL-NODE" width={48} height={48} />
             <div>
-              <h1 className="text-xl font-semibold text-slate-900">Teacher Login</h1>
+              <h1 className="text-xl font-semibold text-slate-900">Staff Login</h1>
               <p className="text-sm text-slate-500">Sign in to view your payroll and attendance.</p>
             </div>
           </div>
@@ -354,20 +354,20 @@ const TeacherDashboard = () => {
   return (
     <div className="min-h-screen bg-slate-50">
       <Head>
-        <title>Teacher Dashboard · EL-NODE Pay</title>
+        <title>Staff Dashboard · EL-NODE Pay</title>
       </Head>
       <header className="border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
           <div className="flex items-center gap-3">
             <Image src="/elnode.png" alt="EL-NODE Pay" width={48} height={48} />
             <div>
-              <h1 className="text-2xl font-semibold text-slate-900">Teacher Dashboard</h1>
+              <h1 className="text-2xl font-semibold text-slate-900">Staff Dashboard</h1>
               <p className="text-sm text-slate-600">View your profile, attendance, and salary slips.</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
             <div className="rounded-full bg-cardinal/10 px-3 py-1 text-xs font-semibold text-cardinal">
-              Teacher access
+              Staff access
             </div>
             <button
               type="button"
@@ -387,29 +387,29 @@ const TeacherDashboard = () => {
             <div className="grid gap-3 text-sm text-slate-700 md:grid-cols-2">
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Name</p>
-                <p className="font-semibold text-slate-900">{teacherDoc?.fullName || '—'}</p>
+                <p className="font-semibold text-slate-900">{staffDoc?.fullName || '—'}</p>
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Staff ID</p>
-                <p className="font-semibold text-slate-900">{teacherDoc?.staffId || '—'}</p>
+                <p className="font-semibold text-slate-900">{staffDoc?.staffId || '—'}</p>
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Category</p>
-                <p className="font-semibold text-slate-900">{teacherDoc?.designationCategory || '—'}</p>
+                <p className="font-semibold text-slate-900">{staffDoc?.designationCategory || '—'}</p>
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Sub Role</p>
-                <p className="font-semibold text-slate-900">{teacherDoc?.subRole || '—'}</p>
+                <p className="font-semibold text-slate-900">{staffDoc?.subRole || '—'}</p>
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Employment</p>
-                <p className="font-semibold text-slate-900">{teacherDoc?.employmentType || '—'}</p>
+                <p className="font-semibold text-slate-900">{staffDoc?.employmentType || '—'}</p>
               </div>
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Date of Joining</p>
                 <p className="font-semibold text-slate-900">
-                  {teacherDoc?.dateOfJoining?.toDate
-                    ? teacherDoc.dateOfJoining.toDate().toLocaleDateString('en-IN')
+                  {staffDoc?.dateOfJoining?.toDate
+                    ? staffDoc.dateOfJoining.toDate().toLocaleDateString('en-IN')
                     : '—'}
                 </p>
               </div>
@@ -499,11 +499,11 @@ const TeacherDashboard = () => {
       <SalarySlipPreview
         open={slipContext.open}
         salary={slipContext.salary}
-        staff={teacherDoc}
+        staff={staffDoc}
         onClose={() => setSlipContext({ open: false, salary: null })}
       />
     </div>
   );
 };
 
-export default TeacherDashboard;
+export default StaffDashboard;

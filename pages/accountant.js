@@ -47,6 +47,7 @@ import { auth, db } from '../lib/firebase';
 import { getCollectionsInRange, groupByMonth, makeExpenseId, makeVoucherNo } from '../lib/reports';
 import { toCSV } from '../lib/csv';
 import SalaryModule from '../components/SalaryModule';
+import StaffSettingsModal from '../components/StaffSettingsModal';
 
 ChartJS.register(
   ArcElement,
@@ -85,9 +86,16 @@ const FINANCE_NAV_ITEMS = [
 ];
 const FINANCE_TAB_IDS = FINANCE_NAV_ITEMS.map((item) => item.id);
 const SALARY_NAV_ITEMS = [
-  { id: 'salary', label: 'Salary' },
+  { id: 'admin', label: 'Admin' },
+  { id: 'teacher', label: 'Teacher' },
+  { id: 'non-teaching', label: 'Non Teaching' },
 ];
 const SALARY_TAB_IDS = SALARY_NAV_ITEMS.map((item) => item.id);
+const SALARY_TAB_CATEGORY = {
+  admin: 'Admin',
+  teacher: 'Teacher',
+  'non-teaching': 'Non Teaching',
+};
 
 const SCHOOL_NAME = 'Elden Heights School - Silwar Hazaribagh';
 
@@ -1146,6 +1154,7 @@ const AccountantDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [activeSection, setActiveSection] = useState('fees');
   const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
+  const [staffSettingsOpen, setStaffSettingsOpen] = useState(false);
   const settingsMenuRef = useRef(null);
   const [filters, setFilters] = useState({
     class: 'All',
@@ -1562,6 +1571,8 @@ const resolveTransactionMonthLabel = (entry) => {
   useEffect(() => {
     if (FINANCE_TAB_IDS.includes(activeTab)) {
       setActiveSection('finances');
+    } else if (SALARY_TAB_IDS.includes(activeTab)) {
+      setActiveSection('salary');
     } else {
       setActiveSection('fees');
     }
@@ -3854,7 +3865,7 @@ const resolveTransactionMonthLabel = (entry) => {
     } else if (sectionId === 'salary') {
       setActiveSection('salary');
       if (!SALARY_TAB_IDS.includes(activeTab)) {
-        setActiveTab('salary');
+        setActiveTab('admin');
       }
     } else {
       setActiveSection('fees');
@@ -4366,6 +4377,15 @@ const resolveTransactionMonthLabel = (entry) => {
                 </button>
               </>
             )}
+            {isSalarySection && (
+              <button
+                type="button"
+                onClick={() => setStaffSettingsOpen(true)}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              >
+                Staff Settings
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setSignOutConfirmOpen(true)}
@@ -4420,7 +4440,14 @@ const resolveTransactionMonthLabel = (entry) => {
           ))}
         </nav>
 
-        {activeSection === 'salary' && activeTab === 'salary' && <SalaryModule processorUid={user?.uid} />}
+        {activeSection === 'salary' && SALARY_TAB_IDS.includes(activeTab) && (
+          <SalaryModule processorUid={user?.uid} category={SALARY_TAB_CATEGORY[activeTab]} />
+        )}
+        <StaffSettingsModal
+          open={staffSettingsOpen}
+          onClose={() => setStaffSettingsOpen(false)}
+          secondaryAuth={secondaryAuthRef.current}
+        />
 
         {activeTab === 'overview' && (
           <section className="mt-8 space-y-8">

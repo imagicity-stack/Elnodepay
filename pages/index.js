@@ -53,6 +53,11 @@ const LoginPage = () => {
           return;
         }
 
+        if (role === 'staff') {
+          await router.replace('/staff');
+          return;
+        }
+
         if (role === 'parent') {
           await router.replace('/parent');
           return;
