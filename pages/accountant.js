@@ -44,6 +44,7 @@ import {
 import { getDownloadURL, getStorage, ref as storageRef, uploadBytes } from 'firebase/storage';
 import { Bar, Line, Pie } from 'react-chartjs-2';
 import { auth, db } from '../lib/firebase';
+import { downloadFeeCollectionReportPdf, downloadFeeHistoryPdf } from '../lib/pdfUtils';
 import { getCollectionsInRange, groupByMonth, makeExpenseId, makeVoucherNo } from '../lib/reports';
 import { toCSV } from '../lib/csv';
 import SalaryModule from '../components/SalaryModule';
@@ -2684,56 +2685,10 @@ const resolveTransactionMonthLabel = (entry) => {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
       } else {
-        const { jsPDF } = await import('jspdf');
-        const doc = new jsPDF();
-        doc.setFontSize(15);
-        doc.text(SCHOOL_NAME, 14, 20);
-        doc.setFontSize(12);
-        doc.text('Fee Collection Report', 14, 32);
-        doc.setFontSize(9);
-        doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 42);
-        doc.text(`Filters: ${summaryText}`, 14, 52, { maxWidth: 180 });
-
-        let y = 64;
-        filteredReportEntries.forEach((entry, index) => {
-          if (y > 270) {
-            doc.addPage();
-            y = 24;
-          }
-          doc.setFontSize(11);
-          doc.text(`${index + 1}. ${entry.studentName || 'Student'}`, 14, y);
-          y += 8;
-          doc.setFontSize(9);
-          doc.text(`Student ID: ${entry.studentId || '—'}`, 14, y);
-          doc.text(`Class: ${entry.class || '—'}${entry.section ? ` · Section ${entry.section}` : ''}`, 100, y);
-          y += 10;
-          doc.text(`Status: ${entry.statusLabel || '—'} · Cycle: ${entry.cycle || '—'}`, 14, y);
-          doc.text(`Session: ${entry.session || '—'} · Term: ${entry.term || '—'}`, 100, y);
-          y += 10;
-          doc.text(
-            `Amount: ${formatCurrency(entry.amount)} · Balance: ${formatCurrency(entry.balance)}`,
-            14,
-            y,
-          );
-          doc.text(`Due: ${formatDateDisplay(entry.dueDate)} · Paid: ${formatDateDisplay(entry.paidDate)}`, 100, y);
-          y += 10;
-          doc.text(
-            `Mode: ${entry.paymentModeLabel || '—'} · Txn: ${entry.transactionId || '—'}`,
-            14,
-            y,
-          );
-          y += 10;
-          doc.text(`Parent: ${entry.parentEmail || '—'} · Phone: ${entry.parentPhone || '—'}`, 14, y);
-          y += 10;
-          doc.text(
-            `Reminder Sent: ${entry.hasReminder ? 'Yes' : 'No'} · Store Charge: ${formatCurrency(entry.storeAmount)}`,
-            14,
-            y,
-          );
-          y += 12;
-        });
-
-        doc.save('fee-collection-report.pdf');
+        const success = await downloadFeeCollectionReportPdf(filteredReportEntries, summaryText);
+        if (!success) {
+          throw new Error('Unable to generate PDF');
+        }
       }
       triggerToast('Report downloaded successfully.', 'success');
     } catch (error) {
@@ -3289,63 +3244,7 @@ const resolveTransactionMonthLabel = (entry) => {
   const handleDownloadHistoryReport = async (student, entries) => {
     if (!student) return;
     try {
-      const { jsPDF } = await import('jspdf');
-      const doc = new jsPDF();
-      const title = `Fee Report · ${student.name || student.studentId || 'Student'}`;
-      const studentId = student.studentId || student.id;
-      doc.setFontSize(16);
-      doc.text(title, 14, 20);
-      doc.setFontSize(11);
-      doc.text(`Student ID: ${studentId}`, 14, 30);
-      doc.text(`Class: ${student.class || '-'}`, 14, 36);
-      doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 42);
-      let y = 52;
-      if (!entries.length) {
-        doc.text('No payments recorded yet.', 14, y);
-      } else {
-        entries.forEach((payment, index) => {
-          if (y > 270) {
-            doc.addPage();
-            y = 20;
-          }
-          doc.setFontSize(12);
-          doc.text(`Payment ${index + 1}`, 14, y);
-          y += 6;
-          doc.setFontSize(11);
-          const amountLine = `Amount: ₹${Number(payment.amount || 0).toLocaleString('en-IN')}`;
-          const modeLine = `Mode: ${payment.mode || 'Online'}`;
-          const dateValue = payment.date?.toDate
-            ? payment.date.toDate().toLocaleString()
-            : payment.date
-            ? new Date(payment.date).toLocaleString()
-            : '—';
-          doc.text(amountLine, 14, y);
-          y += 6;
-          doc.text(modeLine, 14, y);
-          y += 6;
-          doc.text(`Date: ${dateValue}`, 14, y);
-          y += 6;
-          if (payment.transaction_id) {
-            doc.text(`Transaction ID: ${payment.transaction_id}`, 14, y);
-            y += 6;
-          }
-          if (payment.breakdown && Array.isArray(payment.breakdown) && payment.breakdown.length > 0) {
-            doc.text('Breakdown:', 14, y);
-            y += 6;
-            payment.breakdown.forEach((item) => {
-              if (y > 270) {
-                doc.addPage();
-                y = 20;
-              }
-              doc.text(`• ${item.label || 'Fee'} — ₹${Number(item.amount || 0).toLocaleString('en-IN')}`, 18, y);
-              y += 6;
-            });
-          }
-          y += 4;
-        });
-      }
-      const fileSafeId = `${studentId}`.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
-      doc.save(`fee-report-${fileSafeId}.pdf`);
+      await downloadFeeHistoryPdf(student, entries);
       triggerToast('Report downloaded successfully.', 'success');
     } catch (error) {
       console.error('Error generating history PDF', error);
