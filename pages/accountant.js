@@ -47,6 +47,7 @@ import { auth, db } from '../lib/firebase';
 import { getCollectionsInRange, groupByMonth, makeExpenseId, makeVoucherNo } from '../lib/reports';
 import { toCSV } from '../lib/csv';
 import SalaryModule from '../components/SalaryModule';
+import StaffSettingsModal from '../components/StaffSettingsModal';
 
 ChartJS.register(
   ArcElement,
@@ -1146,6 +1147,7 @@ const AccountantDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [activeSection, setActiveSection] = useState('fees');
   const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
+  const [staffSettingsOpen, setStaffSettingsOpen] = useState(false);
   const settingsMenuRef = useRef(null);
   const [filters, setFilters] = useState({
     class: 'All',
@@ -4366,6 +4368,15 @@ const resolveTransactionMonthLabel = (entry) => {
                 </button>
               </>
             )}
+            {isSalarySection && (
+              <button
+                type="button"
+                onClick={() => setStaffSettingsOpen(true)}
+                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              >
+                Staff Settings
+              </button>
+            )}
             <button
               type="button"
               onClick={() => setSignOutConfirmOpen(true)}
@@ -4421,6 +4432,11 @@ const resolveTransactionMonthLabel = (entry) => {
         </nav>
 
         {activeSection === 'salary' && activeTab === 'salary' && <SalaryModule processorUid={user?.uid} />}
+        <StaffSettingsModal
+          open={staffSettingsOpen}
+          onClose={() => setStaffSettingsOpen(false)}
+          secondaryAuth={secondaryAuthRef.current}
+        />
 
         {activeTab === 'overview' && (
           <section className="mt-8 space-y-8">

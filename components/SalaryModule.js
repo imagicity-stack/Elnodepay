@@ -18,7 +18,7 @@ const MONTH_OPTIONS = [
   { id: 12, label: 'December' },
 ];
 
-const CATEGORY_OPTIONS = ['All', 'Teaching', 'Admin', 'Non Teaching'];
+const CATEGORY_OPTIONS = ['Admin', 'Teacher', 'Non Teaching'];
 
 const currentDate = new Date();
 const CURRENT_MONTH = currentDate.getMonth() + 1;
@@ -737,7 +737,7 @@ const SalaryModule = ({ processorUid }) => {
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(CURRENT_MONTH);
   const [selectedYear, setSelectedYear] = useState(CURRENT_YEAR);
-  const [selectedCategory, setSelectedCategory] = useState('All');
+  const [selectedCategory, setSelectedCategory] = useState('Admin');
   const [structures, setStructures] = useState({});
   const [structureSaving, setStructureSaving] = useState(false);
   const [attendanceMap, setAttendanceMap] = useState({});
@@ -807,7 +807,7 @@ const SalaryModule = ({ processorUid }) => {
 
   const staffForTable = useMemo(() => {
     return staff
-      .filter((member) => selectedCategory === 'All' || member.designationCategory === selectedCategory)
+      .filter((member) => !selectedCategory || member.designationCategory === selectedCategory)
       .map((member) => {
         const salaryRow = salaries.find((entry) => entry.staffId === member.staffId);
         return {
@@ -932,7 +932,7 @@ const SalaryModule = ({ processorUid }) => {
   };
 
   const filteredSalaries = salaries.filter((row) => {
-    if (selectedCategory === 'All') return true;
+    if (!selectedCategory) return true;
     const staffRow = staff.find((member) => member.staffId === row.staffId);
     return staffRow?.designationCategory === selectedCategory;
   });

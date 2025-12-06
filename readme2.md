@@ -1,14 +1,14 @@
-# Firebase setup steps for salary and teacher portal
+# Firebase setup steps for salary and staff portal
 
-Follow these steps to configure Firebase so the new salary and teacher portals work correctly.
+Follow these steps to configure Firebase so the new salary and staff portals work correctly.
 
 1. **Verify Authentication users**
-   - Create Firebase Auth users for each teacher and accountant.
-   - Each user must have a matching document in the `users` collection with the **same auth uid** as the document id and a `role` field set to `teacher`, `accountant`, or `parent`.
+   - Create Firebase Auth users for each staff member and accountant.
+   - Each user must have a matching document in the `users` collection with the **same auth uid** as the document id and a `role` field set to `staff`, `accountant`, or `parent`.
 
 2. **Seed the `staff` collection**
    - For every staff member, add a document in the `staff` collection using `staffId` as the document id when possible.
-   - Required fields include: `staffId`, `authUid`, `fullName`, `designationCategory` (Teaching/Admin/Non Teaching), `subRole`, `employmentType`, `dateOfJoining` (Timestamp), `bankAccountNumber`, `ifscCode`, `panNumber`, `aadhaarNumber`, `salaryCycle`, and `salaryStructureId` (optional reference id).
+   - Required fields include: `staffId`, `authUid`, `fullName`, `designationCategory` (Teacher/Admin/Non Teaching), `subRole`, `employmentType`, `dateOfJoining` (Timestamp), `bankAccountNumber`, `ifscCode`, `panNumber`, `aadhaarNumber`, `salaryCycle`, and `salaryStructureId` (optional reference id).
 
 3. **Create salary structures**
    - Add or update a document in the `salaryStructures` collection for each staff member using the `staffId` as the doc id.
@@ -25,7 +25,7 @@ Follow these steps to configure Firebase so the new salary and teacher portals w
    - If you want to store PDF slips, create a Firebase Storage bucket path (for example `salary-slips/`) and ensure authenticated users can upload/read their own slips according to your security rules.
 
 7. **Security rules checklist**
-   - Ensure Firestore rules allow accountants to read/write the salary-related collections and restrict teachers to read-only access for their own salary and attendance documents.
+   - Ensure Firestore rules allow accountants to read/write the salary-related collections and restrict staff to read-only access for their own salary and attendance documents.
    - Make sure unauthenticated users cannot access any salary data.
 
 8. **Environment variables**
@@ -38,5 +38,5 @@ Follow these steps to configure Firebase so the new salary and teacher portals w
 
 10. **Testing**
     - Sign in as an accountant, open the Salary tab, and create/update salary structures.
-    - Process a salary for a staff member, mark it as paid, and verify it appears in the teacher dashboard salary history.
-    - Sign in as the corresponding teacher and confirm attendance and salary slips render correctly and are read-only.
+    - Process a salary for a staff member, mark it as paid, and verify it appears in the staff dashboard salary history.
+    - Sign in as the corresponding staff user and confirm attendance and salary slips render correctly and are read-only.
