@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { toCSV } from '../lib/csv';
+import { generateSalarySlipPdf } from '../lib/pdfs/salarySlip';
 
 const MONTH_OPTIONS = [
   { id: 1, label: 'January' },
@@ -149,7 +150,7 @@ const SalarySlip = ({ staff, salary, structure, monthLabel }) => {
   );
 };
 
-const SalarySlipModal = ({ open, onClose, salary, staff, structure, monthLabel, onDownloadCsv }) => {
+const SalarySlipModal = ({ open, onClose, salary, staff, structure, monthLabel, onDownloadCsv, onDownloadPdf }) => {
   if (!open || !salary) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 px-4 py-8">
@@ -166,6 +167,13 @@ const SalarySlipModal = ({ open, onClose, salary, staff, structure, monthLabel, 
               className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
             >
               Download CSV
+            </button>
+            <button
+              type="button"
+              onClick={onDownloadPdf}
+              className="rounded-lg border border-cardinal px-3 py-1.5 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
+            >
+              Download PDF
             </button>
             <button
               type="button"
@@ -804,6 +812,13 @@ const SalaryModule = ({ processorUid, category }) => {
     [salaries, selectedStaff],
   );
 
+  const buildMonthLabel = (salary) => {
+    const monthValue = salary?.month || selectedMonth;
+    const yearValue = salary?.year || selectedYear;
+    const monthName = MONTH_OPTIONS.find((m) => m.id === monthValue)?.label || monthValue;
+    return `${monthName} ${yearValue}`;
+  };
+
   const staffForTable = useMemo(() => {
     return staff
       .filter((member) => !selectedCategory || member.designationCategory === selectedCategory)
@@ -913,6 +928,22 @@ const SalaryModule = ({ processorUid, category }) => {
       ],
       `salary_${salary.staffId}_${salary.year}_${salary.month}.csv`,
     );
+  };
+
+  const handleDownloadSlipPdf = async (salary) => {
+    if (!salary) return;
+    try {
+      const staffRow = staff.find((member) => member.staffId === salary.staffId) || selectedStaff;
+      const structure = structures[salary.staffId] || selectedStructure || emptyStructure;
+      await generateSalarySlipPdf({
+        salary,
+        staff: staffRow,
+        structure,
+        monthLabel: buildMonthLabel(salary),
+      });
+    } catch (error) {
+      console.error('Error generating salary slip PDF', error);
+    }
   };
 
   const handleDownloadSheet = () => {
@@ -1078,10 +1109,9 @@ const SalaryModule = ({ processorUid, category }) => {
           salary={slipContext.salary}
           staff={slipContext.staff}
           structure={slipContext.salary?.allowancesSnapshot || selectedStructure}
-          monthLabel={`${MONTH_OPTIONS.find((m) => m.id === (slipContext.salary?.month || selectedMonth))?.label} ${
-            slipContext.salary?.year || selectedYear
-          }`}
+          monthLabel={buildMonthLabel(slipContext.salary)}
           onDownloadCsv={() => handleDownloadSlipCsv(slipContext.salary)}
+          onDownloadPdf={() => handleDownloadSlipPdf(slipContext.salary)}
           onClose={() => setSlipContext({ open: false, salary: null, staff: null })}
         />
       )}
