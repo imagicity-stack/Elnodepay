@@ -18,7 +18,6 @@ const MONTH_OPTIONS = [
   { id: 12, label: 'December' },
 ];
 
-const CATEGORY_OPTIONS = ['Admin', 'Teacher', 'Non Teaching'];
 
 const currentDate = new Date();
 const CURRENT_MONTH = currentDate.getMonth() + 1;
@@ -732,12 +731,12 @@ const downloadCsvBlob = (rows, fileName) => {
   URL.revokeObjectURL(link.href);
 };
 
-const SalaryModule = ({ processorUid }) => {
+const SalaryModule = ({ processorUid, category }) => {
   const [staff, setStaff] = useState([]);
   const [selectedStaff, setSelectedStaff] = useState(null);
   const [selectedMonth, setSelectedMonth] = useState(CURRENT_MONTH);
   const [selectedYear, setSelectedYear] = useState(CURRENT_YEAR);
-  const [selectedCategory, setSelectedCategory] = useState('Admin');
+  const selectedCategory = category || 'Admin';
   const [structures, setStructures] = useState({});
   const [structureSaving, setStructureSaving] = useState(false);
   const [attendanceMap, setAttendanceMap] = useState({});
@@ -939,7 +938,7 @@ const SalaryModule = ({ processorUid }) => {
 
   return (
     <section className="mt-8 space-y-6">
-      <div className="grid gap-3 md:grid-cols-3">
+      <div className="grid gap-3 md:grid-cols-2">
         <label className="text-sm font-semibold text-slate-700">
           Month
           <select
@@ -963,18 +962,6 @@ const SalaryModule = ({ processorUid }) => {
           >
             {[CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2].map((year) => (
               <option key={year}>{year}</option>
-            ))}
-          </select>
-        </label>
-        <label className="text-sm font-semibold text-slate-700">
-          Category
-          <select
-            value={selectedCategory}
-            onChange={(event) => setSelectedCategory(event.target.value)}
-            className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-          >
-            {CATEGORY_OPTIONS.map((category) => (
-              <option key={category}>{category}</option>
             ))}
           </select>
         </label>

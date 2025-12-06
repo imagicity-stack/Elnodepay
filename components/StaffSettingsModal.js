@@ -5,8 +5,6 @@ import {
   doc,
   getDocs,
   limit,
-  onSnapshot,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
@@ -43,20 +41,9 @@ const generateStaffId = (category = 'Admin') => {
 };
 
 const StaffSettingsModal = ({ open, onClose, secondaryAuth }) => {
-  const [staff, setStaff] = useState([]);
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState('');
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const staffRef = collection(db, 'staff');
-    const unsub = onSnapshot(query(staffRef, orderBy('fullName', 'asc')), (snapshot) => {
-      const rows = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-      setStaff(rows);
-    });
-    return unsub;
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -83,23 +70,6 @@ const StaffSettingsModal = ({ open, onClose, secondaryAuth }) => {
       email: value === 'Non Teaching' ? '' : prev.email,
       staffId: prev.id ? prev.staffId : generateStaffId(value),
     }));
-  };
-
-  const handleEdit = (row) => {
-    setFeedback('');
-    setForm({
-      id: row.id,
-      staffId: row.staffId,
-      fullName: row.fullName || '',
-      gender: row.gender || '',
-      address: row.address || '',
-      phoneNumber: row.phoneNumber || '',
-      email: row.email || '',
-      category: row.designationCategory || 'Admin',
-      subRole: row.subRole || '',
-      subject: row.subject || '',
-      employmentType: row.employmentType || '',
-    });
   };
 
   const ensureStaffAccount = async (email, fullName, staffId, category) => {
@@ -207,7 +177,7 @@ const StaffSettingsModal = ({ open, onClose, secondaryAuth }) => {
           </button>
         </div>
 
-        <div className="grid gap-6 px-6 py-6 lg:grid-cols-2">
+        <div className="grid gap-6 px-6 py-6 lg:grid-cols-1">
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="grid gap-3 md:grid-cols-2">
               <label className="text-sm font-semibold text-slate-700">
@@ -378,57 +348,6 @@ const StaffSettingsModal = ({ open, onClose, secondaryAuth }) => {
               </button>
             </div>
           </form>
-
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-semibold text-slate-900">Staff Directory</h3>
-                <p className="text-sm text-slate-600">Select a row to edit staff details.</p>
-              </div>
-            </div>
-            <div className="overflow-hidden rounded-2xl border border-slate-200">
-              <div className="max-h-[480px] overflow-y-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      {['Staff ID', 'Name', 'Category', 'Sub Role', 'Employment', 'Action'].map((heading) => (
-                        <th key={heading} className="px-4 py-2 text-left font-semibold text-slate-700">
-                          {heading}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {staff.map((row) => (
-                      <tr key={row.id} className="hover:bg-cardinal/5">
-                        <td className="px-4 py-2 font-semibold text-slate-900">{row.staffId}</td>
-                        <td className="px-4 py-2 text-slate-700">{row.fullName}</td>
-                        <td className="px-4 py-2 text-slate-700">{row.designationCategory}</td>
-                        <td className="px-4 py-2 text-slate-700">{row.subRole || row.subject || '—'}</td>
-                        <td className="px-4 py-2 text-slate-700">{row.employmentType || '—'}</td>
-                        <td className="px-4 py-2">
-                          <button
-                            type="button"
-                            onClick={() => handleEdit(row)}
-                            className="rounded-lg border border-cardinal px-3 py-1.5 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
-                          >
-                            Edit
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                    {!staff.length && (
-                      <tr>
-                        <td colSpan={6} className="px-4 py-6 text-center text-sm text-slate-500">
-                          No staff records yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>

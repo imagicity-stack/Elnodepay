@@ -86,9 +86,16 @@ const FINANCE_NAV_ITEMS = [
 ];
 const FINANCE_TAB_IDS = FINANCE_NAV_ITEMS.map((item) => item.id);
 const SALARY_NAV_ITEMS = [
-  { id: 'salary', label: 'Salary' },
+  { id: 'admin', label: 'Admin' },
+  { id: 'teacher', label: 'Teacher' },
+  { id: 'non-teaching', label: 'Non Teaching' },
 ];
 const SALARY_TAB_IDS = SALARY_NAV_ITEMS.map((item) => item.id);
+const SALARY_TAB_CATEGORY = {
+  admin: 'Admin',
+  teacher: 'Teacher',
+  'non-teaching': 'Non Teaching',
+};
 
 const SCHOOL_NAME = 'Elden Heights School - Silwar Hazaribagh';
 
@@ -3856,7 +3863,7 @@ const resolveTransactionMonthLabel = (entry) => {
     } else if (sectionId === 'salary') {
       setActiveSection('salary');
       if (!SALARY_TAB_IDS.includes(activeTab)) {
-        setActiveTab('salary');
+        setActiveTab('admin');
       }
     } else {
       setActiveSection('fees');
@@ -4431,7 +4438,9 @@ const resolveTransactionMonthLabel = (entry) => {
           ))}
         </nav>
 
-        {activeSection === 'salary' && activeTab === 'salary' && <SalaryModule processorUid={user?.uid} />}
+        {activeSection === 'salary' && SALARY_TAB_IDS.includes(activeTab) && (
+          <SalaryModule processorUid={user?.uid} category={SALARY_TAB_CATEGORY[activeTab]} />
+        )}
         <StaffSettingsModal
           open={staffSettingsOpen}
           onClose={() => setStaffSettingsOpen(false)}
