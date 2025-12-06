@@ -1,5 +1,22 @@
-import puppeteer from 'puppeteer';
+import chromium from '@sparticuz/chromium-min';
+import puppeteerCore from 'puppeteer-core';
 import { buildPdfDocument } from '../../lib/pdfTemplates';
+
+const isServerless = Boolean(process.env.AWS_REGION || process.env.VERCEL);
+
+const launchBrowser = async () => {
+  if (isServerless) {
+    return puppeteerCore.launch({
+      args: chromium.args,
+      defaultViewport: chromium.defaultViewport,
+      executablePath: await chromium.executablePath(),
+      headless: chromium.headless,
+    });
+  }
+
+  const puppeteer = (await import('puppeteer')).default;
+  return puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+};
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
@@ -16,7 +33,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'Invalid PDF request' });
     }
 
-    browser = await puppeteer.launch({ headless: 'new', args: ['--no-sandbox', '--disable-setuid-sandbox'] });
+    browser = await launchBrowser();
     const page = await browser.newPage();
 
     await page.setContent(document.html, { waitUntil: 'networkidle0' });
