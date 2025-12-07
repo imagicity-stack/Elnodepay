@@ -112,6 +112,31 @@ const REPORT_DEFAULT_FILTERS = {
   search: '',
 };
 
+const MONTH_OPTIONS = [
+  'All',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+const PDF_LAYOUT = {
+  headerHeight: 50.8, // 2 inches
+  footerHeight: 25.4, // 1 inch
+  sideMargin: 38.1, // 1.5 inches
+  bottomMargin: 38.1, // 1.5 inches
+  contentTopOffset: 12.7, // 0.5 inch below header
+  footerColor: { r: 140, g: 25, b: 27 },
+};
+
 const parseDateValue = (value) => {
   if (!value) return null;
   if (value?.toDate) {
@@ -190,6 +215,72 @@ const buildHeadwiseBreakdown = (request = {}) => {
     }
   }
   return entries;
+};
+
+const monthValueFromLabel = (value) => {
+  if (!value || value === 'All') return null;
+  const index = MONTH_OPTIONS.findIndex((option) => option.toLowerCase() === `${value}`.toLowerCase());
+  return index > 0 ? index - 1 : null;
+};
+
+const buildHistoryDurationLabel = (filters = {}) => {
+  const { startDate, endDate, month } = filters;
+  if (startDate && endDate) {
+    return `${startDate} to ${endDate}`;
+  }
+  if (startDate && !endDate) {
+    return `From ${startDate}`;
+  }
+  if (!startDate && endDate) {
+    return `Until ${endDate}`;
+  }
+  if (month && month !== 'All') {
+    return month;
+  }
+  return 'Full history';
+};
+
+const filterPaymentsByOptions = (payments = [], filters = {}) => {
+  const safePayments = Array.isArray(payments) ? payments : [];
+  const sorted = [...safePayments].sort((a, b) => {
+    const dateA = parseDateValue(a?.date)?.getTime() || 0;
+    const dateB = parseDateValue(b?.date)?.getTime() || 0;
+    return dateB - dateA;
+  });
+
+  const start = filters.startDate ? parseDateValue(filters.startDate) : null;
+  const end = filters.endDate ? parseDateValue(filters.endDate) : null;
+  const monthIndex = monthValueFromLabel(filters.month);
+  const normalizedMode = filters.mode ? `${filters.mode}`.toLowerCase() : 'all';
+  const normalizedSession = filters.session ? `${filters.session}`.toLowerCase() : 'all';
+
+  if (start && Number.isFinite(start.getTime())) {
+    start.setHours(0, 0, 0, 0);
+  }
+  if (end && Number.isFinite(end.getTime())) {
+    end.setHours(23, 59, 59, 999);
+  }
+
+  return sorted.filter((payment) => {
+    const dateValue = parseDateValue(payment.date);
+    if (start && (!dateValue || dateValue < start)) return false;
+    if (end && (!dateValue || dateValue > end)) return false;
+    if (monthIndex !== null) {
+      const matchesMonth = dateValue ? dateValue.getMonth() === monthIndex : false;
+      if (!matchesMonth) return false;
+    }
+    if (normalizedMode !== 'all') {
+      const paymentMode = `${payment.mode || 'Online'}`.toLowerCase();
+      if (paymentMode !== normalizedMode) return false;
+    }
+    if (normalizedSession !== 'all') {
+      const sessionValue = `${
+        payment.session || payment.session_name || payment.session_label || payment.sessionName || ''
+      }`.toLowerCase();
+      if (!sessionValue || sessionValue !== normalizedSession) return false;
+    }
+    return true;
+  });
 };
 
 const sanitiseHouseList = (houses = []) => {
@@ -895,22 +986,92 @@ const CommonFeeRequestModal = ({
   );
 };
 
-const PaymentHistoryModal = ({ student, payments, onClose, onDownload }) => (
+const PaymentHistoryModal = ({
+  student,
+  payments,
+  filters,
+  sessionOptions = [],
+  onClose,
+  onFilterChange,
+  onDownloadPdf,
+  onDownloadCsv,
+}) => (
   <Modal title={`Payment history · ${student?.name || ''}`} onClose={onClose} size="xl">
     <div className="space-y-4 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-slate-600">
           Showing all payments made by {student?.parent_email ? `the parent (${student.parent_email})` : 'this student'}.
         </p>
-        <button
-          type="button"
-          onClick={onDownload}
-          disabled={!payments.length}
-          className="rounded-lg border border-cardinal px-3 py-1.5 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Download Report
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={onDownloadPdf}
+            disabled={!payments.length}
+            className="rounded-lg border border-cardinal px-3 py-1.5 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Download PDF
+          </button>
+          <button
+            type="button"
+            onClick={onDownloadCsv}
+            disabled={!payments.length}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Download CSV
+          </button>
+        </div>
       </div>
+
+      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+        <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          From
+          <input
+            type="date"
+            value={filters.startDate}
+            onChange={onFilterChange('startDate')}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          To
+          <input
+            type="date"
+            value={filters.endDate}
+            onChange={onFilterChange('endDate')}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          />
+        </label>
+        <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Month
+          <select
+            value={filters.month}
+            onChange={onFilterChange('month')}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          >
+            {MONTH_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Session
+          <select
+            value={filters.session}
+            onChange={onFilterChange('session')}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          >
+            <option value="All">All sessions</option>
+            {sessionOptions.map((option) => (
+              <option key={option} value={option}>
+                {option}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
       {payments.length === 0 && <p className="text-slate-600">No payments recorded yet.</p>}
       {payments.map((payment) => {
         const modeLabel = payment.mode || 'Online';
@@ -928,11 +1089,7 @@ const PaymentHistoryModal = ({ student, payments, onClose, onDownload }) => (
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span>{payment.fee_type || 'Tuition'}</span>
               {payment.term && <span className="rounded-full bg-white px-2 py-0.5">{payment.term}</span>}
-              <span>
-                {payment.date?.toDate
-                  ? payment.date.toDate().toLocaleString()
-                  : new Date(payment.date).toLocaleString()}
-              </span>
+              <span>{formatPaymentDateTime(payment.date)}</span>
             </div>
             <div className="mt-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
               <div>
@@ -950,7 +1107,7 @@ const PaymentHistoryModal = ({ student, payments, onClose, onDownload }) => (
               <ul className="mt-2 space-y-1 text-xs text-slate-600">
                 {payment.breakdown.map((item, idx) => (
                   <li key={`${payment.id}-fee-${idx}`} className="flex justify-between">
-                    <span>{item.label}</span>
+                    <span className="font-semibold">{item.label}</span>
                     <span>₹{Number(item.amount || 0).toLocaleString('en-IN')}</span>
                   </li>
                 ))}
@@ -1167,7 +1324,19 @@ const AccountantDashboard = () => {
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
   const [reportDownloadState, setReportDownloadState] = useState({ format: null, loading: false });
   const [historyContext, setHistoryContext] = useState({ open: false, student: null, entries: [] });
-  const [paymentModeFilter, setPaymentModeFilter] = useState('All');
+  const [paymentHistoryFilters, setPaymentHistoryFilters] = useState({
+    mode: 'All',
+    startDate: '',
+    endDate: '',
+    month: 'All',
+    session: 'All',
+  });
+  const [studentHistoryFilters, setStudentHistoryFilters] = useState({
+    startDate: '',
+    endDate: '',
+    month: 'All',
+    session: 'All',
+  });
   const [clearingDemoData, setClearingDemoData] = useState(false);
   const [settingsState, setSettingsState] = useState({
     currentTerm: '',
@@ -2243,21 +2412,27 @@ const resolveTransactionMonthLabel = (entry) => {
     return ['All', ...Array.from(orderedModes)];
   }, [payments]);
 
-  const filteredPaymentsByMode = useMemo(() => {
+  const paymentSessionOptions = useMemo(() => {
+    const sessionSet = new Set(sessionOptions);
     const safePayments = Array.isArray(payments) ? payments : [];
-    const sortedPayments = [...safePayments].sort((a, b) => {
-      const dateA = parseDateValue(a?.date)?.getTime() || 0;
-      const dateB = parseDateValue(b?.date)?.getTime() || 0;
-      return dateB - dateA;
+    safePayments.forEach((payment) => {
+      const sessionValue = payment.session || payment.session_name || payment.session_label || payment.sessionName;
+      if (sessionValue) {
+        sessionSet.add(sessionValue);
+      }
     });
-    if (paymentModeFilter === 'All') {
-      return sortedPayments;
-    }
-    const normalizedFilter = paymentModeFilter.toLowerCase();
-    return sortedPayments.filter(
-      (payment) => (payment.mode || 'Online').toLowerCase() === normalizedFilter,
-    );
-  }, [payments, paymentModeFilter]);
+    return Array.from(sessionSet);
+  }, [payments, sessionOptions]);
+
+  const filteredPaymentsByMode = useMemo(
+    () => filterPaymentsByOptions(payments, paymentHistoryFilters),
+    [payments, paymentHistoryFilters],
+  );
+
+  const filteredStudentHistory = useMemo(
+    () => filterPaymentsByOptions(historyContext.entries, studentHistoryFilters),
+    [historyContext.entries, studentHistoryFilters],
+  );
 
   const feeRequestReportEntries = useMemo(() => {
     const safeFeeRequests = Array.isArray(activeFeeRequests) ? activeFeeRequests : [];
@@ -3273,9 +3448,15 @@ const resolveTransactionMonthLabel = (entry) => {
     }
   };
 
+  const formatPaymentDateTime = (value) => {
+    const parsed = parseDateValue(value);
+    return parsed ? parsed.toLocaleString('en-IN') : '—';
+  };
+
   const openHistory = async (student) => {
     closeStudentActions();
     resetMarkPaidContext();
+    setStudentHistoryFilters({ startDate: '', endDate: '', month: 'All', session: 'All' });
     const historyQuery = query(
       collection(db, 'payments'),
       where('studentId', '==', student.studentId || student.id),
@@ -3286,70 +3467,202 @@ const resolveTransactionMonthLabel = (entry) => {
     setHistoryContext({ open: true, student, entries });
   };
 
-  const handleDownloadHistoryReport = async (student, entries) => {
+  const handleDownloadHistoryReport = async (student, entries, filters) => {
     if (!student) return;
     try {
       const { jsPDF } = await import('jspdf');
-      const doc = new jsPDF();
-      const title = `Fee Report · ${student.name || student.studentId || 'Student'}`;
-      const studentId = student.studentId || student.id;
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const footerText =
+        ' The Elden Heights School | A unit of Bhagwati Educational And Charitable Trust | Opposite B.S.F Firing Range, Siwar, Hazaribagh 825317 ,Contact: +91 9431904333 | www.eldenheights.org ';
+
+      const drawFrame = () => {
+        doc.setFillColor(255, 255, 255);
+        doc.rect(0, 0, pageWidth, PDF_LAYOUT.headerHeight, 'F');
+        doc.setFont('times', 'bold');
+        doc.setFontSize(22);
+        doc.setTextColor(0, 0, 0);
+        doc.text('The Elden Heights SchooL', pageWidth / 2, PDF_LAYOUT.headerHeight / 2 + 4, {
+          align: 'center',
+        });
+
+        doc.setFillColor(PDF_LAYOUT.footerColor.r, PDF_LAYOUT.footerColor.g, PDF_LAYOUT.footerColor.b);
+        doc.rect(0, pageHeight - PDF_LAYOUT.footerHeight, pageWidth, PDF_LAYOUT.footerHeight, 'F');
+        doc.setFont('times', 'normal');
+        doc.setFontSize(10);
+        doc.setTextColor(255, 255, 255);
+        doc.text(footerText, pageWidth / 2, pageHeight - PDF_LAYOUT.footerHeight / 2 + 2, {
+          align: 'center',
+          maxWidth: pageWidth - PDF_LAYOUT.sideMargin,
+        });
+        doc.setTextColor(0, 0, 0);
+      };
+
+      const ensureSpace = (heightNeeded = 0) => {
+        const limit = pageHeight - PDF_LAYOUT.footerHeight - PDF_LAYOUT.bottomMargin;
+        if (cursorY + heightNeeded > limit) {
+          doc.addPage();
+          drawFrame();
+          cursorY = PDF_LAYOUT.headerHeight + PDF_LAYOUT.contentTopOffset;
+        }
+      };
+
+      drawFrame();
+
+      let cursorY = PDF_LAYOUT.headerHeight + PDF_LAYOUT.contentTopOffset;
+      const contentX = PDF_LAYOUT.sideMargin;
+      const contentWidth = pageWidth - PDF_LAYOUT.sideMargin * 2;
+
+      doc.setFont('times', 'bold');
       doc.setFontSize(16);
-      doc.text(title, 14, 20);
-      doc.setFontSize(11);
-      doc.text(`Student ID: ${studentId}`, 14, 30);
-      doc.text(`Class: ${student.class || '-'}`, 14, 36);
-      doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 42);
-      let y = 52;
+      doc.text('Fee History Report', contentX, cursorY);
+      cursorY += 8;
+
+      const infoRows = [
+        { label: 'Name', value: student.name || '—' },
+        { label: 'School Number', value: student.studentId || student.id || '—' },
+        { label: 'Class', value: student.class || '—' },
+        { label: 'Session', value: student.session || filters?.session || '—' },
+        { label: 'Generated on', value: new Date().toLocaleString('en-IN') },
+        { label: 'Duration of the report', value: buildHistoryDurationLabel(filters) },
+      ];
+
+      doc.setFont('times', 'normal');
+      doc.setFontSize(12);
+      infoRows.forEach((row) => {
+        ensureSpace(6);
+        doc.setFont('times', 'bold');
+        doc.text(`${row.label} -`, contentX, cursorY);
+        doc.setFont('times', 'normal');
+        doc.text(`${row.value || '—'}`, contentX + 45, cursorY);
+        cursorY += 6;
+      });
+
+      cursorY += 4;
+
       if (!entries.length) {
-        doc.text('No payments recorded yet.', 14, y);
+        ensureSpace(10);
+        doc.setFont('times', 'normal');
+        doc.text('No payments recorded yet.', contentX, cursorY);
       } else {
         entries.forEach((payment, index) => {
-          if (y > 270) {
-            doc.addPage();
-            y = 20;
-          }
-          doc.setFontSize(12);
-          doc.text(`Payment ${index + 1}`, 14, y);
-          y += 6;
-          doc.setFontSize(11);
-          const amountLine = `Amount: ₹${Number(payment.amount || 0).toLocaleString('en-IN')}`;
-          const modeLine = `Mode: ${payment.mode || 'Online'}`;
-          const dateValue = payment.date?.toDate
-            ? payment.date.toDate().toLocaleString()
-            : payment.date
-            ? new Date(payment.date).toLocaleString()
-            : '—';
-          doc.text(amountLine, 14, y);
-          y += 6;
-          doc.text(modeLine, 14, y);
-          y += 6;
-          doc.text(`Date: ${dateValue}`, 14, y);
-          y += 6;
-          if (payment.transaction_id) {
-            doc.text(`Transaction ID: ${payment.transaction_id}`, 14, y);
-            y += 6;
-          }
-          if (payment.breakdown && Array.isArray(payment.breakdown) && payment.breakdown.length > 0) {
-            doc.text('Breakdown:', 14, y);
-            y += 6;
-            payment.breakdown.forEach((item) => {
-              if (y > 270) {
-                doc.addPage();
-                y = 20;
-              }
-              doc.text(`• ${item.label || 'Fee'} — ₹${Number(item.amount || 0).toLocaleString('en-IN')}`, 18, y);
-              y += 6;
+          ensureSpace(28);
+          doc.setFont('times', 'bold');
+          doc.text(`Payment ${index + 1}`, contentX, cursorY);
+          cursorY += 6;
+          const modeLabel = payment.mode || 'Online';
+          const transactionRef =
+            payment.transaction_id || payment.razorpay_payment_id || payment.reference_id || '';
+
+          const lines = [
+            { label: 'Payment Number', value: payment.payment_number || payment.id || `#${index + 1}` },
+            { label: 'Amount', value: `₹${Number(payment.amount || 0).toLocaleString('en-IN')}` },
+            { label: 'Mode', value: modeLabel },
+            { label: 'Date and time', value: formatPaymentDateTime(payment.date) },
+            {
+              label: 'Transaction Id',
+              value: transactionRef || (modeLabel.toLowerCase() === 'cash' ? 'NA' : '—'),
+            },
+          ];
+
+          lines.forEach((line) => {
+            ensureSpace(6);
+            doc.setFont('times', 'bold');
+            doc.text(`${line.label}:`, contentX, cursorY);
+            doc.setFont('times', 'normal');
+            doc.text(`${line.value || '—'}`, contentX + 55, cursorY);
+            cursorY += 6;
+          });
+
+          const breakdownEntries = Array.isArray(payment.breakdown) ? payment.breakdown : [];
+          if (breakdownEntries.length) {
+            ensureSpace(6);
+            doc.setFont('times', 'bold');
+            doc.text('Breakdown', contentX, cursorY);
+            cursorY += 5;
+            breakdownEntries.forEach((item) => {
+              ensureSpace(5);
+              doc.setFont('times', 'bold');
+              doc.text(item.label || 'Category', contentX + 4, cursorY);
+              doc.setFont('times', 'normal');
+              doc.text(
+                `₹${Number(item.amount || 0).toLocaleString('en-IN')}`,
+                contentX + contentWidth - 10,
+                cursorY,
+                { align: 'right' },
+              );
+              cursorY += 5;
             });
           }
-          y += 4;
+
+          cursorY += 4;
         });
       }
-      const fileSafeId = `${studentId}`.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+
+      const fileSafeId = `${student.studentId || student.id || 'student'}`
+        .replace(/[^a-z0-9-]/gi, '-')
+        .toLowerCase();
       doc.save(`fee-report-${fileSafeId}.pdf`);
       triggerToast('Report downloaded successfully.', 'success');
     } catch (error) {
       console.error('Error generating history PDF', error);
       triggerToast('Unable to download report. Please try again.', 'error');
+    }
+  };
+
+  const handleDownloadStudentHistoryCsv = () => {
+    const filename = `payment-history-${historyContext.student?.studentId || historyContext.student?.id || 'student'}.csv`;
+    const rows = buildPaymentCsvRows(filteredStudentHistory, historyContext.student);
+    downloadCsvFile(filename, rows);
+  };
+
+  const handleDownloadPaymentCsv = () => {
+    const rows = buildPaymentCsvRows(filteredPaymentsByMode);
+    downloadCsvFile('payment-history.csv', rows);
+  };
+
+  const handleDownloadPaymentPdf = async () => {
+    try {
+      const { jsPDF } = await import('jspdf');
+      const doc = new jsPDF();
+      doc.setFontSize(16);
+      doc.text('Overall Payment History', 14, 18);
+      doc.setFontSize(11);
+      doc.text(
+        `Filters · Mode: ${paymentHistoryFilters.mode} | Month: ${paymentHistoryFilters.month} | Session: ${paymentHistoryFilters.session} | Range: ${buildHistoryDurationLabel(paymentHistoryFilters)}`,
+        14,
+        26,
+      );
+
+      let y = 36;
+      if (!filteredPaymentsByMode.length) {
+        doc.text('No records match the selected filters.', 14, y);
+      } else {
+        filteredPaymentsByMode.forEach((payment, index) => {
+          if (y > 280) {
+            doc.addPage();
+            y = 20;
+          }
+          const modeLabel = payment.mode || 'Online';
+          const transactionRef = payment.transaction_id || payment.razorpay_payment_id || '—';
+          const studentLabel = `${payment.student_name || '—'} (${payment.studentId || payment.student_doc_id || '—'})`;
+          doc.setFontSize(12);
+          doc.text(`${index + 1}. ${studentLabel}`, 14, y);
+          y += 6;
+          doc.setFontSize(11);
+          doc.text(`Amount: ₹${Number(payment.amount || 0).toLocaleString('en-IN')} · Mode: ${modeLabel}`, 14, y);
+          y += 6;
+          doc.text(`Date: ${formatPaymentDateTime(payment.date)} · Transaction: ${transactionRef}`, 14, y);
+          y += 8;
+        });
+      }
+
+      doc.save('payment-history.pdf');
+      triggerToast('Payment history PDF ready.', 'success');
+    } catch (error) {
+      console.error('Unable to generate payment PDF', error);
+      triggerToast('Could not generate PDF. Please try again.', 'error');
     }
   };
 
@@ -4076,6 +4389,16 @@ const resolveTransactionMonthLabel = (entry) => {
     setExpenseFilters((prev) => ({ ...prev, [field]: value }));
   };
 
+  const handlePaymentHistoryFilterChange = (field) => (event) => {
+    const value = event?.target ? event.target.value : event;
+    setPaymentHistoryFilters((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleStudentHistoryFilterChange = (field) => (event) => {
+    const value = event?.target ? event.target.value : event;
+    setStudentHistoryFilters((prev) => ({ ...prev, [field]: value }));
+  };
+
   const handleExpenseRowClick = (entry) => {
     setSelectedExpense(entry);
   };
@@ -4109,6 +4432,25 @@ const resolveTransactionMonthLabel = (entry) => {
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
     triggerToast('Report downloaded successfully.', 'success');
+  };
+
+  const buildPaymentCsvRows = (rows = [], student) => {
+    return rows.map((payment) => ({
+      PaymentNumber: payment.payment_number || payment.id || '',
+      StudentName: payment.student_name || student?.name || '—',
+      StudentId: payment.studentId || payment.student_doc_id || student?.studentId || student?.id || '—',
+      Class: payment.class || student?.class || '—',
+      Session: payment.session || payment.session_name || payment.session_label || student?.session || '—',
+      Amount: payment.amount || 0,
+      Mode: payment.mode || 'Online',
+      TransactionId: payment.transaction_id || payment.razorpay_payment_id || '',
+      DateTime: formatPaymentDateTime(payment.date),
+      Breakdown: Array.isArray(payment.breakdown)
+        ? payment.breakdown
+            .map((item) => `${item.label || 'Fee'}: ₹${Number(item.amount || 0).toLocaleString('en-IN')}`)
+            .join(' | ')
+        : '',
+    }));
   };
 
   const handleDownloadMonthlyCollections = async () => {
@@ -5673,13 +6015,78 @@ const resolveTransactionMonthLabel = (entry) => {
                     Review every cash and online payment with quick filtering by mode.
                   </p>
                 </div>
-                <label className="text-sm font-medium text-slate-600">
-                  <span className="mr-2 hidden text-xs uppercase tracking-wide text-slate-500 md:inline">
-                    Mode filter
-                  </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDownloadPaymentPdf}
+                    disabled={loadingPayments || filteredPaymentsByMode.length === 0}
+                    className="rounded-lg border border-cardinal px-3 py-1.5 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Download PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadPaymentCsv}
+                    disabled={loadingPayments || filteredPaymentsByMode.length === 0}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Download CSV
+                  </button>
+                </div>
+              </div>
+              <div className="mt-6 grid gap-3 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
+                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  From Date
+                  <input
+                    type="date"
+                    value={paymentHistoryFilters.startDate}
+                    onChange={handlePaymentHistoryFilterChange('startDate')}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  To Date
+                  <input
+                    type="date"
+                    value={paymentHistoryFilters.endDate}
+                    onChange={handlePaymentHistoryFilterChange('endDate')}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  />
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Month
                   <select
-                    value={paymentModeFilter}
-                    onChange={(event) => setPaymentModeFilter(event.target.value)}
+                    value={paymentHistoryFilters.month}
+                    onChange={handlePaymentHistoryFilterChange('month')}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  >
+                    {MONTH_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Session
+                  <select
+                    value={paymentHistoryFilters.session}
+                    onChange={handlePaymentHistoryFilterChange('session')}
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  >
+                    <option value="All">All sessions</option>
+                    {paymentSessionOptions.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Mode
+                  <select
+                    value={paymentHistoryFilters.mode}
+                    onChange={handlePaymentHistoryFilterChange('mode')}
                     className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
                   >
                     {paymentModeOptions.map((option) => (
@@ -5714,11 +6121,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       filteredPaymentsByMode.map((payment) => {
                         const modeLabel = payment.mode || 'Online';
                         const transactionRef = payment.transaction_id || payment.razorpay_payment_id || '—';
-                        const dateValue = payment.date?.toDate
-                          ? payment.date.toDate().toLocaleString()
-                          : payment.date
-                          ? new Date(payment.date).toLocaleString()
-                          : '—';
+                        const dateValue = formatPaymentDateTime(payment.date);
                         return (
                           <tr key={payment.id} className="hover:bg-slate-50/80">
                             <td className="px-4 py-3">{dateValue}</td>
@@ -6328,11 +6731,19 @@ const resolveTransactionMonthLabel = (entry) => {
       {historyContext.open && (
         <PaymentHistoryModal
           student={historyContext.student}
-          payments={historyContext.entries}
+          payments={filteredStudentHistory}
+          filters={studentHistoryFilters}
+          sessionOptions={paymentSessionOptions}
           onClose={() => setHistoryContext({ open: false, student: null, entries: [] })}
-          onDownload={() =>
-            handleDownloadHistoryReport(historyContext.student, historyContext.entries)
+          onFilterChange={handleStudentHistoryFilterChange}
+          onDownloadPdf={() =>
+            handleDownloadHistoryReport(
+              historyContext.student,
+              filteredStudentHistory,
+              studentHistoryFilters,
+            )
           }
+          onDownloadCsv={handleDownloadStudentHistoryCsv}
         />
       )}
 
