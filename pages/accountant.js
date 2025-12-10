@@ -239,7 +239,56 @@ const normalisePaymentMode = (mode) => {
   if (value === 'upi' || value === 'upi payment') {
     return 'Online';
   }
+  if (value === 'banktransfer' || value === 'bank transfer' || value === 'neft' || value === 'rtgs') {
+    return 'Bank Transfer';
+  }
   return mode;
+};
+
+const formatSchoolNumber = (joiningYear, passingYear, sequence) => {
+  const joining = String(joiningYear).slice(-2).padStart(2, '0');
+  const sequencePart = String(sequence).padStart(3, '0');
+  const passing = String(passingYear).slice(-2).padStart(2, '0');
+  return `${joining}${sequencePart}${passing}`;
+};
+
+const normaliseYearValue = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  const yearValue = Math.trunc(numeric);
+  if (String(yearValue).length !== 4) return null;
+  return yearValue;
+};
+
+const generateSchoolNumber = async (joiningYear, passingYear) => {
+  const parsedJoining = normaliseYearValue(joiningYear);
+  const parsedPassing = normaliseYearValue(passingYear);
+  if (!parsedJoining || !parsedPassing) {
+    throw new Error('Enter valid 4-digit years for joining and passing');
+  }
+  let generatedNumber = '';
+  await runTransaction(db, async (transaction) => {
+    const counterRef = doc(db, 'metadata', 'school_number_counters');
+    const snapshot = await transaction.get(counterRef);
+    const data = snapshot.exists() ? snapshot.data() : {};
+    const lastSequence = Number(data.lastSequence || 0);
+    const nextSequence = lastSequence + 1;
+    if (nextSequence > 999) {
+      throw new Error('School number sequence limit reached. Please reset the counter.');
+    }
+    generatedNumber = formatSchoolNumber(parsedJoining, parsedPassing, nextSequence);
+    transaction.set(
+      counterRef,
+      {
+        lastSequence: nextSequence,
+        lastJoiningYear: parsedJoining,
+        lastPassingYear: parsedPassing,
+        updated_at: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  });
+  return generatedNumber;
 };
 
 const getFinancialYearRange = (referenceDate = new Date()) => { // fixed initialization order
@@ -327,6 +376,9 @@ const emptyStudentForm = {
   name: '',
   class: '',
   section: '',
+  year_of_joining: '',
+  year_of_passing: '',
+  student_email: '',
   parent_phone: '',
   parent_email: '',
   fee_cycle: 'Monthly',
@@ -360,7 +412,7 @@ const COA_EXPENSE = [
 
 const COST_CENTERS = ['Junior Wing', 'Senior Wing', 'Transport', 'Store', 'Admin Office'];
 
-const PAYMENT_MODES = ['Online', 'Cash', 'Card', 'UPI', 'BankTransfer'];
+const PAYMENT_MODES = ['Online', 'Cash', 'Card', 'UPI', 'Bank Transfer'];
 
 const EXPENSE_CATEGORIES = ['Printing', 'Electricity', 'Repairs', 'Salary', 'TransportFuel', 'Misc'];
 
@@ -409,15 +461,16 @@ const StudentFormModal = ({
     <form onSubmit={onSubmit} className="space-y-4">
       <div className="grid gap-4 md:grid-cols-2">
         <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Student ID
+          School Number
           <input
             name="studentId"
             value={formState.studentId}
             onChange={onChange}
-            required
+            readOnly
             className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-            placeholder="STU-001"
+            placeholder="Auto-generated after entering years"
           />
+          <span className="text-xs font-normal text-slate-500">Generated from year of joining/passing and a unique sequence.</span>
         </label>
         <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
           Name
@@ -458,6 +511,30 @@ const StudentFormModal = ({
           />
         </label>
         <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+          Year of Joining
+          <input
+            type="number"
+            name="year_of_joining"
+            value={formState.year_of_joining}
+            onChange={onChange}
+            required
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            placeholder="2024"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+          Year of Passing
+          <input
+            type="number"
+            name="year_of_passing"
+            value={formState.year_of_passing}
+            onChange={onChange}
+            required
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            placeholder="2026"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
           House
           {houseOptions.length > 0 ? (
             <select
@@ -485,6 +562,18 @@ s:ring-2 focus:ring-cardinal/20"
               readOnly
             />
           )}
+        </label>
+        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+          Student Email (for student portal)
+          <input
+            type="email"
+            name="student_email"
+            value={formState.student_email}
+            onChange={onChange}
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            placeholder="student@example.com"
+          />
+          <span className="text-xs font-normal text-slate-500">An account with role student will be prepared for this email.</span>
         </label>
         <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
           Parent Phone
@@ -914,7 +1003,7 @@ const PaymentHistoryModal = ({ student, payments, onClose, onDownload }) => (
       {payments.length === 0 && <p className="text-slate-600">No payments recorded yet.</p>}
       {payments.map((payment) => {
         const modeLabel = payment.mode || 'Online';
-        const isOnline = modeLabel.toLowerCase() === 'online';
+        const isReferenceRequired = modeLabel.toLowerCase() !== 'cash';
         const transactionRef = payment.razorpay_payment_id || payment.transaction_id || '';
         return (
           <div
@@ -939,9 +1028,11 @@ const PaymentHistoryModal = ({ student, payments, onClose, onDownload }) => (
                 <p className="font-semibold text-slate-500">Mode of payment</p>
                 <p className="text-slate-900">{modeLabel}</p>
               </div>
-              {isOnline && (
+              {isReferenceRequired && (
                 <div>
-                  <p className="font-semibold text-slate-500">Transaction ID</p>
+                  <p className="font-semibold text-slate-500">
+                    {modeLabel === 'Bank Transfer' ? 'UTR Number' : 'Transaction ID'}
+                  </p>
                   <p className="text-slate-900">{transactionRef || '—'}</p>
                 </div>
               )}
@@ -1757,7 +1848,7 @@ const resolveTransactionMonthLabel = (entry) => {
 
     const monthlyMap = new Map();
     const expenseMonthlyMap = new Map();
-    const modeTotals = { Cash: 0, Online: 0, Other: 0 };
+    const modeTotals = { Cash: 0, Online: 0, 'Bank Transfer': 0, Other: 0 };
     const paidTransactions = [];
 
     safeTransactions.forEach((entry) => {
@@ -1776,8 +1867,8 @@ const resolveTransactionMonthLabel = (entry) => {
       if (entryDate >= fyStart && entryDate <= fyEnd) {
         fyCollectionTotal += amount;
       }
-      const modeRaw = (entry.mode || 'Online').toLowerCase();
-      const modeKey = modeRaw === 'cash' ? 'Cash' : modeRaw === 'online' ? 'Online' : 'Other';
+      const modeLabel = normalisePaymentMode(entry.mode || entry.payment_mode || 'Online');
+      const modeKey = ['Cash', 'Online', 'Bank Transfer'].includes(modeLabel) ? modeLabel : 'Other';
       modeTotals[modeKey] += amount;
       const monthKey =
         entry.month_key || `${entryDate.getFullYear()}-${String(entryDate.getMonth() + 1).padStart(2, '0')}`;
@@ -2024,7 +2115,7 @@ const resolveTransactionMonthLabel = (entry) => {
           }
         }
         if (ledgerFilters.paymentMode !== 'All') {
-          const modeValue = entry.payment_mode || entry.mode || 'Online';
+          const modeValue = normalisePaymentMode(entry.payment_mode || entry.mode || 'Online');
           if (`${modeValue}`.toLowerCase() !== ledgerFilters.paymentMode.toLowerCase()) {
             return false;
           }
@@ -2140,7 +2231,7 @@ const resolveTransactionMonthLabel = (entry) => {
 
   const paidRequestCount = monthMetrics.requestStatusCounts?.paid || 0;
   const pendingRequestCount = monthMetrics.requestStatusCounts?.pending || 0;
-  const paymentModeTotals = monthMetrics.paymentModeSplit || { Cash: 0, Online: 0, Other: 0 };
+  const paymentModeTotals = monthMetrics.paymentModeSplit || { Cash: 0, Online: 0, 'Bank Transfer': 0, Other: 0 };
   const feeTypeDistribution = monthMetrics.feeTypeDistribution || [];
 
   const feeRequestAmounts = useMemo(() => {
@@ -2227,18 +2318,10 @@ const resolveTransactionMonthLabel = (entry) => {
 
   const paymentModeOptions = useMemo(() => {
     const safePayments = Array.isArray(payments) ? payments : [];
-    const normalizeLabel = (value) => {
-      if (!value) return '';
-      const trimmed = value.trim().toLowerCase();
-      if (!trimmed) return '';
-      return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
-    };
-    const orderedModes = new Set(['Online', 'Cash']);
+    const orderedModes = new Set(['Online', 'Cash', 'Bank Transfer']);
     safePayments.forEach((payment) => {
-      const label = normalizeLabel(payment.mode || 'Online');
-      if (label) {
-        orderedModes.add(label);
-      }
+      const label = normalisePaymentMode(payment.mode || payment.payment_mode || 'Online');
+      if (label) orderedModes.add(label);
     });
     return ['All', ...Array.from(orderedModes)];
   }, [payments]);
@@ -2253,10 +2336,10 @@ const resolveTransactionMonthLabel = (entry) => {
     if (paymentModeFilter === 'All') {
       return sortedPayments;
     }
-    const normalizedFilter = paymentModeFilter.toLowerCase();
-    return sortedPayments.filter(
-      (payment) => (payment.mode || 'Online').toLowerCase() === normalizedFilter,
-    );
+    return sortedPayments.filter((payment) => {
+      const modeLabel = normalisePaymentMode(payment.mode || payment.payment_mode || 'Online');
+      return modeLabel.toLowerCase() === paymentModeFilter.toLowerCase();
+    });
   }, [payments, paymentModeFilter]);
 
   const feeRequestReportEntries = useMemo(() => {
@@ -2334,7 +2417,7 @@ const resolveTransactionMonthLabel = (entry) => {
           request.paymentMode ||
           request.channel,
       );
-      const paymentModeKey = ['Cash', 'Online'].includes(paymentModeLabel)
+      const paymentModeKey = ['Cash', 'Online', 'Bank Transfer'].includes(paymentModeLabel)
         ? paymentModeLabel
         : paymentModeLabel
         ? 'Other'
@@ -2642,7 +2725,7 @@ const resolveTransactionMonthLabel = (entry) => {
           'Amount (₹)',
           'Balance (₹)',
           'Payment Mode',
-          'Transaction ID',
+          'Reference / UTR',
           'Parent Email',
           'Parent Phone',
           'Reminder Sent',
@@ -2823,6 +2906,9 @@ const resolveTransactionMonthLabel = (entry) => {
       name: student.name || '',
       class: student.class || '',
       section: student.section || '',
+      year_of_joining: student.year_of_joining || '',
+      year_of_passing: student.year_of_passing || '',
+      student_email: student.student_email || '',
       parent_phone: student.parent_phone || '',
       parent_email: student.parent_email || '',
       fee_cycle: student.fee_cycle || 'Monthly',
@@ -3043,6 +3129,53 @@ const resolveTransactionMonthLabel = (entry) => {
     }
   };
 
+  const ensureStudentAccount = async (email, name = '') => {
+    if (!email) return { uid: null };
+    const studentQuery = query(collection(db, 'users'), where('email', '==', email), limit(1));
+    const existing = await getDocs(studentQuery);
+    if (!existing.empty) {
+      const existingId = existing.docs[0].id;
+      await setDoc(
+        doc(db, 'users', existingId),
+        { role: 'student', name: name || email.split('@')[0] },
+        { merge: true },
+      );
+      return { uid: existingId };
+    }
+
+    if (!secondaryAuthRef.current) {
+      return { uid: null };
+    }
+
+    try {
+      const defaultPassword = 'elnstudent123';
+      const studentAuth = secondaryAuthRef.current;
+      const credentials = await createUserWithEmailAndPassword(studentAuth, email, defaultPassword);
+      await setDoc(
+        doc(db, 'users', credentials.user.uid),
+        {
+          email,
+          name: name || email.split('@')[0],
+          role: 'student',
+          created_at: serverTimestamp(),
+        },
+        { merge: true },
+      );
+      return { uid: credentials.user.uid };
+    } catch (error) {
+      if (error?.code === 'auth/email-already-in-use') {
+        const recheck = await getDocs(studentQuery);
+        if (!recheck.empty) {
+          const existingId = recheck.docs[0].id;
+          await setDoc(doc(db, 'users', existingId), { role: 'student' }, { merge: true });
+          return { uid: existingId };
+        }
+      }
+      console.warn('Student account creation skipped', error);
+      return { uid: null };
+    }
+  };
+
   const handleFormChange = (event) => {
     const { name, value } = event.target;
     setFormState((prev) => ({
@@ -3050,7 +3183,11 @@ const resolveTransactionMonthLabel = (entry) => {
       [name]:
         name === 'parent_phone'
           ? value.replace(/[^0-9+]/g, '')
-          : value,
+          : name === 'year_of_joining' || name === 'year_of_passing'
+            ? value.replace(/[^0-9]/g, '')
+            : name === 'parent_email' || name === 'student_email'
+              ? value.trim().toLowerCase()
+              : value,
     }));
   };
 
@@ -3065,11 +3202,33 @@ const resolveTransactionMonthLabel = (entry) => {
         setFormSubmitting(false);
         return;
       }
-      const baseData = {
-        studentId: formState.studentId.trim(),
+      const joiningYear = normaliseYearValue(formState.year_of_joining);
+      const passingYear = normaliseYearValue(formState.year_of_passing);
+      if (!joiningYear || !passingYear) {
+        triggerToast('Enter valid 4-digit years for joining and passing.', 'error');
+        setFormSubmitting(false);
+        return;
+      }
+      let schoolNumber = (formState.studentId || '').trim();
+      if (!editingStudentId || !schoolNumber) {
+        try {
+          schoolNumber = await generateSchoolNumber(joiningYear, passingYear);
+        } catch (error) {
+          triggerToast(error?.message || 'Unable to generate school number. Please try again.', 'error');
+          setFormSubmitting(false);
+          return;
+        }
+      }
+      const studentEmail = (formState.student_email || '').trim().toLowerCase();
+      let baseData = {
+        studentId: schoolNumber,
+        school_number: schoolNumber,
         name: formState.name.trim(),
         class: formState.class,
         section: formState.section.trim(),
+        year_of_joining: joiningYear,
+        year_of_passing: passingYear,
+        student_email: studentEmail,
         parent_phone: formState.parent_phone.trim(),
         parent_email: formState.parent_email.trim().toLowerCase(),
         fee_cycle: formState.fee_cycle,
@@ -3085,6 +3244,11 @@ const resolveTransactionMonthLabel = (entry) => {
         const studentRef = doc(db, 'students', editingStudentId);
         const existingSnap = await getDoc(studentRef);
         const existingData = existingSnap.exists() ? existingSnap.data() : {};
+        const resolvedStudentEmail = studentEmail || existingData.student_email || '';
+        baseData = { ...baseData, student_email: resolvedStudentEmail };
+        const studentAccount = resolvedStudentEmail
+          ? await ensureStudentAccount(resolvedStudentEmail, baseData.name)
+          : { uid: existingData.student_uid || null };
         const parentUid =
           existingData.parent_uid ||
           (await ensureParentAccount(baseData.parent_email, {
@@ -3099,6 +3263,7 @@ const resolveTransactionMonthLabel = (entry) => {
           status: updatedStatus,
           parent_uid: parentUid || existingData.parent_uid || '',
           parent_name: existingData.parent_name || baseData.parent_email.split('@')[0],
+          student_uid: studentAccount.uid || existingData.student_uid || '',
           updated_at: serverTimestamp(),
         });
         if (parentUid) {
@@ -3115,6 +3280,9 @@ const resolveTransactionMonthLabel = (entry) => {
         }
         triggerToast('Student updated successfully.');
       } else {
+        const studentAccount = studentEmail
+          ? await ensureStudentAccount(studentEmail, baseData.name)
+          : { uid: null };
         const parentUid = await ensureParentAccount(baseData.parent_email, {
           name: baseData.parent_email.split('@')[0],
           phone: baseData.parent_phone,
@@ -3123,6 +3291,7 @@ const resolveTransactionMonthLabel = (entry) => {
           ...baseData,
           balance: feeAmount,
           parent_uid: parentUid || '',
+          student_uid: studentAccount.uid || '',
           created_at: serverTimestamp(),
         });
         if (parentUid) {
@@ -3313,7 +3482,8 @@ const resolveTransactionMonthLabel = (entry) => {
           y += 6;
           doc.setFontSize(11);
           const amountLine = `Amount: ₹${Number(payment.amount || 0).toLocaleString('en-IN')}`;
-          const modeLine = `Mode: ${payment.mode || 'Online'}`;
+          const modeLabel = normalisePaymentMode(payment.mode || 'Online');
+          const modeLine = `Mode: ${modeLabel}`;
           const dateValue = payment.date?.toDate
             ? payment.date.toDate().toLocaleString()
             : payment.date
@@ -3326,7 +3496,8 @@ const resolveTransactionMonthLabel = (entry) => {
           doc.text(`Date: ${dateValue}`, 14, y);
           y += 6;
           if (payment.transaction_id) {
-            doc.text(`Transaction ID: ${payment.transaction_id}`, 14, y);
+            const label = modeLabel === 'Bank Transfer' ? 'UTR Number' : 'Transaction ID';
+            doc.text(`${label}: ${payment.transaction_id}`, 14, y);
             y += 6;
           }
           if (payment.breakdown && Array.isArray(payment.breakdown) && payment.breakdown.length > 0) {
@@ -3678,7 +3849,8 @@ const resolveTransactionMonthLabel = (entry) => {
 
   const completeMarkPaid = async (student, mode, transactionId = '') => {
     if (!student) return;
-    const normalizedMode = mode === 'Online' ? 'Online' : 'Cash';
+    const normalizedMode = mode === 'Online' ? 'Online' : mode === 'Bank Transfer' ? 'Bank Transfer' : 'Cash';
+    const transactionRef = normalizedMode === 'Cash' ? '' : transactionId;
     const amountToClear = Number(student.balance ?? student.fee_amount ?? 0);
     if (amountToClear <= 0) {
       triggerToast('No outstanding balance for this student.', 'error');
@@ -3707,7 +3879,7 @@ const resolveTransactionMonthLabel = (entry) => {
         term: settingsState.currentTerm || '',
         fee_type: 'Manual Adjustment',
         status: 'Success',
-        transaction_id: normalizedMode === 'Online' ? transactionId : '',
+        transaction_id: transactionRef,
       });
       const pendingRequestsQuery = query(
         collection(db, 'fee_requests'),
@@ -3723,7 +3895,7 @@ const resolveTransactionMonthLabel = (entry) => {
             status: 'Paid',
             paid_at: serverTimestamp(),
             payment_mode: normalizedMode,
-            transaction_id: normalizedMode === 'Online' ? transactionId : '',
+            transaction_id: transactionRef,
             balance: 0,
             updated_at: serverTimestamp(),
           }),
@@ -3737,7 +3909,7 @@ const resolveTransactionMonthLabel = (entry) => {
         student,
         amount: amountToClear,
         mode: normalizedMode,
-        transactionId: normalizedMode === 'Online' ? transactionId : '',
+        transactionId: transactionRef,
         status: 'Paid',
         feeType: 'Tuition',
         notes: 'Marked as paid from fee report',
@@ -3769,8 +3941,11 @@ const resolveTransactionMonthLabel = (entry) => {
       setMarkPaidContext((prev) => ({ ...prev, error: 'Choose a payment mode to continue.' }));
       return;
     }
-    if (markPaidContext.mode === 'Online' && !markPaidContext.transactionId.trim()) {
-      setMarkPaidContext((prev) => ({ ...prev, error: 'Enter the online transaction reference.' }));
+    if (
+      (markPaidContext.mode === 'Online' || markPaidContext.mode === 'Bank Transfer') &&
+      !markPaidContext.transactionId.trim()
+    ) {
+      setMarkPaidContext((prev) => ({ ...prev, error: 'Enter the payment reference / UTR number.' }));
       return;
     }
     completeMarkPaid(
@@ -4626,15 +4801,16 @@ const resolveTransactionMonthLabel = (entry) => {
                 <h3 className="text-base font-semibold text-slate-900">Payment Mode Split</h3>
                 <Pie
                   data={{
-                    labels: ['Online', 'Cash', 'Other'],
+                    labels: ['Online', 'Cash', 'Bank Transfer', 'Other'],
                     datasets: [
                       {
                         data: [
                           paymentModeTotals.Online || 0,
                           paymentModeTotals.Cash || 0,
+                          paymentModeTotals['Bank Transfer'] || 0,
                           paymentModeTotals.Other || 0,
                         ],
-                        backgroundColor: ['#2563eb', '#047857', '#f97316'],
+                        backgroundColor: ['#2563eb', '#047857', '#0ea5e9', '#f97316'],
                       },
                     ],
                   }}
@@ -5670,7 +5846,7 @@ const resolveTransactionMonthLabel = (entry) => {
                 <div>
                   <h2 className="text-lg font-semibold text-slate-900">Payment History</h2>
                   <p className="text-sm text-slate-500">
-                    Review every cash and online payment with quick filtering by mode.
+                    Review every cash, online, and bank transfer payment with quick filtering by mode.
                   </p>
                 </div>
                 <label className="text-sm font-medium text-slate-600">
@@ -5699,7 +5875,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       <th className="px-4 py-3 text-left">Class</th>
                       <th className="px-4 py-3 text-left">Amount</th>
                       <th className="px-4 py-3 text-left">Mode</th>
-                      <th className="px-4 py-3 text-left">Transaction ID</th>
+                      <th className="px-4 py-3 text-left">Reference / UTR</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -5712,7 +5888,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     )}
                     {!loadingPayments &&
                       filteredPaymentsByMode.map((payment) => {
-                        const modeLabel = payment.mode || 'Online';
+                        const modeLabel = normalisePaymentMode(payment.mode || payment.payment_mode || 'Online');
                         const transactionRef = payment.transaction_id || payment.razorpay_payment_id || '—';
                         const dateValue = payment.date?.toDate
                           ? payment.date.toDate().toLocaleString()
@@ -6176,7 +6352,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   onChange={handleReportFilterChange}
                   className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
                 >
-                  {['All', 'Cash', 'Online', 'Other', 'Unspecified'].map((option) => (
+                  {['All', 'Cash', 'Online', 'Bank Transfer', 'Other', 'Unspecified'].map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
@@ -6538,7 +6714,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     {hasOutstanding && markPaidActive && (
                       <div className="mt-3 space-y-3 text-xs">
                         <div className="flex flex-wrap gap-2">
-                          {['Cash', 'Online'].map((modeOption) => (
+                          {['Cash', 'Online', 'Bank Transfer'].map((modeOption) => (
                             <button
                               key={modeOption}
                               type="button"
@@ -6553,13 +6729,17 @@ const resolveTransactionMonthLabel = (entry) => {
                             </button>
                           ))}
                         </div>
-                        {markPaidContext.mode === 'Online' && (
+                        {(markPaidContext.mode === 'Online' || markPaidContext.mode === 'Bank Transfer') && (
                           <label className="flex flex-col gap-1 text-xs font-semibold text-slate-600">
-                            Transaction Reference
+                            {markPaidContext.mode === 'Bank Transfer' ? 'UTR Number' : 'Transaction Reference'}
                             <input
                               value={markPaidContext.transactionId}
                               onChange={handleMarkPaidTransactionChange}
-                              placeholder="Razorpay payment ID"
+                              placeholder={
+                                markPaidContext.mode === 'Bank Transfer'
+                                  ? 'UTR / reference number'
+                                  : 'Razorpay payment ID'
+                              }
                               className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
                             />
                           </label>

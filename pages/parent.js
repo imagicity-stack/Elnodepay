@@ -1095,6 +1095,8 @@ const ParentDashboard = () => {
     const win = window.open('', '_blank', 'width=600,height=800');
     if (!win) return;
     const date = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
+    const modeLabel = payment.mode || 'Online';
+    const referenceLabel = modeLabel === 'Bank Transfer' ? 'UTR Number' : 'Transaction ID';
     win.document.write(`
       <html>
         <head>
@@ -1115,9 +1117,9 @@ const ParentDashboard = () => {
             <tr><td>Class</td><td>${payment.class || '-'}</td></tr>
             <tr><td>Amount</td><td>₹${Number(payment.amount || 0).toLocaleString('en-IN')}</td></tr>
             <tr><td>Date</td><td>${date.toLocaleString()}</td></tr>
-            <tr><td>Mode</td><td>${payment.mode || 'Online'}</td></tr>
-            <tr><td>Status</td><td>${payment.status}</td></tr>
-            <tr><td>Transaction ID</td><td>${
+          <tr><td>Mode</td><td>${modeLabel}</td></tr>
+          <tr><td>Status</td><td>${payment.status}</td></tr>
+          <tr><td>${referenceLabel}</td><td>${
               payment.razorpay_payment_id || payment.transaction_id || 'N/A'
             }</td></tr>
           </table>
@@ -1465,7 +1467,7 @@ const ParentDashboard = () => {
                   <th className="px-4 py-3 text-left">Child</th>
                   <th className="px-4 py-3 text-left">Amount</th>
                   <th className="px-4 py-3 text-left">Mode</th>
-                  <th className="px-4 py-3 text-left">Transaction ID</th>
+                  <th className="px-4 py-3 text-left">Reference / UTR</th>
                   <th className="px-4 py-3 text-left">Status</th>
                   <th className="px-4 py-3 text-left">Receipt</th>
                 </tr>
