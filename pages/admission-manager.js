@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
+import { renderPdfFromHtml } from '../lib/pdf';
 
 const NAV_TABS = [
   { id: 'new', label: 'New Inquiry' },
@@ -124,44 +125,41 @@ const downloadBlob = (content, filename, type) => {
   URL.revokeObjectURL(url);
 };
 
-const downloadPdfLike = (title, rows, headers) => {
-  const html = `<!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>${title}</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 16px; }
-          h1 { font-size: 18px; margin-bottom: 12px; }
-          table { width: 100%; border-collapse: collapse; font-size: 12px; }
-          th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
-          th { background: #f8fafc; }
-        </style>
-      </head>
-      <body>
-        <h1>${title}</h1>
-        <table>
-          <thead>
-            <tr>${headers.map((header) => `<th>${header.label}</th>`).join('')}</tr>
-          </thead>
-          <tbody>
-            ${rows
-              .map(
-                (row) =>
-                  `<tr>${headers
-                    .map((header) => `<td>${row[header.key] ?? ''}</td>`)
-                    .join('')}</tr>`,
-              )
-              .join('')}
-          </tbody>
-        </table>
-      </body>
-    </html>`;
-  const printable = window.open('', '_blank');
-  printable.document.write(html);
-  printable.document.close();
-  printable.focus();
-  printable.print();
+const downloadPdfLike = async (title, rows, headers) => {
+  if (typeof window === 'undefined') return;
+  const sanitizedTitle = title.replace(/\s+/g, '-').toLowerCase();
+  const generatedAt = new Date().toLocaleString('en-IN');
+  const bodyRows = rows.length
+    ? rows
+        .map(
+          (row, index) =>
+            `<tr style="background:${index % 2 === 0 ? '#ffffff' : '#f8fafc'};">${headers
+              .map((header) => `<td style="padding:8px 10px; color:#111827;">${row[header.key] ?? ''}</td>`)
+              .join('')}</tr>`,
+        )
+        .join('')
+    : `<tr><td colspan="${headers.length}" style="padding:12px 10px; text-align:center; color:#6b7280;">No records available</td></tr>`;
+
+  const contentHtml = `
+    <section>
+      <h1 style="margin:0; font-size:20px; color:#8c191b;">${title}</h1>
+      <p style="margin:6px 0 12px; color:#4b5563; font-size:13px;">Generated on ${generatedAt}</p>
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:12px 14px; background:#f8fafc; border:1px solid #e5e7eb; border-radius:12px;">
+        <div style="color:#0f172a; font-weight:600;">Total records</div>
+        <div style="color:#111827; font-weight:700;">${rows.length}</div>
+      </div>
+      <table style="width:100%; border-collapse:collapse; margin-top:14px; font-size:12px;">
+        <thead style="background:#f1f5f9; text-align:left;">
+          <tr>${headers
+            .map((header) => `<th style="padding:8px 10px; font-weight:700; color:#0f172a; border-bottom:1px solid #e5e7eb;">${header.label}</th>`)
+            .join('')}</tr>
+        </thead>
+        <tbody>${bodyRows}</tbody>
+      </table>
+    </section>
+  `;
+
+  await renderPdfFromHtml({ contentHtml, filename: `${sanitizedTitle}.pdf` });
 };
 
 const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademicYear }) => {
@@ -1128,9 +1126,13 @@ export default function AdminManagerPortal() {
     downloadBlob(csv, 'inquiries.csv', 'text/csv');
   }, [inquiries, inquiryExportHeaders]);
 
-  const handleDownloadInquiriesPdf = useCallback(() => {
+  const handleDownloadInquiriesPdf = useCallback(async () => {
     if (typeof window === 'undefined') return;
-    downloadPdfLike('Inquired Students', inquiries, inquiryExportHeaders);
+    try {
+      await downloadPdfLike('Inquired Students', inquiries, inquiryExportHeaders);
+    } catch (error) {
+      console.error('Unable to download inquiries PDF', error);
+    }
   }, [inquiries, inquiryExportHeaders]);
 
   const handleDownloadRegisteredCsv = useCallback(() => {
@@ -1138,9 +1140,13 @@ export default function AdminManagerPortal() {
     downloadBlob(csv, 'registered-students.csv', 'text/csv');
   }, [registeredInquiries, registeredExportHeaders]);
 
-  const handleDownloadRegisteredPdf = useCallback(() => {
+  const handleDownloadRegisteredPdf = useCallback(async () => {
     if (typeof window === 'undefined') return;
-    downloadPdfLike('Registered Students', registeredInquiries, registeredExportHeaders);
+    try {
+      await downloadPdfLike('Registered Students', registeredInquiries, registeredExportHeaders);
+    } catch (error) {
+      console.error('Unable to download registered PDF', error);
+    }
   }, [registeredInquiries, registeredExportHeaders]);
 
   const handleCreateAcademicYear = useCallback((year) => {

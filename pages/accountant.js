@@ -46,6 +46,7 @@ import { Bar, Line, Pie } from 'react-chartjs-2';
 import { auth, db } from '../lib/firebase';
 import { getCollectionsInRange, groupByMonth, makeExpenseId, makeVoucherNo } from '../lib/reports';
 import { toCSV } from '../lib/csv';
+import { renderPdfFromHtml } from '../lib/pdf';
 import SalaryModule from '../components/SalaryModule';
 import StaffSettingsModal from '../components/StaffSettingsModal';
 
@@ -2684,56 +2685,85 @@ const resolveTransactionMonthLabel = (entry) => {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
       } else {
-        const { jsPDF } = await import('jspdf');
-        const doc = new jsPDF();
-        doc.setFontSize(15);
-        doc.text(SCHOOL_NAME, 14, 20);
-        doc.setFontSize(12);
-        doc.text('Fee Collection Report', 14, 32);
-        doc.setFontSize(9);
-        doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 42);
-        doc.text(`Filters: ${summaryText}`, 14, 52, { maxWidth: 180 });
+        const formatCurrencyDisplay = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`;
+        const summaryHtml = `
+          <section>
+            <h1 style="margin:0; font-size:20px; color:#8c191b;">Fee Collection Report</h1>
+            <p style="margin:6px 0 0; font-size:13px; color:#374151;">${SCHOOL_NAME}</p>
+            <p style="margin:8px 0 0; font-size:12px; color:#4b5563;">Generated on ${new Date().toLocaleString()}</p>
+            <div style="margin-top:12px; padding:12px 14px; background:#f8fafc; border-radius:10px;">
+              <strong style="display:block; margin-bottom:6px; color:#111827;">Filters</strong>
+              <span style="font-size:12px; color:#1f2937; line-height:1.6;">${summaryText}</span>
+            </div>
+          </section>
+        `;
 
-        let y = 64;
-        filteredReportEntries.forEach((entry, index) => {
-          if (y > 270) {
-            doc.addPage();
-            y = 24;
-          }
-          doc.setFontSize(11);
-          doc.text(`${index + 1}. ${entry.studentName || 'Student'}`, 14, y);
-          y += 8;
-          doc.setFontSize(9);
-          doc.text(`Student ID: ${entry.studentId || '—'}`, 14, y);
-          doc.text(`Class: ${entry.class || '—'}${entry.section ? ` · Section ${entry.section}` : ''}`, 100, y);
-          y += 10;
-          doc.text(`Status: ${entry.statusLabel || '—'} · Cycle: ${entry.cycle || '—'}`, 14, y);
-          doc.text(`Session: ${entry.session || '—'} · Term: ${entry.term || '—'}`, 100, y);
-          y += 10;
-          doc.text(
-            `Amount: ${formatCurrency(entry.amount)} · Balance: ${formatCurrency(entry.balance)}`,
-            14,
-            y,
-          );
-          doc.text(`Due: ${formatDateDisplay(entry.dueDate)} · Paid: ${formatDateDisplay(entry.paidDate)}`, 100, y);
-          y += 10;
-          doc.text(
-            `Mode: ${entry.paymentModeLabel || '—'} · Txn: ${entry.transactionId || '—'}`,
-            14,
-            y,
-          );
-          y += 10;
-          doc.text(`Parent: ${entry.parentEmail || '—'} · Phone: ${entry.parentPhone || '—'}`, 14, y);
-          y += 10;
-          doc.text(
-            `Reminder Sent: ${entry.hasReminder ? 'Yes' : 'No'} · Store Charge: ${formatCurrency(entry.storeAmount)}`,
-            14,
-            y,
-          );
-          y += 12;
+        const rowsHtml = filteredReportEntries
+          .map(
+            (entry, index) => `
+              <tr style="background:${index % 2 === 0 ? '#ffffff' : '#f9fafb'};">
+                <td style="padding:10px 8px; font-weight:600; color:#111827;">${index + 1}</td>
+                <td style="padding:10px 8px;">
+                  <div style="font-weight:600; color:#0f172a;">${entry.studentName || 'Student'}</div>
+                  <div style="font-size:12px; color:#475569;">ID: ${entry.studentId || '—'}</div>
+                </td>
+                <td style="padding:10px 8px; color:#111827;">
+                  <div>${entry.class || '—'}</div>
+                  <div style="font-size:12px; color:#475569;">${entry.section ? `Section ${entry.section}` : '—'}</div>
+                </td>
+                <td style="padding:10px 8px; color:#111827;">${entry.statusLabel || '—'}</td>
+                <td style="padding:10px 8px; color:#111827;">${entry.cycle || '—'}</td>
+                <td style="padding:10px 8px; color:#111827;">${entry.session || '—'}</td>
+                <td style="padding:10px 8px; color:#111827;">${entry.term || '—'}</td>
+                <td style="padding:10px 8px; color:#111827;">${formatDateDisplay(entry.dueDate)}</td>
+                <td style="padding:10px 8px; color:#111827;">${formatCurrencyDisplay(entry.amount)}</td>
+                <td style="padding:10px 8px; color:#111827;">${formatCurrencyDisplay(entry.balance)}</td>
+                <td style="padding:10px 8px; color:#111827;">${entry.paymentModeLabel || '—'}</td>
+                <td style="padding:10px 8px; color:#111827;">${entry.transactionId || '—'}</td>
+                <td style="padding:10px 8px; color:#111827;">
+                  <div>${entry.parentEmail || '—'}</div>
+                  <div style="font-size:12px; color:#475569;">${entry.parentPhone || '—'}</div>
+                </td>
+                <td style="padding:10px 8px; color:#111827;">${entry.hasReminder ? 'Yes' : 'No'}</td>
+                <td style="padding:10px 8px; color:#111827;">${formatCurrencyDisplay(entry.storeAmount)}</td>
+              </tr>
+            `,
+          )
+          .join('');
+
+        const tableHtml = `
+          <section style="margin-top:18px;">
+            <h2 style="margin:0 0 10px; font-size:16px; color:#0f172a;">Collection Entries</h2>
+            <table style="width:100%; border-collapse:collapse; font-size:12px;">
+              <thead>
+                <tr style="background:#f1f5f9; text-align:left;">
+                  <th style="padding:10px 8px;">#</th>
+                  <th style="padding:10px 8px;">Student</th>
+                  <th style="padding:10px 8px;">Class</th>
+                  <th style="padding:10px 8px;">Status</th>
+                  <th style="padding:10px 8px;">Cycle</th>
+                  <th style="padding:10px 8px;">Session</th>
+                  <th style="padding:10px 8px;">Term</th>
+                  <th style="padding:10px 8px;">Due Date</th>
+                  <th style="padding:10px 8px;">Amount</th>
+                  <th style="padding:10px 8px;">Balance</th>
+                  <th style="padding:10px 8px;">Mode</th>
+                  <th style="padding:10px 8px;">Txn ID</th>
+                  <th style="padding:10px 8px;">Parent</th>
+                  <th style="padding:10px 8px;">Reminder</th>
+                  <th style="padding:10px 8px;">Store</th>
+                </tr>
+              </thead>
+              <tbody>${rowsHtml}</tbody>
+            </table>
+          </section>
+        `;
+
+        const contentHtml = `${summaryHtml}${tableHtml}`;
+        await renderPdfFromHtml({
+          contentHtml,
+          filename: 'fee-collection-report.pdf',
         });
-
-        doc.save('fee-collection-report.pdf');
       }
       triggerToast('Report downloaded successfully.', 'success');
     } catch (error) {
@@ -3289,63 +3319,70 @@ const resolveTransactionMonthLabel = (entry) => {
   const handleDownloadHistoryReport = async (student, entries) => {
     if (!student) return;
     try {
-      const { jsPDF } = await import('jspdf');
-      const doc = new jsPDF();
-      const title = `Fee Report · ${student.name || student.studentId || 'Student'}`;
       const studentId = student.studentId || student.id;
-      doc.setFontSize(16);
-      doc.text(title, 14, 20);
-      doc.setFontSize(11);
-      doc.text(`Student ID: ${studentId}`, 14, 30);
-      doc.text(`Class: ${student.class || '-'}`, 14, 36);
-      doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 42);
-      let y = 52;
-      if (!entries.length) {
-        doc.text('No payments recorded yet.', 14, y);
-      } else {
-        entries.forEach((payment, index) => {
-          if (y > 270) {
-            doc.addPage();
-            y = 20;
-          }
-          doc.setFontSize(12);
-          doc.text(`Payment ${index + 1}`, 14, y);
-          y += 6;
-          doc.setFontSize(11);
-          const amountLine = `Amount: ₹${Number(payment.amount || 0).toLocaleString('en-IN')}`;
-          const modeLine = `Mode: ${payment.mode || 'Online'}`;
+      const fileSafeId = `${studentId}`.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+      const paymentsHtml = entries
+        .map((payment, index) => {
           const dateValue = payment.date?.toDate
             ? payment.date.toDate().toLocaleString()
             : payment.date
             ? new Date(payment.date).toLocaleString()
             : '—';
-          doc.text(amountLine, 14, y);
-          y += 6;
-          doc.text(modeLine, 14, y);
-          y += 6;
-          doc.text(`Date: ${dateValue}`, 14, y);
-          y += 6;
-          if (payment.transaction_id) {
-            doc.text(`Transaction ID: ${payment.transaction_id}`, 14, y);
-            y += 6;
-          }
-          if (payment.breakdown && Array.isArray(payment.breakdown) && payment.breakdown.length > 0) {
-            doc.text('Breakdown:', 14, y);
-            y += 6;
-            payment.breakdown.forEach((item) => {
-              if (y > 270) {
-                doc.addPage();
-                y = 20;
-              }
-              doc.text(`• ${item.label || 'Fee'} — ₹${Number(item.amount || 0).toLocaleString('en-IN')}`, 18, y);
-              y += 6;
-            });
-          }
-          y += 4;
-        });
-      }
-      const fileSafeId = `${studentId}`.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
-      doc.save(`fee-report-${fileSafeId}.pdf`);
+          const breakdownHtml =
+            payment.breakdown && Array.isArray(payment.breakdown) && payment.breakdown.length > 0
+              ? `<div style="margin-top:6px;">
+                  <div style="font-weight:600; color:#111827;">Breakdown</div>
+                  <ul style="margin:6px 0 0 16px; padding:0; color:#1f2937;">
+                    ${payment.breakdown
+                      .map(
+                        (item) =>
+                          `<li style="margin-bottom:4px;">${item.label || 'Fee'} — ₹${Number(item.amount || 0).toLocaleString('en-IN')}</li>`,
+                      )
+                      .join('')}
+                  </ul>
+                </div>`
+              : '';
+          return `
+            <article style="padding:12px 14px; background:#f8fafc; border-radius:12px; border:1px solid #e2e8f0;">
+              <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+                <div style="font-size:14px; font-weight:700; color:#0f172a;">Payment ${index + 1}</div>
+                <div style="font-size:12px; color:#475569;">${dateValue}</div>
+              </div>
+              <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px, 1fr)); gap:6px; font-size:12px; color:#1f2937;">
+                <div><strong style="color:#111827;">Amount:</strong> ₹${Number(payment.amount || 0).toLocaleString('en-IN')}</div>
+                <div><strong style="color:#111827;">Mode:</strong> ${payment.mode || 'Online'}</div>
+                ${payment.transaction_id ? `<div><strong style="color:#111827;">Txn ID:</strong> ${payment.transaction_id}</div>` : ''}
+              </div>
+              ${breakdownHtml}
+            </article>
+          `;
+        })
+        .join('');
+
+      const summaryCard = `
+        <section>
+          <h1 style="margin:0; font-size:20px; color:#8c191b;">Payment History</h1>
+          <p style="margin:6px 0 0; font-size:13px; color:#374151;">${SCHOOL_NAME}</p>
+          <div style="margin-top:12px; padding:12px 14px; background:#f1f5f9; border-radius:12px;">
+            <div style="font-size:15px; font-weight:700; color:#0f172a;">${student.name || student.studentId || 'Student'}</div>
+            <div style="margin-top:6px; font-size:12px; color:#1f2937;">ID: ${studentId}</div>
+            <div style="font-size:12px; color:#1f2937;">Class: ${student.class || '-'}</div>
+            <div style="margin-top:6px; font-size:12px; color:#4b5563;">Generated on ${new Date().toLocaleString()}</div>
+          </div>
+        </section>
+      `;
+
+      const paymentsSection = entries.length
+        ? `<section style="margin-top:16px; display: grid; gap: 12px;">${paymentsHtml}</section>`
+        : `<div style="margin-top:14px; padding:12px 14px; background:#fff7ed; color:#9a3412; border:1px solid #fed7aa; border-radius:12px;">
+            No payments recorded yet.
+          </div>`;
+
+      const contentHtml = `${summaryCard}${paymentsSection}`;
+      await renderPdfFromHtml({
+        contentHtml,
+        filename: `fee-report-${fileSafeId}.pdf`,
+      });
       triggerToast('Report downloaded successfully.', 'success');
     } catch (error) {
       console.error('Error generating history PDF', error);

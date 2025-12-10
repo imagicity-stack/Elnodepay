@@ -21,6 +21,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import { renderPdfFromHtml } from '../lib/pdf';
 
 const parseDateValue = (value) => {
   if (!value) return null;
@@ -1090,44 +1091,48 @@ const ParentDashboard = () => {
     }
   };
 
-  const handleDownloadReceipt = (payment) => {
-    if (typeof window === 'undefined') return;
-    const win = window.open('', '_blank', 'width=600,height=800');
-    if (!win) return;
-    const date = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
-    win.document.write(`
-      <html>
-        <head>
-          <title>Payment Receipt</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 24px; color: #1f2937; }
-            h1 { color: #A31F36; }
-            table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-            td { padding: 8px; border-bottom: 1px solid #e2e8f0; }
-            .total { font-weight: bold; font-size: 18px; }
-          </style>
-        </head>
-        <body>
-          <h1>Payment Receipt</h1>
-          <p>Thank you for your payment. Below are the details.</p>
-          <table>
-            <tr><td>Student</td><td>${payment.student_name}</td></tr>
-            <tr><td>Class</td><td>${payment.class || '-'}</td></tr>
-            <tr><td>Amount</td><td>₹${Number(payment.amount || 0).toLocaleString('en-IN')}</td></tr>
-            <tr><td>Date</td><td>${date.toLocaleString()}</td></tr>
-            <tr><td>Mode</td><td>${payment.mode || 'Online'}</td></tr>
-            <tr><td>Status</td><td>${payment.status}</td></tr>
-            <tr><td>Transaction ID</td><td>${
-              payment.razorpay_payment_id || payment.transaction_id || 'N/A'
-            }</td></tr>
+  const handleDownloadReceipt = async (payment) => {
+    if (typeof window === 'undefined' || !payment) return;
+    try {
+      const date = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
+      const formattedAmount = Number(payment.amount || 0).toLocaleString('en-IN');
+      const safeId = `${payment.razorpay_payment_id || payment.transaction_id || payment.id || payment.student_name || 'receipt'}`
+        .replace(/[^a-z0-9-]/gi, '-')
+        .toLowerCase();
+
+      const contentHtml = `
+        <section>
+          <h1 style="margin:0; font-size:22px; color:#8c191b;">Payment Receipt</h1>
+          <p style="margin:6px 0 0; color:#4b5563; font-size:13px;">Thank you for your payment. Below are the details.</p>
+          <div style="margin-top:12px; display:flex; gap:12px; flex-wrap:wrap;">
+            <div style="flex:1; min-width:220px; padding:12px 14px; border:1px solid #e5e7eb; border-radius:12px; background:#f8fafc;">
+              <div style="font-size:13px; color:#6b7280;">Student</div>
+              <div style="font-size:16px; font-weight:700; color:#0f172a;">${payment.student_name}</div>
+              <div style="margin-top:6px; color:#4b5563; font-size:12px;">Class: ${payment.class || '-'}</div>
+            </div>
+            <div style="flex:1; min-width:220px; padding:12px 14px; border:1px solid #e5e7eb; border-radius:12px; background:#ecfdf3;">
+              <div style="font-size:13px; color:#047857;">Amount Paid</div>
+              <div style="font-size:18px; font-weight:800; color:#065f46;">₹${formattedAmount}</div>
+              <div style="margin-top:6px; color:#4b5563; font-size:12px;">Status: ${payment.status}</div>
+            </div>
+          </div>
+          <table style="width:100%; border-collapse:collapse; margin-top:14px; font-size:12px;">
+            <tbody>
+              <tr><td style="padding:8px 10px; color:#111827; background:#f9fafb; width:40%;">Date</td><td style="padding:8px 10px; color:#111827;">${date.toLocaleString()}</td></tr>
+              <tr><td style="padding:8px 10px; color:#111827; background:#f9fafb;">Mode</td><td style="padding:8px 10px; color:#111827;">${payment.mode || 'Online'}</td></tr>
+              <tr><td style="padding:8px 10px; color:#111827; background:#f9fafb;">Transaction ID</td><td style="padding:8px 10px; color:#111827;">${
+                payment.razorpay_payment_id || payment.transaction_id || 'N/A'
+              }</td></tr>
+            </tbody>
           </table>
-          <p class="total">Total Paid: ₹${Number(payment.amount || 0).toLocaleString('en-IN')}</p>
-          <p>— EL-NODE Pay</p>
-        </body>
-      </html>
-    `);
-    win.document.close();
-    win.print();
+          <p style="margin:12px 0 0; color:#6b7280; font-size:12px;">Receipt generated on ${new Date().toLocaleString('en-IN')}.</p>
+        </section>
+      `;
+
+      await renderPdfFromHtml({ contentHtml, filename: `payment-receipt-${safeId}.pdf` });
+    } catch (error) {
+      console.error('Unable to download receipt PDF', error);
+    }
   };
 
   const handleResetPassword = async () => {
