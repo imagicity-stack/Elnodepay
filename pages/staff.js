@@ -6,6 +6,7 @@ import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebas
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import { SalarySlip } from '../components/SalaryModule';
+import { downloadPdf } from '../lib/pdfClient';
 
 const formatCurrency = (value = 0) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
@@ -52,6 +53,40 @@ const downloadCsvBlob = (rows, fileName) => {
 const SalarySlipPreview = ({ open, salary, staff, onClose }) => {
   if (!open || !salary) return null;
   const label = monthLabel(salary.month, salary.year);
+  const serializeDate = (value) => {
+    if (!value) return '';
+    if (value?.toDate) {
+      const parsed = value.toDate();
+      return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : '';
+    }
+    const parsed = new Date(value);
+    return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : '';
+  };
+
+  const handleDownloadPdf = async () => {
+    const fileName = `salary-slip-${(salary.staffId || staff?.staffId || 'staff')
+      .toString()
+      .replace(/[^a-z0-9-]/gi, '-')
+      .toLowerCase()}-${label.replace(/\s+/g, '-').toLowerCase()}.pdf`;
+    try {
+      await downloadPdf({
+        type: 'salary-slip',
+        fileName,
+        payload: {
+          staff,
+          salary: {
+            ...salary,
+            processedAt: serializeDate(salary.processedAt),
+          },
+          generatedOn: new Date().toISOString(),
+          monthLabel: label,
+        },
+      });
+    } catch (error) {
+      console.error('Error downloading salary slip', error);
+      alert('Unable to download salary slip. Please try again.');
+    }
+  };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 px-4 py-8">
       <div className="relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
@@ -85,10 +120,10 @@ const SalarySlipPreview = ({ open, salary, staff, onClose }) => {
             </button>
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={handleDownloadPdf}
               className="rounded-lg border border-cardinal px-3 py-1.5 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
             >
-              Print / PDF
+              Download PDF
             </button>
             <button
               type="button"

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { toCSV } from '../lib/csv';
+import { downloadPdf } from '../lib/pdfClient';
 
 const MONTH_OPTIONS = [
   { id: 1, label: 'January' },
@@ -151,6 +152,37 @@ const SalarySlip = ({ staff, salary, structure, monthLabel }) => {
 
 const SalarySlipModal = ({ open, onClose, salary, staff, structure, monthLabel, onDownloadCsv }) => {
   if (!open || !salary) return null;
+  const serializeDate = (value) => {
+    if (!value) return '';
+    if (value?.toDate) {
+      const parsed = value.toDate();
+      return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : '';
+    }
+    const parsed = new Date(value);
+    return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : '';
+  };
+
+  const handleDownloadPdf = async () => {
+    const fileName = `salary-slip-${(salary.staffId || staff?.staffId || 'staff')
+      .toString()
+      .replace(/[^a-z0-9-]/gi, '-')
+      .toLowerCase()}-${monthLabel.replace(/\s+/g, '-').toLowerCase()}.pdf`;
+    try {
+      await downloadPdf({
+        type: 'salary-slip',
+        fileName,
+        payload: {
+          staff,
+          salary: { ...salary, processedAt: serializeDate(salary.processedAt) },
+          generatedOn: new Date().toISOString(),
+          monthLabel,
+        },
+      });
+    } catch (error) {
+      console.error('Error downloading salary slip', error);
+      alert('Unable to download salary slip. Please try again.');
+    }
+  };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 px-4 py-8">
       <div className="relative max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
@@ -169,10 +201,10 @@ const SalarySlipModal = ({ open, onClose, salary, staff, structure, monthLabel, 
             </button>
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={handleDownloadPdf}
               className="rounded-lg border border-cardinal px-3 py-1.5 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
             >
-              Print / PDF
+              Download PDF
             </button>
             <button
               type="button"
