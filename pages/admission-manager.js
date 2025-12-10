@@ -18,6 +18,7 @@ import {
 } from 'firebase/firestore';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
+import { createTabularPdf } from '../lib/pdf/tableExport';
 
 const NAV_TABS = [
   { id: 'new', label: 'New Inquiry' },
@@ -122,46 +123,6 @@ const downloadBlob = (content, filename, type) => {
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
-};
-
-const downloadPdfLike = (title, rows, headers) => {
-  const html = `<!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8" />
-        <title>${title}</title>
-        <style>
-          body { font-family: Arial, sans-serif; padding: 16px; }
-          h1 { font-size: 18px; margin-bottom: 12px; }
-          table { width: 100%; border-collapse: collapse; font-size: 12px; }
-          th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
-          th { background: #f8fafc; }
-        </style>
-      </head>
-      <body>
-        <h1>${title}</h1>
-        <table>
-          <thead>
-            <tr>${headers.map((header) => `<th>${header.label}</th>`).join('')}</tr>
-          </thead>
-          <tbody>
-            ${rows
-              .map(
-                (row) =>
-                  `<tr>${headers
-                    .map((header) => `<td>${row[header.key] ?? ''}</td>`)
-                    .join('')}</tr>`,
-              )
-              .join('')}
-          </tbody>
-        </table>
-      </body>
-    </html>`;
-  const printable = window.open('', '_blank');
-  printable.document.write(html);
-  printable.document.close();
-  printable.focus();
-  printable.print();
 };
 
 const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademicYear }) => {
@@ -1128,9 +1089,15 @@ export default function AdminManagerPortal() {
     downloadBlob(csv, 'inquiries.csv', 'text/csv');
   }, [inquiries, inquiryExportHeaders]);
 
-  const handleDownloadInquiriesPdf = useCallback(() => {
+  const handleDownloadInquiriesPdf = useCallback(async () => {
     if (typeof window === 'undefined') return;
-    downloadPdfLike('Inquired Students', inquiries, inquiryExportHeaders);
+    const { jsPDF } = await import('jspdf');
+    const doc = createTabularPdf(jsPDF, {
+      title: 'Inquired Students',
+      headers: inquiryExportHeaders,
+      rows: inquiries,
+    });
+    doc.save('inquiries.pdf');
   }, [inquiries, inquiryExportHeaders]);
 
   const handleDownloadRegisteredCsv = useCallback(() => {
@@ -1138,9 +1105,15 @@ export default function AdminManagerPortal() {
     downloadBlob(csv, 'registered-students.csv', 'text/csv');
   }, [registeredInquiries, registeredExportHeaders]);
 
-  const handleDownloadRegisteredPdf = useCallback(() => {
+  const handleDownloadRegisteredPdf = useCallback(async () => {
     if (typeof window === 'undefined') return;
-    downloadPdfLike('Registered Students', registeredInquiries, registeredExportHeaders);
+    const { jsPDF } = await import('jspdf');
+    const doc = createTabularPdf(jsPDF, {
+      title: 'Registered Students',
+      headers: registeredExportHeaders,
+      rows: registeredInquiries,
+    });
+    doc.save('registered-students.pdf');
   }, [registeredInquiries, registeredExportHeaders]);
 
   const handleCreateAcademicYear = useCallback((year) => {

@@ -48,6 +48,8 @@ import { getCollectionsInRange, groupByMonth, makeExpenseId, makeVoucherNo } fro
 import { toCSV } from '../lib/csv';
 import SalaryModule from '../components/SalaryModule';
 import StaffSettingsModal from '../components/StaffSettingsModal';
+import { createFeeCollectionReportPdf } from '../lib/pdf/feeCollectionReport';
+import { createFeeHistoryReportPdf } from '../lib/pdf/feeHistoryReport';
 
 ChartJS.register(
   ArcElement,
@@ -895,73 +897,192 @@ const CommonFeeRequestModal = ({
   );
 };
 
-const PaymentHistoryModal = ({ student, payments, onClose, onDownload }) => (
-  <Modal title={`Payment history · ${student?.name || ''}`} onClose={onClose} size="xl">
-    <div className="space-y-4 text-sm">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-slate-600">
-          Showing all payments made by {student?.parent_email ? `the parent (${student.parent_email})` : 'this student'}.
-        </p>
-        <button
-          type="button"
-          onClick={onDownload}
-          disabled={!payments.length}
-          className="rounded-lg border border-cardinal px-3 py-1.5 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          Download Report
-        </button>
-      </div>
-      {payments.length === 0 && <p className="text-slate-600">No payments recorded yet.</p>}
-      {payments.map((payment) => {
-        const modeLabel = payment.mode || 'Online';
-        const isOnline = modeLabel.toLowerCase() === 'online';
-        const transactionRef = payment.razorpay_payment_id || payment.transaction_id || '';
+const PaymentHistoryModal = ({ student, payments, onClose, onDownload }) => {
+  const [timeFilter, setTimeFilter] = useState({ type: 'all', from: '', to: '', month: '' });
+
+  const resolvePaymentDate = (payment) => {
+    if (payment.date?.toDate) return payment.date.toDate();
+    if (payment.date instanceof Date) return payment.date;
+    if (payment.paidDate?.toDate) return payment.paidDate.toDate();
+    if (payment.paidDate instanceof Date) return payment.paidDate;
+    return payment.date ? new Date(payment.date) : new Date(payment.paidDate || payment.createdAt || 0);
+  };
+
+  const filteredPayments = useMemo(() => {
+    const fromDate = timeFilter.from ? new Date(timeFilter.from) : null;
+    const toDate = timeFilter.to ? new Date(timeFilter.to) : null;
+    const monthValue = timeFilter.month ? new Date(`${timeFilter.month}-01`) : null;
+
+    return payments.filter((payment) => {
+      const paymentDate = resolvePaymentDate(payment);
+      if (!(paymentDate instanceof Date) || Number.isNaN(paymentDate.getTime())) return false;
+
+      if (timeFilter.type === 'range') {
+        if (fromDate && paymentDate < fromDate) return false;
+        if (toDate && paymentDate > new Date(toDate.getTime() + 24 * 60 * 60 * 1000)) return false;
+      }
+
+      if (timeFilter.type === 'last-session') {
+        const sessionLabel = payment.session || student?.session;
+        if (sessionLabel && payment.session && payment.session !== sessionLabel) return false;
+      }
+
+      if (timeFilter.type === 'month') {
+        if (!monthValue) return true;
         return (
-          <div
-            key={payment.id}
-            className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700"
+          paymentDate.getFullYear() === monthValue.getFullYear() &&
+          paymentDate.getMonth() === monthValue.getMonth()
+        );
+      }
+
+      return true;
+    });
+  }, [payments, student?.session, timeFilter]);
+
+  const durationLabel = useMemo(() => {
+    if (timeFilter.type === 'range' && (timeFilter.from || timeFilter.to)) {
+      const parts = [];
+      if (timeFilter.from) parts.push(`from ${new Date(timeFilter.from).toLocaleDateString('en-IN')}`);
+      if (timeFilter.to) parts.push(`to ${new Date(timeFilter.to).toLocaleDateString('en-IN')}`);
+      return parts.join(' ');
+    }
+    if (timeFilter.type === 'last-session') {
+      return student?.session ? `Session ${student.session}` : 'Last session';
+    }
+    if (timeFilter.type === 'month' && timeFilter.month) {
+      const monthDate = new Date(`${timeFilter.month}-01`);
+      return monthDate.toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+    }
+    return 'Complete history';
+  }, [student?.session, timeFilter]);
+
+  const onChangeFilter = (event) => {
+    const { name, value } = event.target;
+    setTimeFilter((prev) => ({ ...prev, [name]: value }));
+  };
+
+  return (
+    <Modal title={`Payment history · ${student?.name || ''}`} onClose={onClose} size="xl">
+      <div className="space-y-4 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-slate-600">
+            Showing payments for {student?.parent_email ? `the parent (${student.parent_email})` : 'this student'}.
+          </p>
+          <button
+            type="button"
+            onClick={() => onDownload(filteredPayments, durationLabel)}
+            disabled={!filteredPayments.length}
+            className="rounded-lg border border-cardinal px-3 py-1.5 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="font-semibold text-slate-900">₹{payment.amount?.toLocaleString('en-IN')}</div>
-              <span className="text-xs uppercase tracking-wide text-slate-500">{modeLabel}</span>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <span>{payment.fee_type || 'Tuition'}</span>
-              {payment.term && <span className="rounded-full bg-white px-2 py-0.5">{payment.term}</span>}
-              <span>
-                {payment.date?.toDate
-                  ? payment.date.toDate().toLocaleString()
-                  : new Date(payment.date).toLocaleString()}
-              </span>
-            </div>
-            <div className="mt-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
-              <div>
-                <p className="font-semibold text-slate-500">Mode of payment</p>
-                <p className="text-slate-900">{modeLabel}</p>
+            Download Report
+          </button>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Filter by time</p>
+          <div className="grid gap-3 md:grid-cols-4">
+            <select
+              name="type"
+              value={timeFilter.type}
+              onChange={(event) =>
+                setTimeFilter({ type: event.target.value, from: '', to: '', month: '' })
+              }
+              className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            >
+              <option value="all">All time</option>
+              <option value="range">Custom range</option>
+              <option value="last-session">Last session</option>
+              <option value="month">Month</option>
+            </select>
+
+            {timeFilter.type === 'range' && (
+              <input
+                type="date"
+                name="from"
+                value={timeFilter.from}
+                onChange={onChangeFilter}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+            )}
+
+            {timeFilter.type === 'range' && (
+              <input
+                type="date"
+                name="to"
+                value={timeFilter.to}
+                onChange={onChangeFilter}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+            )}
+
+            {timeFilter.type === 'month' && (
+              <input
+                type="month"
+                name="month"
+                value={timeFilter.month}
+                onChange={onChangeFilter}
+                className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+            )}
+
+            {timeFilter.type === 'last-session' && (
+              <div className="flex items-center rounded-lg border border-dashed border-slate-200 px-3 py-2 text-xs text-slate-600">
+                Using session {student?.session || '—'}
               </div>
-              {isOnline && (
-                <div>
-                  <p className="font-semibold text-slate-500">Transaction ID</p>
-                  <p className="text-slate-900">{transactionRef || '—'}</p>
-                </div>
-              )}
-            </div>
-            {Array.isArray(payment.breakdown) && payment.breakdown.length > 0 && (
-              <ul className="mt-2 space-y-1 text-xs text-slate-600">
-                {payment.breakdown.map((item, idx) => (
-                  <li key={`${payment.id}-fee-${idx}`} className="flex justify-between">
-                    <span>{item.label}</span>
-                    <span>₹{Number(item.amount || 0).toLocaleString('en-IN')}</span>
-                  </li>
-                ))}
-              </ul>
             )}
           </div>
-        );
-      })}
-    </div>
-  </Modal>
-);
+          <p className="mt-2 text-xs text-slate-500">Duration: {durationLabel}</p>
+        </div>
+
+        {filteredPayments.length === 0 && <p className="text-slate-600">No payments recorded yet.</p>}
+        {filteredPayments.map((payment) => {
+          const modeLabel = payment.mode || 'Online';
+          const isOnline = modeLabel.toLowerCase() === 'online';
+          const transactionRef = payment.razorpay_payment_id || payment.transaction_id || '';
+          const paymentDate = resolvePaymentDate(payment);
+          return (
+            <div
+              key={payment.id}
+              className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-slate-700"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="font-semibold text-slate-900">₹{payment.amount?.toLocaleString('en-IN')}</div>
+                <span className="text-xs uppercase tracking-wide text-slate-500">{modeLabel}</span>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span>{payment.fee_type || 'Tuition'}</span>
+                {payment.term && <span className="rounded-full bg-white px-2 py-0.5">{payment.term}</span>}
+                <span>{paymentDate instanceof Date ? paymentDate.toLocaleString('en-IN') : '—'}</span>
+              </div>
+              <div className="mt-2 grid gap-2 text-xs text-slate-600 sm:grid-cols-2">
+                <div>
+                  <p className="font-semibold text-slate-500">Mode of payment</p>
+                  <p className="text-slate-900">{modeLabel}</p>
+                </div>
+                {isOnline && (
+                  <div>
+                    <p className="font-semibold text-slate-500">Transaction ID</p>
+                    <p className="text-slate-900">{transactionRef || '—'}</p>
+                  </div>
+                )}
+              </div>
+              {Array.isArray(payment.breakdown) && payment.breakdown.length > 0 && (
+                <ul className="mt-2 space-y-1 text-xs text-slate-600">
+                  {payment.breakdown.map((item, idx) => (
+                    <li key={`${payment.id}-fee-${idx}`} className="flex justify-between">
+                      <span className="font-semibold text-slate-700">{item.label}</span>
+                      <span>₹{Number(item.amount || 0).toLocaleString('en-IN')}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </Modal>
+  );
+};
 
 const StudentActionsModal = ({
   student,
@@ -2685,54 +2806,12 @@ const resolveTransactionMonthLabel = (entry) => {
         URL.revokeObjectURL(url);
       } else {
         const { jsPDF } = await import('jspdf');
-        const doc = new jsPDF();
-        doc.setFontSize(15);
-        doc.text(SCHOOL_NAME, 14, 20);
-        doc.setFontSize(12);
-        doc.text('Fee Collection Report', 14, 32);
-        doc.setFontSize(9);
-        doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 42);
-        doc.text(`Filters: ${summaryText}`, 14, 52, { maxWidth: 180 });
-
-        let y = 64;
-        filteredReportEntries.forEach((entry, index) => {
-          if (y > 270) {
-            doc.addPage();
-            y = 24;
-          }
-          doc.setFontSize(11);
-          doc.text(`${index + 1}. ${entry.studentName || 'Student'}`, 14, y);
-          y += 8;
-          doc.setFontSize(9);
-          doc.text(`Student ID: ${entry.studentId || '—'}`, 14, y);
-          doc.text(`Class: ${entry.class || '—'}${entry.section ? ` · Section ${entry.section}` : ''}`, 100, y);
-          y += 10;
-          doc.text(`Status: ${entry.statusLabel || '—'} · Cycle: ${entry.cycle || '—'}`, 14, y);
-          doc.text(`Session: ${entry.session || '—'} · Term: ${entry.term || '—'}`, 100, y);
-          y += 10;
-          doc.text(
-            `Amount: ${formatCurrency(entry.amount)} · Balance: ${formatCurrency(entry.balance)}`,
-            14,
-            y,
-          );
-          doc.text(`Due: ${formatDateDisplay(entry.dueDate)} · Paid: ${formatDateDisplay(entry.paidDate)}`, 100, y);
-          y += 10;
-          doc.text(
-            `Mode: ${entry.paymentModeLabel || '—'} · Txn: ${entry.transactionId || '—'}`,
-            14,
-            y,
-          );
-          y += 10;
-          doc.text(`Parent: ${entry.parentEmail || '—'} · Phone: ${entry.parentPhone || '—'}`, 14, y);
-          y += 10;
-          doc.text(
-            `Reminder Sent: ${entry.hasReminder ? 'Yes' : 'No'} · Store Charge: ${formatCurrency(entry.storeAmount)}`,
-            14,
-            y,
-          );
-          y += 12;
+        const doc = createFeeCollectionReportPdf(jsPDF, {
+          entries: filteredReportEntries,
+          summaryText,
+          schoolName: SCHOOL_NAME,
+          durationLabel: summaryText,
         });
-
         doc.save('fee-collection-report.pdf');
       }
       triggerToast('Report downloaded successfully.', 'success');
@@ -3286,65 +3365,13 @@ const resolveTransactionMonthLabel = (entry) => {
     setHistoryContext({ open: true, student, entries });
   };
 
-  const handleDownloadHistoryReport = async (student, entries) => {
+  const handleDownloadHistoryReport = async (student, entries, durationLabel = 'Complete history') => {
     if (!student) return;
     try {
       const { jsPDF } = await import('jspdf');
-      const doc = new jsPDF();
-      const title = `Fee Report · ${student.name || student.studentId || 'Student'}`;
-      const studentId = student.studentId || student.id;
-      doc.setFontSize(16);
-      doc.text(title, 14, 20);
-      doc.setFontSize(11);
-      doc.text(`Student ID: ${studentId}`, 14, 30);
-      doc.text(`Class: ${student.class || '-'}`, 14, 36);
-      doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 42);
-      let y = 52;
-      if (!entries.length) {
-        doc.text('No payments recorded yet.', 14, y);
-      } else {
-        entries.forEach((payment, index) => {
-          if (y > 270) {
-            doc.addPage();
-            y = 20;
-          }
-          doc.setFontSize(12);
-          doc.text(`Payment ${index + 1}`, 14, y);
-          y += 6;
-          doc.setFontSize(11);
-          const amountLine = `Amount: ₹${Number(payment.amount || 0).toLocaleString('en-IN')}`;
-          const modeLine = `Mode: ${payment.mode || 'Online'}`;
-          const dateValue = payment.date?.toDate
-            ? payment.date.toDate().toLocaleString()
-            : payment.date
-            ? new Date(payment.date).toLocaleString()
-            : '—';
-          doc.text(amountLine, 14, y);
-          y += 6;
-          doc.text(modeLine, 14, y);
-          y += 6;
-          doc.text(`Date: ${dateValue}`, 14, y);
-          y += 6;
-          if (payment.transaction_id) {
-            doc.text(`Transaction ID: ${payment.transaction_id}`, 14, y);
-            y += 6;
-          }
-          if (payment.breakdown && Array.isArray(payment.breakdown) && payment.breakdown.length > 0) {
-            doc.text('Breakdown:', 14, y);
-            y += 6;
-            payment.breakdown.forEach((item) => {
-              if (y > 270) {
-                doc.addPage();
-                y = 20;
-              }
-              doc.text(`• ${item.label || 'Fee'} — ₹${Number(item.amount || 0).toLocaleString('en-IN')}`, 18, y);
-              y += 6;
-            });
-          }
-          y += 4;
-        });
-      }
-      const fileSafeId = `${studentId}`.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+      const doc = createFeeHistoryReportPdf(jsPDF, { student, entries, durationLabel });
+      const safeStudentId = student?.studentId || student?.id || 'student';
+      const fileSafeId = `${safeStudentId}`.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
       doc.save(`fee-report-${fileSafeId}.pdf`);
       triggerToast('Report downloaded successfully.', 'success');
     } catch (error) {
@@ -6330,8 +6357,8 @@ const resolveTransactionMonthLabel = (entry) => {
           student={historyContext.student}
           payments={historyContext.entries}
           onClose={() => setHistoryContext({ open: false, student: null, entries: [] })}
-          onDownload={() =>
-            handleDownloadHistoryReport(historyContext.student, historyContext.entries)
+          onDownload={(entries, durationLabel) =>
+            handleDownloadHistoryReport(historyContext.student, entries, durationLabel)
           }
         />
       )}
