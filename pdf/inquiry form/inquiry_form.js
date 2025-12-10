@@ -42,8 +42,12 @@ export async function generateinquiryformPDF(id) {
     const board = valueOrEmpty(inquiry.board || inquiry.boardName);
     const tokenMoneyPaid = (inquiry.tokenStatus || "").toLowerCase() === "paid" ? "Yes" : "No";
 
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF("p", "mm", "a4");
+    const jsPDFInstance =
+        (typeof window !== "undefined" && window.jspdf && window.jspdf.jsPDF)
+            ? window.jspdf.jsPDF
+            : (await import("jspdf")).jsPDF;
+
+    const doc = new jsPDFInstance("p", "mm", "a4");
 
     const marginX = 13;
     const marginTop = 13;
