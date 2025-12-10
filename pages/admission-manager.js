@@ -1133,6 +1133,17 @@ export default function AdminManagerPortal() {
     downloadPdfLike('Inquired Students', inquiries, inquiryExportHeaders);
   }, [inquiries, inquiryExportHeaders]);
 
+  const handleDownloadInquiryForm = useCallback(async (inquiryId) => {
+    if (!inquiryId || typeof window === 'undefined') return;
+    try {
+      const { generateinquiryformPDF } = await import('../pdf/inquiry form/inquiry_form');
+      await generateinquiryformPDF(inquiryId);
+    } catch (error) {
+      console.error('Unable to download inquiry form PDF', error);
+      alert('Could not download the inquiry form. Please try again.');
+    }
+  }, []);
+
   const handleDownloadRegisteredCsv = useCallback(() => {
     const csv = buildCsv(registeredInquiries, registeredExportHeaders);
     downloadBlob(csv, 'registered-students.csv', 'text/csv');
@@ -1718,20 +1729,28 @@ export default function AdminManagerPortal() {
                 {inquiries.map((item) => {
                   const created = parseDate(item.createdAt);
                   return (
-                    <button
-                      type="button"
-                      key={item.id}
-                      onClick={() => setSelectedInquiryId(item.id)}
-                      className={`w-full rounded-2xl border px-4 py-3 text-left text-sm transition ${
-                        selectedInquiryId === item.id
-                          ? 'border-cardinal bg-cardinal/5 text-cardinal'
-                          : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-cardinal/40'
-                      }`}
-                    >
-                      <p className="font-semibold">{item.studentName}</p>
-                      <p className="text-xs text-slate-500">{item.inquiryId || item.id}</p>
-                      <p className="text-xs text-slate-500">{created ? created.toLocaleDateString() : ''}</p>
-                    </button>
+                    <div key={item.id} className="flex items-stretch gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedInquiryId(item.id)}
+                        className={`w-full rounded-2xl border px-4 py-3 text-left text-sm transition ${
+                          selectedInquiryId === item.id
+                            ? 'border-cardinal bg-cardinal/5 text-cardinal'
+                            : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-cardinal/40'
+                        }`}
+                      >
+                        <p className="font-semibold">{item.studentName}</p>
+                        <p className="text-xs text-slate-500">{item.inquiryId || item.id}</p>
+                        <p className="text-xs text-slate-500">{created ? created.toLocaleDateString() : ''}</p>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDownloadInquiryForm(item.id)}
+                        className="shrink-0 self-center rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-cardinal/40 hover:text-cardinal"
+                      >
+                        PDF
+                      </button>
+                    </div>
                   );
                 })}
                 {inquiries.length === 0 && (
