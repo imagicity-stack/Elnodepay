@@ -352,12 +352,14 @@ const StaffDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-rose-50 via-white to-slate-50">
       <Head>
         <title>Staff Dashboard · EL-NODE Pay</title>
       </Head>
-      <header className="border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
+      <header className="relative overflow-hidden border-b border-white/60 bg-white/80 shadow-sm backdrop-blur-xl">
+        <div className="absolute -left-10 top-0 h-32 w-32 rounded-full bg-cardinal/10 blur-3xl" aria-hidden="true" />
+        <div className="absolute right-2 top-2 h-28 w-40 rounded-full bg-indigo-200/30 blur-3xl" aria-hidden="true" />
+        <div className="relative mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
           <div className="flex items-center gap-3">
             <Image src="/elnode.png" alt="EL-NODE Pay" width={48} height={48} />
             <div>

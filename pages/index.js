@@ -134,7 +134,7 @@ const LoginPage = () => {
 
   if (checkingAuth) {
     return (
-      <div className="min-h-screen bg-white flex items-center justify-center px-4 font-poppins">
+      <div className="relative min-h-screen bg-gradient-to-br from-rose-50 via-white to-slate-50 flex items-center justify-center px-4 font-poppins overflow-hidden">
         <Head>
           <title>EL-NODE Login</title>
           <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -144,7 +144,8 @@ const LoginPage = () => {
             rel="stylesheet"
           />
         </Head>
-        <div className="flex flex-col items-center gap-4 text-cardinal">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(163,31,54,0.08),transparent_30%),radial-gradient(circle_at_80%_0%,rgba(79,70,229,0.08),transparent_25%)]" aria-hidden="true" />
+        <div className="relative flex flex-col items-center gap-4 text-cardinal">
           {renderSpinner('h-8 w-8', 'border-cardinal')}
           <p className="text-sm font-medium">Preparing your dashboard…</p>
         </div>
@@ -153,7 +154,7 @@ const LoginPage = () => {
   }
 
   return (
-    <div className="relative min-h-screen bg-white flex items-center justify-center px-4 py-16 font-poppins text-slate-800">
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-rose-50 via-white to-slate-50 flex items-center justify-center px-4 py-16 font-poppins text-slate-800">
       <Head>
         <title>EL-NODE Login</title>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -163,16 +164,23 @@ const LoginPage = () => {
           rel="stylesheet"
         />
       </Head>
-      <div className="absolute left-6 top-6">
+      <div className="absolute left-6 top-6 z-10">
         <Image src="/elnode.png" alt="EL-NODE logo" width={48} height={48} priority />
       </div>
-      <div className="w-full max-w-md space-y-8">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(163,31,54,0.08),transparent_30%),radial-gradient(circle_at_80%_0%,rgba(79,70,229,0.08),transparent_28%)]" aria-hidden="true" />
+      <div className="absolute -left-16 bottom-10 h-48 w-48 rounded-full bg-cardinal/10 blur-3xl" aria-hidden="true" />
+      <div className="absolute -right-10 top-10 h-56 w-56 rounded-full bg-indigo-300/20 blur-3xl" aria-hidden="true" />
+      <div className="relative w-full max-w-md space-y-8">
         <div className="text-center">
-          <h1 className="text-4xl font-semibold text-cardinal">EL-NODE</h1>
-          <p className="mt-2 text-sm text-slate-500">ERP for Mount Litera Zee School</p>
-          <p className="mt-1 text-sm text-slate-500">Sign in to continue.</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cardinal/70">Welcome back</p>
+          <h1 className="text-4xl font-semibold text-cardinal drop-shadow-sm">EL-NODE</h1>
+          <p className="mt-2 text-sm text-slate-600">ERP for Mount Litera Zee School</p>
+          <p className="mt-1 text-sm text-slate-600">Sign in to continue.</p>
         </div>
-        <form className="space-y-5 rounded-3xl border border-cardinal/20 bg-cardinal/5 p-6 shadow-xl" onSubmit={handleSubmit}>
+        <form
+          className="relative space-y-5 rounded-3xl border border-white/60 bg-white/80 p-6 shadow-2xl backdrop-blur-xl ring-1 ring-cardinal/10"
+          onSubmit={handleSubmit}
+        >
           <div className="space-y-2">
             <label htmlFor="email" className="text-sm font-medium text-cardinal">
               Email address
@@ -214,7 +222,7 @@ const LoginPage = () => {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-cardinal py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-90"
+            className="w-full rounded-xl bg-cardinal py-3 text-sm font-semibold text-white shadow-lg shadow-cardinal/20 transition hover:-translate-y-0.5 hover:bg-cardinal/90 focus:ring-2 focus:ring-cardinal/30 disabled:cursor-not-allowed disabled:opacity-90"
           >
             {loading ? (
               <span className="flex items-center justify-center gap-2">
