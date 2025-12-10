@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { toCSV } from '../lib/csv';
+import { downloadSalarySlipPdf } from '../lib/pdfUtils';
 
 const MONTH_OPTIONS = [
   { id: 1, label: 'January' },
@@ -149,7 +150,7 @@ const SalarySlip = ({ staff, salary, structure, monthLabel }) => {
   );
 };
 
-const SalarySlipModal = ({ open, onClose, salary, staff, structure, monthLabel, onDownloadCsv }) => {
+const SalarySlipModal = ({ open, onClose, salary, staff, structure, monthLabel, onDownloadCsv, onDownloadPdf }) => {
   if (!open || !salary) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 px-4 py-8">
@@ -169,10 +170,10 @@ const SalarySlipModal = ({ open, onClose, salary, staff, structure, monthLabel, 
             </button>
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={onDownloadPdf}
               className="rounded-lg border border-cardinal px-3 py-1.5 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
             >
-              Print / PDF
+              Download PDF
             </button>
             <button
               type="button"
@@ -915,6 +916,19 @@ const SalaryModule = ({ processorUid, category }) => {
     );
   };
 
+  const handleDownloadSlipPdf = async (salary) => {
+    if (!salary) return;
+    const staffRow = slipContext.staff || staff.find((member) => member.staffId === salary.staffId) || selectedStaff;
+    const monthLabel = `${MONTH_OPTIONS.find((m) => m.id === (salary?.month || selectedMonth))?.label} ${
+      salary?.year || selectedYear
+    }`;
+    try {
+      await downloadSalarySlipPdf({ staff: staffRow, salary, monthLabel });
+    } catch (error) {
+      console.error('Unable to download salary slip PDF', error);
+    }
+  };
+
   const handleDownloadSheet = () => {
     const sheetRows = salaries.map((row) => ({
       staffId: row.staffId,
@@ -1082,6 +1096,7 @@ const SalaryModule = ({ processorUid, category }) => {
             slipContext.salary?.year || selectedYear
           }`}
           onDownloadCsv={() => handleDownloadSlipCsv(slipContext.salary)}
+          onDownloadPdf={() => handleDownloadSlipPdf(slipContext.salary)}
           onClose={() => setSlipContext({ open: false, salary: null, staff: null })}
         />
       )}
