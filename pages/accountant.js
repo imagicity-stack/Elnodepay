@@ -109,8 +109,26 @@ const REPORT_DEFAULT_FILTERS = {
   reminder: 'All',
   dueFrom: '',
   dueTo: '',
-  search: '',
+  lastAcademicYear: false,
+  year: 'All',
+  month: 'All',
 };
+const REPORT_YEAR_START = 2025;
+const MONTH_OPTIONS = [
+  'All',
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
 
 const parseDateValue = (value) => {
   if (!value) return null;
@@ -299,6 +317,16 @@ const getFinancialYearRange = (referenceDate = new Date()) => { // fixed initial
   const endYear = startYear + 1;
   const start = new Date(startYear, 3, 1);
   const end = new Date(endYear, 2, 31, 23, 59, 59, 999);
+  return { start, end };
+};
+
+const getLastAcademicYearRange = (referenceDate = new Date()) => {
+  const current = getFinancialYearRange(referenceDate);
+  const start = new Date(current.start);
+  start.setFullYear(start.getFullYear() - 1);
+  const end = new Date(current.start);
+  end.setDate(end.getDate() - 1);
+  end.setHours(23, 59, 59, 999);
   return { start, end };
 };
 
@@ -984,7 +1012,7 @@ const CommonFeeRequestModal = ({
   );
 };
 
-const PaymentHistoryModal = ({ student, payments, onClose, onDownload }) => (
+const PaymentHistoryModal = ({ student, payments, onClose, onDownload, onDownloadReceipt }) => (
   <Modal title={`Payment history · ${student?.name || ''}`} onClose={onClose} size="xl">
     <div className="space-y-4 text-sm">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -997,7 +1025,7 @@ const PaymentHistoryModal = ({ student, payments, onClose, onDownload }) => (
           disabled={!payments.length}
           className="rounded-lg border border-cardinal px-3 py-1.5 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          Download Report
+          Download CSV
         </button>
       </div>
       {payments.length === 0 && <p className="text-slate-600">No payments recorded yet.</p>}
@@ -1013,6 +1041,13 @@ const PaymentHistoryModal = ({ student, payments, onClose, onDownload }) => (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="font-semibold text-slate-900">₹{payment.amount?.toLocaleString('en-IN')}</div>
               <span className="text-xs uppercase tracking-wide text-slate-500">{modeLabel}</span>
+              <button
+                type="button"
+                onClick={() => onDownloadReceipt?.(payment)}
+                className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+              >
+                Download PDF
+              </button>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span>{payment.fee_type || 'Tuition'}</span>
@@ -1259,6 +1294,7 @@ const AccountantDashboard = () => {
   const [reportDownloadState, setReportDownloadState] = useState({ format: null, loading: false });
   const [historyContext, setHistoryContext] = useState({ open: false, student: null, entries: [] });
   const [paymentModeFilter, setPaymentModeFilter] = useState('All');
+  const [paymentSearch, setPaymentSearch] = useState('');
   const [clearingDemoData, setClearingDemoData] = useState(false);
   const [settingsState, setSettingsState] = useState({
     currentTerm: '',
@@ -2085,6 +2121,15 @@ const resolveTransactionMonthLabel = (entry) => {
     return [...SESSION_OPTIONS, feeStructureDraft.session];
   }, [feeStructureDraft.session]);
 
+  const reportYearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const years = ['All'];
+    for (let year = REPORT_YEAR_START; year <= currentYear; year += 1) {
+      years.push(year);
+    }
+    return years;
+  }, []);
+
   const ledgerEntriesView = useMemo(() => {
     const safeEntries = Array.isArray(transactionsLog) ? transactionsLog : [];
     if (!safeEntries.length) return [];
@@ -2333,14 +2378,31 @@ const resolveTransactionMonthLabel = (entry) => {
       const dateB = parseDateValue(b?.date)?.getTime() || 0;
       return dateB - dateA;
     });
-    if (paymentModeFilter === 'All') {
-      return sortedPayments;
+    const searchValue = paymentSearch.trim().toLowerCase();
+
+    const byMode = paymentModeFilter === 'All'
+      ? sortedPayments
+      : sortedPayments.filter((payment) => {
+          const modeLabel = normalisePaymentMode(payment.mode || payment.payment_mode || 'Online');
+          return modeLabel.toLowerCase() === paymentModeFilter.toLowerCase();
+        });
+
+    if (!searchValue) {
+      return byMode;
     }
-    return sortedPayments.filter((payment) => {
-      const modeLabel = normalisePaymentMode(payment.mode || payment.payment_mode || 'Online');
-      return modeLabel.toLowerCase() === paymentModeFilter.toLowerCase();
+
+    return byMode.filter((payment) => {
+      const fields = [
+        payment.student_name,
+        payment.studentId,
+        payment.student_doc_id,
+        payment.transaction_id,
+        payment.razorpay_payment_id,
+        payment.reference,
+      ];
+      return fields.some((value) => `${value || ''}`.toLowerCase().includes(searchValue));
     });
-  }, [payments, paymentModeFilter]);
+  }, [payments, paymentModeFilter, paymentSearch]);
 
   const feeRequestReportEntries = useMemo(() => {
     const safeFeeRequests = Array.isArray(activeFeeRequests) ? activeFeeRequests : [];
@@ -2556,9 +2618,25 @@ const resolveTransactionMonthLabel = (entry) => {
     if (!safeEntries || safeEntries.length === 0) {
       return [];
     }
-    const dueFromDate = reportFilters.dueFrom ? new Date(`${reportFilters.dueFrom}T00:00:00`) : null;
-    const dueToDate = reportFilters.dueTo ? new Date(`${reportFilters.dueTo}T23:59:59`) : null;
-    const searchValue = reportFilters.search.trim().toLowerCase();
+    let dueFromDate = reportFilters.dueFrom ? new Date(`${reportFilters.dueFrom}T00:00:00`) : null;
+    let dueToDate = reportFilters.dueTo ? new Date(`${reportFilters.dueTo}T23:59:59`) : null;
+    if (reportFilters.lastAcademicYear) {
+      const { start, end } = getLastAcademicYearRange();
+      dueFromDate = start;
+      dueToDate = end;
+    } else {
+      const selectedYear = Number(reportFilters.year);
+      if (Number.isFinite(selectedYear)) {
+        const monthIndex = MONTH_OPTIONS.indexOf(reportFilters.month);
+        if (monthIndex > 0) {
+          dueFromDate = new Date(selectedYear, monthIndex - 1, 1);
+          dueToDate = new Date(selectedYear, monthIndex, 0, 23, 59, 59, 999);
+        } else {
+          dueFromDate = new Date(selectedYear, 0, 1);
+          dueToDate = new Date(selectedYear, 11, 31, 23, 59, 59, 999);
+        }
+      }
+    }
     const normalizedTerm = reportFilters.term.trim().toLowerCase();
 
     const filtered = safeEntries.filter((entry) => {
@@ -2588,14 +2666,6 @@ const resolveTransactionMonthLabel = (entry) => {
         matchesDueTo = entry.dueDate ? entry.dueDate <= dueToDate : false;
       }
 
-      const matchesSearch =
-        searchValue.length === 0 ||
-        entry.studentName?.toLowerCase().includes(searchValue) ||
-        entry.studentId?.toLowerCase().includes(searchValue) ||
-        entry.parentEmail?.toLowerCase().includes(searchValue) ||
-        entry.parentPhone?.toLowerCase().includes(searchValue) ||
-        entry.transactionId?.toLowerCase().includes(searchValue);
-
       return (
         matchesClass &&
         matchesStatus &&
@@ -2605,8 +2675,7 @@ const resolveTransactionMonthLabel = (entry) => {
         matchesPaymentMode &&
         matchesReminder &&
         matchesDueFrom &&
-        matchesDueTo &&
-        matchesSearch
+        matchesDueTo
       );
     });
 
@@ -2645,14 +2714,19 @@ const resolveTransactionMonthLabel = (entry) => {
     if (reportFilters.reminder !== 'All') {
       parts.push(reportFilters.reminder === 'Sent' ? 'Reminder sent' : 'No reminder');
     }
+    if (reportFilters.lastAcademicYear) {
+      parts.push('Last academic year');
+    } else if (reportFilters.year && reportFilters.year !== 'All') {
+      parts.push(`Year ${reportFilters.year}`);
+      if (reportFilters.month && reportFilters.month !== 'All') {
+        parts.push(`Month ${reportFilters.month}`);
+      }
+    }
     if (reportFilters.dueFrom) {
       parts.push(`Due from ${reportFilters.dueFrom}`);
     }
     if (reportFilters.dueTo) {
       parts.push(`Due to ${reportFilters.dueTo}`);
-    }
-    if (reportFilters.search.trim()) {
-      parts.push(`Search “${reportFilters.search.trim()}”`);
     }
     return parts.length ? parts.join(' · ') : 'No filters applied';
   }, [reportFilters]);
@@ -2663,8 +2737,9 @@ const resolveTransactionMonthLabel = (entry) => {
   };
 
   const handleReportFilterChange = (event) => {
-    const { name, value } = event.target;
-    setReportFilters((prev) => ({ ...prev, [name]: value }));
+    const { name, value, type, checked } = event.target;
+    const resolvedValue = type === 'checkbox' ? checked : value;
+    setReportFilters((prev) => ({ ...prev, [name]: resolvedValue }));
   };
 
   const handleResetReportFilters = () => {
@@ -2679,145 +2754,84 @@ const resolveTransactionMonthLabel = (entry) => {
     setIsReportModalOpen(false);
   };
 
-  const handleDownloadReport = async (format) => {
-    if (!['pdf', 'csv'].includes(format)) {
-      return;
-    }
+  const handleDownloadReport = async () => {
+    const format = 'csv';
     if (!filteredReportEntries.length) {
       triggerToast('No records match the selected filters.', 'info');
       return;
     }
     setReportDownloadState({ format, loading: true });
     const summaryText = reportFilterSummary;
-
-    const formatCurrency = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`;
-    const formatDateDisplay = (date) =>
-      date instanceof Date && Number.isFinite(date.getTime())
-        ? date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
-        : '—';
     const formatDateIso = (date) =>
       date instanceof Date && Number.isFinite(date.getTime()) ? date.toISOString().split('T')[0] : '';
 
     try {
-      if (format === 'csv') {
-        const escapeCsvValue = (value) => {
-          if (value === null || value === undefined) return '""';
-          const stringValue = `${value}`.replace(/"/g, '""');
-          return `"${stringValue}"`;
-        };
+      const escapeCsvValue = (value) => {
+        if (value === null || value === undefined) return '""';
+        const stringValue = `${value}`.replace(/"/g, '""');
+        return `"${stringValue}"`;
+      };
 
-        const lines = [];
-        lines.push(escapeCsvValue(SCHOOL_NAME));
-        lines.push(`${escapeCsvValue('Generated On')},${escapeCsvValue(new Date().toLocaleString())}`);
-        lines.push(`${escapeCsvValue('Filters')},${escapeCsvValue(summaryText)}`);
-        lines.push('');
+      const lines = [];
+      lines.push(escapeCsvValue(SCHOOL_NAME));
+      lines.push(`${escapeCsvValue('Generated On')},${escapeCsvValue(new Date().toLocaleString())}`);
+      lines.push(`${escapeCsvValue('Filters')},${escapeCsvValue(summaryText)}`);
+      lines.push('');
 
-        const header = [
-          'Student ID',
-          'Student Name',
-          'Class',
-          'Section',
-          'Status',
-          'Fee Cycle',
-          'Session',
-          'Term',
-          'Due Date',
-          'Amount (₹)',
-          'Balance (₹)',
-          'Payment Mode',
-          'Reference / UTR',
-          'Parent Email',
-          'Parent Phone',
-          'Reminder Sent',
-          'Store Charge (₹)',
+      const header = [
+        'Student ID',
+        'Student Name',
+        'Class',
+        'Section',
+        'Status',
+        'Fee Cycle',
+        'Session',
+        'Term',
+        'Due Date',
+        'Amount (₹)',
+        'Balance (₹)',
+        'Payment Mode',
+        'Reference / UTR',
+        'Parent Email',
+        'Parent Phone',
+        'Reminder Sent',
+        'Store Charge (₹)',
+      ];
+      lines.push(header.map(escapeCsvValue).join(','));
+
+      filteredReportEntries.forEach((entry) => {
+        const row = [
+          entry.studentId || '-',
+          entry.studentName || '-',
+          entry.class || '-',
+          entry.section || '-',
+          entry.statusLabel || '-',
+          entry.cycle || '-',
+          entry.session || '-',
+          entry.term || '-',
+          formatDateIso(entry.dueDate) || '-',
+          Number(entry.amount || 0).toFixed(2),
+          Number(entry.balance || 0).toFixed(2),
+          entry.paymentModeLabel || '-',
+          entry.transactionId || '-',
+          entry.parentEmail || '-',
+          entry.parentPhone || '-',
+          entry.hasReminder ? 'Yes' : 'No',
+          Number(entry.storeAmount || 0).toFixed(2),
         ];
-        lines.push(header.map(escapeCsvValue).join(','));
+        lines.push(row.map(escapeCsvValue).join(','));
+      });
 
-        filteredReportEntries.forEach((entry) => {
-          const row = [
-            entry.studentId || '-',
-            entry.studentName || '-',
-            entry.class || '-',
-            entry.section || '-',
-            entry.statusLabel || '-',
-            entry.cycle || '-',
-            entry.session || '-',
-            entry.term || '-',
-            formatDateIso(entry.dueDate) || '-',
-            Number(entry.amount || 0).toFixed(2),
-            Number(entry.balance || 0).toFixed(2),
-            entry.paymentModeLabel || '-',
-            entry.transactionId || '-',
-            entry.parentEmail || '-',
-            entry.parentPhone || '-',
-            entry.hasReminder ? 'Yes' : 'No',
-            Number(entry.storeAmount || 0).toFixed(2),
-          ];
-          lines.push(row.map(escapeCsvValue).join(','));
-        });
-
-        const csvContent = lines.join('\n');
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', 'fee-collection-report.csv');
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-      } else {
-        const { jsPDF } = await import('jspdf');
-        const doc = new jsPDF();
-        doc.setFontSize(15);
-        doc.text(SCHOOL_NAME, 14, 20);
-        doc.setFontSize(12);
-        doc.text('Fee Collection Report', 14, 32);
-        doc.setFontSize(9);
-        doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 42);
-        doc.text(`Filters: ${summaryText}`, 14, 52, { maxWidth: 180 });
-
-        let y = 64;
-        filteredReportEntries.forEach((entry, index) => {
-          if (y > 270) {
-            doc.addPage();
-            y = 24;
-          }
-          doc.setFontSize(11);
-          doc.text(`${index + 1}. ${entry.studentName || 'Student'}`, 14, y);
-          y += 8;
-          doc.setFontSize(9);
-          doc.text(`Student ID: ${entry.studentId || '—'}`, 14, y);
-          doc.text(`Class: ${entry.class || '—'}${entry.section ? ` · Section ${entry.section}` : ''}`, 100, y);
-          y += 10;
-          doc.text(`Status: ${entry.statusLabel || '—'} · Cycle: ${entry.cycle || '—'}`, 14, y);
-          doc.text(`Session: ${entry.session || '—'} · Term: ${entry.term || '—'}`, 100, y);
-          y += 10;
-          doc.text(
-            `Amount: ${formatCurrency(entry.amount)} · Balance: ${formatCurrency(entry.balance)}`,
-            14,
-            y,
-          );
-          doc.text(`Due: ${formatDateDisplay(entry.dueDate)} · Paid: ${formatDateDisplay(entry.paidDate)}`, 100, y);
-          y += 10;
-          doc.text(
-            `Mode: ${entry.paymentModeLabel || '—'} · Txn: ${entry.transactionId || '—'}`,
-            14,
-            y,
-          );
-          y += 10;
-          doc.text(`Parent: ${entry.parentEmail || '—'} · Phone: ${entry.parentPhone || '—'}`, 14, y);
-          y += 10;
-          doc.text(
-            `Reminder Sent: ${entry.hasReminder ? 'Yes' : 'No'} · Store Charge: ${formatCurrency(entry.storeAmount)}`,
-            14,
-            y,
-          );
-          y += 12;
-        });
-
-        doc.save('fee-collection-report.pdf');
-      }
+      const csvContent = lines.join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'fee-collection-report.csv');
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
       triggerToast('Report downloaded successfully.', 'success');
     } catch (error) {
       console.error('Error generating report', error);
@@ -3197,11 +3211,6 @@ const resolveTransactionMonthLabel = (entry) => {
 
     try {
       const feeAmount = getFeeAmountFromStructure(formState.class, formState.fee_cycle);
-      if (feeAmount <= 0) {
-        triggerToast('Fee structure missing for the selected class.', 'error');
-        setFormSubmitting(false);
-        return;
-      }
       const joiningYear = normaliseYearValue(formState.year_of_joining);
       const passingYear = normaliseYearValue(formState.year_of_passing);
       if (!joiningYear || !passingYear) {
@@ -3458,69 +3467,80 @@ const resolveTransactionMonthLabel = (entry) => {
   const handleDownloadHistoryReport = async (student, entries) => {
     if (!student) return;
     try {
-      const { jsPDF } = await import('jspdf');
+      const studentId = student.studentId || student.id || 'student';
+      const fileSafeId = `${studentId}`.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+      const rows = entries.map((payment, index) => {
+        const dateValue = payment.date?.toDate
+          ? payment.date.toDate().toLocaleString()
+          : payment.date
+          ? new Date(payment.date).toLocaleString()
+          : '';
+        return {
+          '#': index + 1,
+          Date: dateValue,
+          Amount: Number(payment.amount || 0),
+          Mode: normalisePaymentMode(payment.mode || payment.payment_mode || 'Online'),
+          Reference: payment.transaction_id || payment.razorpay_payment_id || '',
+          Term: payment.term || '',
+          'Fee Type': payment.fee_type || 'Tuition',
+        };
+      });
+      downloadCsvFile(`payment-history-${fileSafeId}.csv`, rows);
+    } catch (error) {
+      console.error('Error generating history CSV', error);
+      triggerToast('Unable to download report. Please try again.', 'error');
+    }
+  };
+
+  const handleDownloadPaymentReceipt = async (payment, student = null) => {
+    if (!payment) return;
+    const { jsPDF } = await import('jspdf');
+    try {
+      const studentName = student?.name || payment.student_name || 'Student';
+      const studentId =
+        student?.studentId || student?.id || payment.studentId || payment.student_doc_id || 'student';
+      const classLabel = student?.class || payment.class || '—';
+      const modeLabel = normalisePaymentMode(payment.mode || payment.payment_mode || 'Online');
+      const transactionRef = payment.transaction_id || payment.razorpay_payment_id || payment.reference || '—';
+      const dateValue = payment.date?.toDate
+        ? payment.date.toDate()
+        : parseDateValue(payment.date) || new Date();
       const doc = new jsPDF();
-      const title = `Fee Report · ${student.name || student.studentId || 'Student'}`;
-      const studentId = student.studentId || student.id;
-      doc.setFontSize(16);
-      doc.text(title, 14, 20);
+      doc.setFontSize(15);
+      doc.text('Payment Receipt', 14, 20);
       doc.setFontSize(11);
-      doc.text(`Student ID: ${studentId}`, 14, 30);
-      doc.text(`Class: ${student.class || '-'}`, 14, 36);
-      doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 42);
-      let y = 52;
-      if (!entries.length) {
-        doc.text('No payments recorded yet.', 14, y);
-      } else {
-        entries.forEach((payment, index) => {
-          if (y > 270) {
-            doc.addPage();
-            y = 20;
-          }
-          doc.setFontSize(12);
-          doc.text(`Payment ${index + 1}`, 14, y);
+      doc.text(`Student: ${studentName}`, 14, 30);
+      doc.text(`Student ID: ${studentId}`, 14, 36);
+      doc.text(`Class: ${classLabel}`, 14, 42);
+      doc.text(`Date: ${dateValue.toLocaleString()}`, 14, 48);
+      doc.text(`Amount: ₹${Number(payment.amount || 0).toLocaleString('en-IN')}`, 14, 54);
+      doc.text(`Mode: ${modeLabel}`, 14, 60);
+      doc.text(`Reference: ${transactionRef}`, 14, 66);
+      if (payment.fee_type || payment.term) {
+        doc.text(`Fee Type: ${payment.fee_type || 'Tuition'}`, 14, 72);
+        if (payment.term) {
+          doc.text(`Term: ${payment.term}`, 14, 78);
+        }
+      }
+      if (Array.isArray(payment.breakdown) && payment.breakdown.length > 0) {
+        let y = payment.term ? 86 : 80;
+        doc.text('Breakdown:', 14, y);
+        y += 6;
+        payment.breakdown.forEach((item) => {
+          doc.text(
+            `• ${item.label || 'Fee'} — ₹${Number(item.amount || 0).toLocaleString('en-IN')}`,
+            18,
+            y,
+          );
           y += 6;
-          doc.setFontSize(11);
-          const amountLine = `Amount: ₹${Number(payment.amount || 0).toLocaleString('en-IN')}`;
-          const modeLabel = normalisePaymentMode(payment.mode || 'Online');
-          const modeLine = `Mode: ${modeLabel}`;
-          const dateValue = payment.date?.toDate
-            ? payment.date.toDate().toLocaleString()
-            : payment.date
-            ? new Date(payment.date).toLocaleString()
-            : '—';
-          doc.text(amountLine, 14, y);
-          y += 6;
-          doc.text(modeLine, 14, y);
-          y += 6;
-          doc.text(`Date: ${dateValue}`, 14, y);
-          y += 6;
-          if (payment.transaction_id) {
-            const label = modeLabel === 'Bank Transfer' ? 'UTR Number' : 'Transaction ID';
-            doc.text(`${label}: ${payment.transaction_id}`, 14, y);
-            y += 6;
-          }
-          if (payment.breakdown && Array.isArray(payment.breakdown) && payment.breakdown.length > 0) {
-            doc.text('Breakdown:', 14, y);
-            y += 6;
-            payment.breakdown.forEach((item) => {
-              if (y > 270) {
-                doc.addPage();
-                y = 20;
-              }
-              doc.text(`• ${item.label || 'Fee'} — ₹${Number(item.amount || 0).toLocaleString('en-IN')}`, 18, y);
-              y += 6;
-            });
-          }
-          y += 4;
         });
       }
-      const fileSafeId = `${studentId}`.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
-      doc.save(`fee-report-${fileSafeId}.pdf`);
-      triggerToast('Report downloaded successfully.', 'success');
+      const fileSafeId = `${studentId}-${payment.id || 'payment'}`.replace(/[^a-z0-9-]/gi, '-').toLowerCase();
+      doc.save(`payment-${fileSafeId}.pdf`);
+      triggerToast('Receipt downloaded successfully.', 'success');
     } catch (error) {
-      console.error('Error generating history PDF', error);
-      triggerToast('Unable to download report. Please try again.', 'error');
+      console.error('Error generating payment receipt', error);
+      triggerToast('Unable to download payment receipt. Please try again.', 'error');
     }
   };
 
@@ -5849,22 +5869,31 @@ const resolveTransactionMonthLabel = (entry) => {
                     Review every cash, online, and bank transfer payment with quick filtering by mode.
                   </p>
                 </div>
-                <label className="text-sm font-medium text-slate-600">
-                  <span className="mr-2 hidden text-xs uppercase tracking-wide text-slate-500 md:inline">
-                    Mode filter
-                  </span>
-                  <select
-                    value={paymentModeFilter}
-                    onChange={(event) => setPaymentModeFilter(event.target.value)}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                  >
-                    {paymentModeOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <input
+                    type="text"
+                    value={paymentSearch}
+                    onChange={(event) => setPaymentSearch(event.target.value)}
+                    placeholder="Search student, ID, or reference"
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 sm:w-auto"
+                  />
+                  <label className="text-sm font-medium text-slate-600">
+                    <span className="mr-2 hidden text-xs uppercase tracking-wide text-slate-500 md:inline">
+                      Mode filter
+                    </span>
+                    <select
+                      value={paymentModeFilter}
+                      onChange={(event) => setPaymentModeFilter(event.target.value)}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    >
+                      {paymentModeOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
               </div>
               <div className="mt-6 overflow-x-auto">
                 <table className="min-w-full divide-y divide-slate-200 text-sm">
@@ -5876,12 +5905,13 @@ const resolveTransactionMonthLabel = (entry) => {
                       <th className="px-4 py-3 text-left">Amount</th>
                       <th className="px-4 py-3 text-left">Mode</th>
                       <th className="px-4 py-3 text-left">Reference / UTR</th>
+                      <th className="px-4 py-3 text-left">Receipt</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {loadingPayments && (
                       <tr>
-                        <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
+                        <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
                           Loading payment records…
                         </td>
                       </tr>
@@ -5906,12 +5936,21 @@ const resolveTransactionMonthLabel = (entry) => {
                             <td className="px-4 py-3">₹{Number(payment.amount || 0).toLocaleString('en-IN')}</td>
                             <td className="px-4 py-3">{modeLabel}</td>
                             <td className="px-4 py-3 text-slate-600">{transactionRef}</td>
+                            <td className="px-4 py-3">
+                              <button
+                                type="button"
+                                onClick={() => handleDownloadPaymentReceipt(payment)}
+                                className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                              >
+                                Download PDF
+                              </button>
+                            </td>
                           </tr>
                         );
                       })}
                     {!loadingPayments && filteredPaymentsByMode.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
+                        <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
                           No payments match the selected filter yet.
                         </td>
                       </tr>
@@ -6395,6 +6434,53 @@ const resolveTransactionMonthLabel = (entry) => {
                 />
               </label>
             </div>
+            <div className="grid gap-4 md:grid-cols-3">
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Last academic year
+                <div className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2">
+                  <input
+                    type="checkbox"
+                    name="lastAcademicYear"
+                    checked={reportFilters.lastAcademicYear}
+                    onChange={handleReportFilterChange}
+                    className="h-4 w-4 rounded border-slate-300 text-cardinal focus:ring-cardinal"
+                  />
+                  <span className="text-sm text-slate-700">Use previous academic cycle</span>
+                </div>
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Year
+                <select
+                  name="year"
+                  value={reportFilters.year}
+                  onChange={handleReportFilterChange}
+                  disabled={reportFilters.lastAcademicYear}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 disabled:cursor-not-allowed disabled:bg-slate-100"
+                >
+                  {reportYearOptions.map((yearOption) => (
+                    <option key={yearOption} value={yearOption}>
+                      {yearOption}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Month
+                <select
+                  name="month"
+                  value={reportFilters.month}
+                  onChange={handleReportFilterChange}
+                  disabled={reportFilters.lastAcademicYear}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 disabled:cursor-not-allowed disabled:bg-slate-100"
+                >
+                  {MONTH_OPTIONS.map((monthOption) => (
+                    <option key={monthOption} value={monthOption}>
+                      {monthOption}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
             <div className="grid gap-4 md:grid-cols-2">
               <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
                 Term contains
@@ -6406,16 +6492,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
                 />
               </label>
-              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                Search by student, parent, or transaction
-                <input
-                  name="search"
-                  value={reportFilters.search}
-                  onChange={handleReportFilterChange}
-                  placeholder="Name, email, or transaction ID"
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                />
-              </label>
+              <div />
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm text-slate-500">
@@ -6434,17 +6511,7 @@ const resolveTransactionMonthLabel = (entry) => {
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleDownloadReport('pdf')}
-                  disabled={reportDownloadState.loading}
-                  className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {reportDownloadState.loading && reportDownloadState.format === 'pdf'
-                    ? 'Preparing…'
-                    : 'download as pdf'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDownloadReport('csv')}
+                  onClick={handleDownloadReport}
                   disabled={reportDownloadState.loading}
                   className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
                 >
@@ -6508,6 +6575,9 @@ const resolveTransactionMonthLabel = (entry) => {
           onClose={() => setHistoryContext({ open: false, student: null, entries: [] })}
           onDownload={() =>
             handleDownloadHistoryReport(historyContext.student, historyContext.entries)
+          }
+          onDownloadReceipt={(payment) =>
+            handleDownloadPaymentReceipt(payment, historyContext.student)
           }
         />
       )}
