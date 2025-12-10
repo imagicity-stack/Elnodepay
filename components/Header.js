@@ -31,8 +31,9 @@ const Header = () => {
   };
 
   return (
-    <header className="bg-cardinal text-white shadow">
-      <div className="max-w-6xl mx-auto flex flex-col gap-4 px-4 py-6 md:flex-row md:items-center md:justify-between">
+    <header className="relative overflow-hidden bg-gradient-to-r from-cardinal to-cardinal/90 text-white shadow-xl">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(255,255,255,0.12),transparent_35%),radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.08),transparent_30%)]" aria-hidden="true" />
+      <div className="relative max-w-6xl mx-auto flex flex-col gap-4 px-4 py-6 md:flex-row md:items-center md:justify-between">
         <div className="flex items-center gap-3">
           <Image src="/elnode.png" alt="EL-NODE Pay logo" width={48} height={48} priority />
           <div>
@@ -40,16 +41,25 @@ const Header = () => {
             <p className="text-sm text-white/80">Secure fee management for parents and accountants.</p>
           </div>
         </div>
-        <nav className="flex items-center gap-4 text-sm font-medium">
-          {navItems.map((item) => (
-            <Link key={item.href} href={item.href} className="hover:text-white/80 transition">
-              {item.label}
-            </Link>
-          ))}
+        <nav className="flex items-center gap-2 text-sm font-medium">
+          {navItems.map((item) => {
+            const isActive = router.pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`rounded-full px-4 py-2 transition ${
+                  isActive ? 'bg-white/20 text-white shadow-inner' : 'hover:bg-white/10 hover:text-white'
+                }`}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
           {isClient && isAuthenticated && (
             <button
               onClick={handleLogout}
-              className="bg-white text-cardinal px-4 py-2 rounded-md font-semibold shadow hover:bg-white/90"
+              className="rounded-full bg-white px-4 py-2 font-semibold text-cardinal shadow-lg shadow-cardinal/20 transition hover:-translate-y-0.5 hover:bg-white/90"
             >
               Sign out
             </button>

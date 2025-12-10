@@ -5,6 +5,18 @@
 body {
   background-color: #ffffff;
   color: #1f2933;
+  background-image:
+    radial-gradient(circle at 20% 20%, rgba(163, 31, 54, 0.06), transparent 35%),
+    radial-gradient(circle at 80% 0%, rgba(79, 70, 229, 0.05), transparent 30%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.8), rgba(255, 255, 255, 0.9));
+  background-attachment: fixed;
+  background-size: 120% 120%, 120% 120%, 100% 100%;
+  scroll-behavior: smooth;
+}
+
+::selection {
+  background: rgba(163, 31, 54, 0.15);
+  color: #1f2933;
 }
 
 a {

@@ -1158,12 +1158,14 @@ const ParentDashboard = () => {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-rose-50 via-white to-slate-50">
       <Head>
         <title>Parent Dashboard · EL-NODE Pay</title>
       </Head>
-      <header className="border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
+      <header className="relative overflow-hidden border-b border-white/70 bg-white/80 shadow-sm backdrop-blur-xl">
+        <div className="absolute -left-16 top-0 h-40 w-40 rounded-full bg-cardinal/10 blur-3xl" aria-hidden="true" />
+        <div className="absolute right-0 top-0 h-32 w-56 rounded-full bg-indigo-200/30 blur-3xl" aria-hidden="true" />
+        <div className="relative mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
           <div className="flex items-start gap-3">
             <Image src="/elnode.png" alt="EL-NODE Pay logo" width={48} height={48} priority />
             <div>
