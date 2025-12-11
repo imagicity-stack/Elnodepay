@@ -1633,22 +1633,26 @@ export default function AdminManagerPortal() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-rose-50 via-white to-slate-50">
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-cardinal/5 via-white to-amber-50">
       <Head>
         <title>Admission Manager Portal</title>
       </Head>
-        <header className="relative overflow-hidden border-b border-white/60 bg-white/80 shadow-sm backdrop-blur-xl">
-          <div className="absolute -left-16 top-0 h-32 w-32 rounded-full bg-cardinal/10 blur-3xl" aria-hidden="true" />
-          <div className="absolute right-0 top-0 h-28 w-44 rounded-full bg-indigo-200/30 blur-3xl" aria-hidden="true" />
-          <div className="relative mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
-            <div className="flex items-center gap-3">
-              <Image src="/elnode.png" alt="Elnode logo" width={40} height={40} className="h-10 w-10" />
-              <div>
-                <p className="text-xs uppercase tracking-wide text-slate-500">Admission Manager</p>
-              <h1 className="text-xl font-semibold text-slate-900">Manual CRM</h1>
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -left-12 top-2 h-36 w-36 rounded-full bg-cardinal/12 blur-3xl" aria-hidden="true" />
+        <div className="absolute right-4 top-0 h-32 w-56 rounded-full bg-amber-200/60 blur-3xl" aria-hidden="true" />
+        <div className="absolute bottom-0 left-1/4 h-48 w-48 rounded-full bg-emerald-100/60 blur-3xl" aria-hidden="true" />
+      </div>
+      <header className="relative border-b border-white/70 bg-white/85 shadow-sm backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-4">
+            <Image src="/elnode.png" alt="Elnode logo" width={56} height={56} className="h-14 w-14 rounded-2xl shadow" />
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cardinal">Admission Manager</p>
+              <h1 className="mt-1 text-3xl font-semibold text-slate-900">Manual CRM</h1>
+              <p className="text-sm text-slate-600">Tabs, sections, and cards now breathe for modern CRM clarity.</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="text-right">
               <p className="text-sm font-semibold text-slate-900">{profile?.name || 'Admission Team'}</p>
               <p className="text-xs text-slate-500">{user.email}</p>
@@ -1656,14 +1660,20 @@ export default function AdminManagerPortal() {
             <button
               type="button"
               onClick={handleSignOut}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50"
             >
               Sign out
             </button>
           </div>
+        </div>
+
+        <div className="mx-auto grid max-w-6xl gap-4 px-4 pb-5 lg:grid-cols-[1.2fr_2fr]">
+          <div className="rounded-3xl border border-white/70 bg-gradient-to-r from-cardinal via-rose-500 to-amber-400 p-4 text-white shadow-lg">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em]">Workflow</p>
+            <p className="mt-1 text-sm text-white/80">Capture inquiries, payments, and follow-ups in organised lanes.</p>
           </div>
-          <div className="mx-auto max-w-6xl px-4">
-            <div className="hidden flex-wrap gap-2 pb-4 sm:flex" role="tablist" aria-label="Admissions navigation">
+          <div className="rounded-3xl border border-slate-100 bg-white/90 p-4 shadow-sm backdrop-blur">
+            <div className="hidden flex-wrap gap-2 pb-2 sm:flex" role="tablist" aria-label="Admissions navigation">
               {NAV_TABS.map((tab) => (
                 <button
                   key={tab.id}
@@ -1681,8 +1691,11 @@ export default function AdminManagerPortal() {
                 </button>
               ))}
             </div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Optimised for thumb scrolls</p>
+            <p className="text-sm text-slate-600">Horizontal tab scroller stays visible on mobile while cards stay airy.</p>
           </div>
-        </header>
+        </div>
+      </header>
 
       <div className="mx-auto max-w-6xl px-4 sm:hidden">
         <MobileTabScroller tabs={NAV_TABS} activeTab={activeTab} onChange={setActiveTab} />
@@ -1873,6 +1886,20 @@ export default function AdminManagerPortal() {
           />
         )}
       </main>
+
+      <footer className="border-t border-white/70 bg-white/85 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-4 py-6 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">EL-NODE Pay · Admissions Suite</p>
+            <p className="text-xs text-slate-500">Streamlined tabs, layered gradients, and mobile-friendly controls for every inquiry lane.</p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
+            <span className="rounded-full bg-cardinal/10 px-3 py-1 text-cardinal">Inquiries</span>
+            <span className="rounded-full bg-amber-100 px-3 py-1 text-amber-700">Payments</span>
+            <span className="rounded-full bg-slate-900 px-3 py-1 text-white">Receipts</span>
+          </div>
+        </div>
+      </footer>
 
       <MobileSliderMenu
         open={mobileMenuOpen}
