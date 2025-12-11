@@ -4483,102 +4483,41 @@ const resolveTransactionMonthLabel = (entry) => {
       <Head>
         <title>Accountant Dashboard · EL-NODE Pay</title>
       </Head>
-      <header className="sticky top-0 z-30 border-b border-white/60 bg-white/80 shadow-sm backdrop-blur-xl">
-        <div className="absolute -left-16 top-0 h-36 w-36 rounded-full bg-cardinal/10 blur-3xl" aria-hidden="true" />
-        <div className="absolute right-4 top-0 h-28 w-52 rounded-full bg-indigo-200/40 blur-3xl" aria-hidden="true" />
-        <div className="relative mx-auto flex max-w-7xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-start gap-3">
-            <Image src="/elnode.png" alt="EL-NODE Pay logo" width={48} height={48} priority />
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -left-16 top-6 h-40 w-40 rounded-full bg-cardinal/10 blur-3xl" aria-hidden="true" />
+        <div className="absolute right-0 top-0 h-32 w-64 rounded-full bg-emerald-200/40 blur-3xl" aria-hidden="true" />
+        <div className="absolute bottom-10 right-1/3 h-44 w-44 rounded-full bg-slate-200/60 blur-3xl" aria-hidden="true" />
+      </div>
+      <header className="relative border-b border-white/70 bg-white/90 shadow-sm backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl flex-col gap-6 px-6 py-8 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-4">
+            <Image
+              src="/elnode.png"
+              alt="EL-NODE Pay logo"
+              width={56}
+              height={56}
+              priority
+              className="rounded-2xl shadow"
+            />
             <div>
-              <h1 className="text-2xl font-semibold text-slate-900">{headerCopy.title}</h1>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-cardinal">Finance Control Hub</p>
+              <h1 className="mt-1 text-3xl font-semibold text-slate-900">{headerCopy.title}</h1>
               <p className="text-sm text-slate-600">{headerCopy.description}</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Curated sections, color-coded tabs, and softened spacing bring clarity across desktop and mobile.
+              </p>
             </div>
           </div>
-          <div
-            className={`flex flex-wrap items-center gap-3 ${
-              activeSection !== 'fees' ? 'justify-end md:justify-end' : ''
-            }`}
-          >
-            {showFeeActions && (
-              <>
-                <button
-                  type="button"
-                  onClick={handleOpenAddStudent}
-                  className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
-                >
-                  Add Student
-                </button>
-                <button
-                  type="button"
-                  onClick={openReportModal}
-                  className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
-                >
-                  Generate Report
-                </button>
-                <div className="relative" ref={settingsMenuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setIsSettingsMenuOpen((prev) => !prev)}
-                    className="flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                    aria-haspopup="true"
-                    aria-expanded={isSettingsMenuOpen}
-                    aria-controls="settings-menu"
-                  >
-                    Settings
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      className={`h-4 w-4 transition-transform ${isSettingsMenuOpen ? 'rotate-180' : ''}`}
-                      aria-hidden="true"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.25a.75.75 0 01-1.06 0L5.218 8.29a.75.75 0 01.02-1.08z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </button>
-                  {isSettingsMenuOpen && (
-                    <div
-                      id="settings-menu"
-                      className="absolute right-0 z-10 mt-2 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
-                      role="menu"
-                      aria-label="Settings"
-                    >
-                      {[
-                        { id: 'fee-settings', label: 'Fee Settings' },
-                        { id: 'settings', label: 'Automation Settings' },
-                        { id: 'house-settings', label: 'House Settings' },
-                      ].map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => handleSettingsNavigate(item.id)}
-                          className="block w-full px-4 py-2 text-left text-sm text-slate-700 transition hover:bg-cardinal/10"
-                          role="menuitem"
-                        >
-                          {item.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={handleClearPaymentData}
-                  disabled={clearingDemoData}
-                  className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {clearingDemoData ? 'Clearing…' : 'Clear Payment Data'}
-                </button>
-              </>
-            )}
-            {isSalarySection && (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 rounded-full bg-cardinal/10 px-3 py-1.5 text-xs font-semibold text-cardinal shadow-sm">
+              <span className="h-2.5 w-2.5 rounded-full bg-cardinal" />
+              {user?.email}
+            </div>
+            {secondaryAuthRef.current && (
               <button
                 type="button"
                 onClick={() => setStaffSettingsOpen(true)}
-                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+                className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50"
               >
                 Staff Settings
               </button>
@@ -4586,56 +4525,187 @@ const resolveTransactionMonthLabel = (entry) => {
             <button
               type="button"
               onClick={() => setSignOutConfirmOpen(true)}
-              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50"
             >
               Sign Out
             </button>
           </div>
         </div>
+
+        <div className="mx-auto mb-4 grid max-w-7xl gap-4 px-6 lg:grid-cols-[1.05fr_2fr]">
+          <div className="rounded-3xl border border-white/70 bg-gradient-to-r from-cardinal/90 via-cardinal to-rose-500/90 p-4 text-white shadow-lg">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.22em]">Sections</p>
+                <p className="text-sm text-white/80">Switch focus without losing context.</p>
+              </div>
+              <span className="rounded-full bg-white/20 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide">Premium</span>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[
+                { id: 'fees', label: 'Fees' },
+                { id: 'salary', label: 'Salary' },
+                { id: 'finances', label: 'Finances' },
+              ].map((section) => (
+                <button
+                  key={section.id}
+                  type="button"
+                  onClick={() => handleSectionChange(section.id)}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                    activeSection === section.id
+                      ? 'bg-white text-cardinal shadow-md'
+                      : 'bg-white/20 text-white hover:bg-white/30'
+                  }`}
+                >
+                  {section.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-3xl border border-slate-100 bg-white p-4 shadow-lg">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">Workspace tabs</p>
+                <p className="text-sm text-slate-600">Distinct palettes for fees, salary, and finance flows.</p>
+              </div>
+              <span className="rounded-full bg-cardinal/10 px-3 py-1 text-[11px] font-semibold text-cardinal">Multi-view</span>
+            </div>
+            <nav className="mt-3 flex flex-wrap gap-2">
+              {(activeSection === 'finances'
+                ? FINANCE_NAV_ITEMS
+                : activeSection === 'salary'
+                  ? SALARY_NAV_ITEMS
+                  : FEE_NAV_ITEMS
+              ).map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
+                    activeTab === tab.id
+                      ? 'bg-cardinal text-white shadow-md'
+                      : 'bg-slate-50 text-slate-700 hover:bg-cardinal/10'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          </div>
+        </div>
+
+        {showFeeActions && (
+          <div className="mx-auto grid max-w-7xl gap-3 px-6 pb-4 lg:grid-cols-[2fr_1fr]">
+            <div className="flex flex-wrap items-center gap-3 rounded-3xl border border-slate-100 bg-white/90 p-4 shadow-sm backdrop-blur">
+              <button
+                type="button"
+                onClick={handleOpenAddStudent}
+                className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
+              >
+                Add Student
+              </button>
+              <button
+                type="button"
+                onClick={openReportModal}
+                className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
+              >
+                Generate Report
+              </button>
+              <div className="relative" ref={settingsMenuRef}>
+                <button
+                  type="button"
+                  onClick={() => setIsSettingsMenuOpen((prev) => !prev)}
+                  className="flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  aria-haspopup="true"
+                  aria-expanded={isSettingsMenuOpen}
+                  aria-controls="settings-menu"
+                >
+                  Settings
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    className={`h-4 w-4 transition-transform ${isSettingsMenuOpen ? 'rotate-180' : ''}`}
+                    aria-hidden="true"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.25a.75.75 0 01-1.06 0L5.218 8.29a.75.75 0 01.02-1.08z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </button>
+                {isSettingsMenuOpen && (
+                  <div
+                    id="settings-menu"
+                    className="absolute right-0 z-10 mt-2 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
+                    role="menu"
+                    aria-label="Settings"
+                  >
+                    {[
+                      { id: 'fee-settings', label: 'Fee Settings' },
+                      { id: 'settings', label: 'Automation Settings' },
+                      { id: 'house-settings', label: 'House Settings' },
+                    ].map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleSettingsNavigate(item.id)}
+                        className="block w-full px-4 py-2 text-left text-sm text-slate-700 transition hover:bg-cardinal/10"
+                        role="menuitem"
+                      >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={handleClearPaymentData}
+                disabled={clearingDemoData}
+                className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {clearingDemoData ? 'Clearing…' : 'Clear Payment Data'}
+              </button>
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-3 rounded-3xl border border-white/60 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-4 text-white shadow-sm">
+              {isSalarySection && (
+                <button
+                  type="button"
+                  onClick={() => setStaffSettingsOpen(true)}
+                  className="rounded-xl border border-white/30 px-4 py-2 text-sm font-semibold transition hover:border-white/70"
+                >
+                  Staff Settings
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setSignOutConfirmOpen(true)}
+                className="rounded-xl border border-white/30 px-4 py-2 text-sm font-semibold transition hover:border-white/70"
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        )}
       </header>
 
-      <main className="mx-auto max-w-7xl px-6 py-8">
-        <div className="flex flex-wrap gap-3">
-          {[
-            { id: 'fees', label: 'Fees' },
-            { id: 'salary', label: 'Salary' },
-            { id: 'finances', label: 'Finances' },
-          ].map((section) => (
-            <button
-              key={section.id}
-              type="button"
-              onClick={() => handleSectionChange(section.id)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                activeSection === section.id
-                  ? 'bg-cardinal text-white shadow'
-                  : 'bg-white text-slate-600 shadow-sm hover:bg-cardinal/10'
-              }`}
-            >
-              {section.label}
-            </button>
-          ))}
+      <main className="mx-auto max-w-7xl px-6 pb-16 pt-8">
+        <div className="mb-6 grid gap-4 lg:grid-cols-3">
+          <div className="rounded-3xl border border-white/70 bg-white/90 p-4 shadow-sm backdrop-blur">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Performance</p>
+            <p className="mt-1 text-sm text-slate-600">Monthly inflow, dues, and expense summaries in one glance.</p>
+          </div>
+          <div className="rounded-3xl border border-white/70 bg-gradient-to-r from-emerald-50 via-white to-slate-50 p-4 shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">Responsiveness</p>
+            <p className="mt-1 text-sm text-slate-600">Spacing breathes on mobile while tabs remain within reach.</p>
+          </div>
+          <div className="rounded-3xl border border-white/70 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-4 text-white shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-200">Continuity</p>
+            <p className="mt-1 text-sm text-slate-100">Shared palettes and footers align across every portal.</p>
+          </div>
         </div>
-        <nav className="mt-4 flex flex-wrap gap-3">
-          {(activeSection === 'finances'
-            ? FINANCE_NAV_ITEMS
-            : activeSection === 'salary'
-              ? SALARY_NAV_ITEMS
-              : FEE_NAV_ITEMS
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                activeTab === tab.id
-                  ? 'bg-cardinal text-white shadow'
-                  : 'bg-white text-slate-600 shadow-sm hover:bg-cardinal/10'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
 
         {activeSection === 'salary' && SALARY_TAB_IDS.includes(activeTab) && (
           <SalaryModule processorUid={user?.uid} category={SALARY_TAB_CATEGORY[activeTab]} />
@@ -6095,6 +6165,20 @@ const resolveTransactionMonthLabel = (entry) => {
           </section>
         )}
       </main>
+
+      <footer className="border-t border-white/70 bg-white/80 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-6 py-6 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">EL-NODE Pay · Accountant Workspace</p>
+            <p className="text-xs text-slate-500">Segmented tabs, subtle gradients, and mobile-first spacing for an elite feel.</p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
+            <span className="rounded-full bg-cardinal/10 px-3 py-1 text-cardinal">Fees</span>
+            <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">Salary</span>
+            <span className="rounded-full bg-slate-900 px-3 py-1 text-white">Finances</span>
+          </div>
+        </div>
+      </footer>
 
       {manualEntryModalOpen && (
         <Modal

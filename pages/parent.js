@@ -1158,44 +1158,63 @@ const ParentDashboard = () => {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-rose-50 via-white to-slate-50">
+    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-cardinal/5 via-white to-indigo-50">
       <Head>
         <title>Parent Dashboard · EL-NODE Pay</title>
       </Head>
-      <header className="relative overflow-hidden border-b border-white/70 bg-white/80 shadow-sm backdrop-blur-xl">
-        <div className="absolute -left-16 top-0 h-40 w-40 rounded-full bg-cardinal/10 blur-3xl" aria-hidden="true" />
-        <div className="absolute right-0 top-0 h-32 w-56 rounded-full bg-indigo-200/30 blur-3xl" aria-hidden="true" />
-        <div className="relative mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-start gap-3">
-            <Image src="/elnode.png" alt="EL-NODE Pay logo" width={48} height={48} priority />
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute -left-10 top-4 h-40 w-40 rounded-full bg-cardinal/10 blur-3xl" aria-hidden="true" />
+        <div className="absolute right-6 top-0 h-36 w-60 rounded-full bg-indigo-200/50 blur-3xl" aria-hidden="true" />
+        <div className="absolute bottom-0 left-1/3 h-44 w-44 rounded-full bg-amber-100/60 blur-3xl" aria-hidden="true" />
+      </div>
+      <header className="relative border-b border-white/70 bg-white/85 shadow-sm backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-8 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-start gap-4">
+            <Image src="/elnode.png" alt="EL-NODE Pay logo" width={56} height={56} priority className="rounded-2xl shadow" />
             <div>
-              <h1 className="text-2xl font-semibold text-slate-900">Parent Dashboard</h1>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cardinal">Premium Parent Portal</p>
+              <h1 className="mt-1 text-3xl font-semibold text-slate-900">Parent Dashboard</h1>
               <p className="text-sm text-slate-600">
-                Manage your children’s fee payments, track history, and stay on top of reminders.
+                Organised sections for balances, reminders, and history in a calm, mobile-ready layout.
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={() => students.length > 0 && handleOpenPayment(students[0])}
               disabled={metrics.totalDue <= 0}
-              className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+              className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow-lg hover:-translate-y-0.5 hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {metrics.totalDue > 0 ? 'Pay Outstanding Balance' : 'All Clear'}
             </button>
             <button
               type="button"
               onClick={() => setSignOutConfirmOpen(true)}
-              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-slate-50"
             >
               Sign Out
             </button>
           </div>
         </div>
+
+        <div className="mx-auto grid max-w-6xl gap-4 px-6 pb-6 lg:grid-cols-3">
+          <div className="rounded-3xl border border-white/70 bg-gradient-to-r from-cardinal via-rose-500 to-amber-400 p-4 text-white shadow-lg">
+            <p className="text-xs font-semibold uppercase tracking-[0.22em]">Overview</p>
+            <p className="mt-1 text-sm text-white/80">Snapshot of dues, next invoices, and last payments.</p>
+          </div>
+          <div className="rounded-3xl border border-slate-100 bg-white/90 p-4 shadow-sm backdrop-blur">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Navigation</p>
+            <p className="mt-1 text-sm text-slate-600">Tabs and cards are spaced for quick thumb reach.</p>
+          </div>
+          <div className="rounded-3xl border border-white/70 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-4 text-white shadow-sm">
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-200">Continuity</p>
+            <p className="mt-1 text-sm text-slate-100">Shared palettes across portals keep things familiar.</p>
+          </div>
+        </div>
       </header>
 
-      <main className="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-8">
+      <main className="mx-auto flex max-w-6xl flex-col gap-8 px-6 pb-16 pt-8">
         <section className="grid gap-4 md:grid-cols-3">
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <h3 className="text-sm font-medium text-slate-500">Total Fees Due</h3>
@@ -1642,6 +1661,20 @@ const ParentDashboard = () => {
           </div>
         </section>
       </main>
+
+      <footer className="border-t border-white/70 bg-white/85 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-6xl flex-col gap-3 px-6 py-6 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-semibold text-slate-800">EL-NODE Pay · Parent Experience</p>
+            <p className="text-xs text-slate-500">Refined sections, pastel gradients, and quick actions tuned for mobile PWA.</p>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
+            <span className="rounded-full bg-cardinal/10 px-3 py-1 text-cardinal">Balances</span>
+            <span className="rounded-full bg-indigo-100 px-3 py-1 text-indigo-700">Reminders</span>
+            <span className="rounded-full bg-slate-900 px-3 py-1 text-white">History</span>
+          </div>
+        </div>
+      </footer>
 
       <PayNowModal
         open={paymentContext.open}
