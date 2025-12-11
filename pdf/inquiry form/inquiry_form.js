@@ -1,7 +1,53 @@
-function generateInquiryPDF() {
+import { doc as docRef, getDoc } from "firebase/firestore";
+import { db } from "../../lib/firebase";
 
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF("p", "mm", "a4");
+export async function generateinquiryformPDF(id) {
+
+    if (!id) {
+        throw new Error("Inquiry ID is required to generate the form.");
+    }
+
+    const snapshot = await getDoc(docRef(db, "inquiries", id));
+    if (!snapshot.exists()) {
+        throw new Error("Inquiry not found.");
+    }
+
+    const inquiry = snapshot.data() || {};
+
+    const formatDate = (value) => {
+        if (!value) return "";
+        const dateValue = value.toDate ? value.toDate() : new Date(value);
+        if (!(dateValue instanceof Date) || Number.isNaN(dateValue.getTime())) return "";
+        const day = String(dateValue.getDate()).padStart(2, "0");
+        const month = String(dateValue.getMonth() + 1).padStart(2, "0");
+        const year = dateValue.getFullYear();
+        return `${day} ${month} ${year}`;
+    };
+
+    const valueOrEmpty = (val) => (val === undefined || val === null ? "" : String(val));
+
+    const studentName = valueOrEmpty(inquiry.studentName);
+    const dateOfBirth = formatDate(inquiry.dob);
+    const currentClass = valueOrEmpty(inquiry.currentClass || inquiry.class || "");
+    const classApplyingFor = valueOrEmpty(inquiry.classApplied || inquiry.classApplying || "");
+    const academicYear = valueOrEmpty(inquiry.academicYear);
+    const parentName = valueOrEmpty(inquiry.parentName);
+    const mobileNumber = valueOrEmpty(inquiry.parentPhone || inquiry.phone);
+    const email = valueOrEmpty(inquiry.parentEmail || inquiry.email);
+    const relationship = valueOrEmpty(inquiry.parentRelationship || inquiry.relationship);
+    const city = valueOrEmpty(inquiry.city || inquiry.location);
+    const locality = valueOrEmpty(inquiry.locality || inquiry.area);
+    const fullAddress = valueOrEmpty(inquiry.parentAddress || inquiry.address);
+    const currentSchool = valueOrEmpty(inquiry.currentSchool || inquiry.school);
+    const board = valueOrEmpty(inquiry.board || inquiry.boardName);
+    const tokenMoneyPaid = (inquiry.tokenStatus || "").toLowerCase() === "paid" ? "Yes" : "No";
+
+    const jsPDFInstance =
+        (typeof window !== "undefined" && window.jspdf && window.jspdf.jsPDF)
+            ? window.jspdf.jsPDF
+            : (await import("jspdf")).jsPDF;
+
+    const doc = new jsPDFInstance("p", "mm", "a4");
 
     const marginX = 13;
     const marginTop = 13;
@@ -68,29 +114,29 @@ function generateInquiryPDF() {
 
     // ===== MAIN FORM CONTENT =====
     section("STUDENT INFORMATION");
-    field("Student Name", "Aryan Prakash");
-    field("Date of Birth", "14 09 2015");
-    field("Current Class", "Grade 3");
-    field("Class Applying For", "Grade 4");
-    field("Academic Year", "2026 27");
+    field("Student Name", studentName);
+    field("Date of Birth", dateOfBirth);
+    field("Current Class", currentClass);
+    field("Class Applying For", classApplyingFor);
+    field("Academic Year", academicYear);
 
     section("PARENT / GUARDIAN DETAILS");
-    field("Parent Name", "Prakash Mehta");
-    field("Mobile Number", "+91 98345 22190");
-    field("Email", "prakash.mehta@gmail.com");
-    field("Relationship", "Father");
+    field("Parent Name", parentName);
+    field("Mobile Number", mobileNumber);
+    field("Email", email);
+    field("Relationship", relationship);
 
     section("LOCATION DETAILS");
-    field("City", "Hazaribagh");
-    field("Area or Locality", "Silwar");
-    field("Full Address", "Near BSF Firing Range Silwar");
+    field("City", city);
+    field("Area or Locality", locality);
+    field("Full Address", fullAddress);
 
     section("ACADEMIC SNAPSHOT");
-    field("Current School", "St Joseph Public School");
-    field("Board", "CBSE");
+    field("Current School", currentSchool);
+    field("Board", board);
 
     section("TOKEN MONEY PAID");
-    field("Token Money Paid", "Yes");
+    field("Token Money Paid", tokenMoneyPaid);
 
     // ===== SIGNATURE FIELD (RIGHT-ALIGNED) =====
 
@@ -119,5 +165,17 @@ function generateInquiryPDF() {
     doc.save("elden_heights_inquiry_form.pdf");
 }
 
-document.getElementById("generateBtn")
-    .addEventListener("click", generateInquiryPDF);
+export default generateinquiryformPDF;
+
+if (typeof window !== "undefined") {
+    window.generateinquiryformPDF = generateinquiryformPDF;
+    const triggerButton = document.getElementById("generateBtn");
+    if (triggerButton) {
+        triggerButton.addEventListener("click", () => {
+            const inquiryId = triggerButton.getAttribute("data-inquiry-id") || "";
+            if (inquiryId) {
+                generateinquiryformPDF(inquiryId);
+            }
+        });
+    }
+}
