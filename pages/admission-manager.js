@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Head from 'next/head';
 import Image from 'next/image';
 import { useRouter } from 'next/router';
@@ -71,6 +71,67 @@ const ADMISSION_PAYMENT_PLANS = [
   },
 ];
 
+const buildDefaultSuperAdminCharges = (withExtras = false) =>
+  CLASS_OPTIONS.reduce(
+    (acc, className) => ({
+      ...acc,
+      [className]: {
+        monthlyFees: 0,
+        kitCharges: 0,
+        storeCharges: 0,
+        annualCharges: 0,
+        ...(withExtras ? { admissionCharges: 0, registrationFees: 0 } : {}),
+      },
+    }),
+    {},
+  );
+
+const formatSchoolNumber = (joiningYear, passingYear, sequence) => {
+  const joining = String(joiningYear).slice(-2).padStart(2, '0');
+  const passing = String(passingYear).slice(-2).padStart(2, '0');
+  const sequencePart = String(sequence).padStart(3, '0');
+  return `${joining}${sequencePart}${passing}`;
+};
+
+const normaliseYearValue = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  const yearValue = Math.trunc(numeric);
+  if (String(yearValue).length !== 4) return null;
+  return yearValue;
+};
+
+const generateSchoolNumber = async (joiningYear, passingYear) => {
+  const parsedJoining = normaliseYearValue(joiningYear);
+  const parsedPassing = normaliseYearValue(passingYear);
+  if (!parsedJoining || !parsedPassing) {
+    throw new Error('Enter valid 4-digit years for joining and passing');
+  }
+  let generatedNumber = '';
+  await runTransaction(db, async (transaction) => {
+    const counterRef = doc(db, 'metadata', 'school_number_counters');
+    const snapshot = await transaction.get(counterRef);
+    const data = snapshot.exists() ? snapshot.data() : {};
+    const lastSequence = Number(data.lastSequence || 0);
+    const nextSequence = lastSequence + 1;
+    if (nextSequence > 999) {
+      throw new Error('School number sequence limit reached. Please reset the counter.');
+    }
+    generatedNumber = formatSchoolNumber(parsedJoining, parsedPassing, nextSequence);
+    transaction.set(
+      counterRef,
+      {
+        lastSequence: nextSequence,
+        lastJoiningYear: parsedJoining,
+        lastPassingYear: parsedPassing,
+        updated_at: serverTimestamp(),
+      },
+      { merge: true },
+    );
+  });
+  return generatedNumber;
+};
+
 const useRazorpayScript = () => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -124,11 +185,12 @@ const FeeSettings = ({ fees, onChange, saving }) => (
     </div>
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {CLASS_OPTIONS.map((className) => (
-        <div key={className} className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50/50 p-3">
+        <div key={className} className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
           <div className="flex items-center justify-between text-sm font-semibold text-slate-700">
             <span>Class {className}</span>
+            <span className="text-[11px] font-medium text-slate-500">Tap fields for full-width editing</span>
           </div>
-          <div className="grid grid-cols-2 gap-2 text-xs font-semibold text-slate-600">
+          <div className="grid gap-3 md:grid-cols-2 text-xs font-semibold text-slate-600">
             <label className="space-y-1">
               <span>Registration</span>
               <input
@@ -136,7 +198,7 @@ const FeeSettings = ({ fees, onChange, saving }) => (
                 min="0"
                 value={fees[className]?.registration ?? 0}
                 onChange={(event) => onChange(className, 'registration', Number(event.target.value) || 0)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
               />
             </label>
             <label className="space-y-1">
@@ -146,7 +208,7 @@ const FeeSettings = ({ fees, onChange, saving }) => (
                 min="0"
                 value={fees[className]?.admission ?? 0}
                 onChange={(event) => onChange(className, 'admission', Number(event.target.value) || 0)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
               />
             </label>
           </div>
@@ -156,6 +218,162 @@ const FeeSettings = ({ fees, onChange, saving }) => (
     {saving && <p className="text-xs font-semibold text-cardinal">Saving settings...</p>}
   </div>
 );
+
+const StudentIntakeModal = ({
+  open,
+  title,
+  form,
+  onChange,
+  onClose,
+  onSubmit,
+  submitting,
+  houseOptions = [],
+  admissionType,
+  error,
+}) => {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 px-4 py-10">
+      <div className="w-full max-w-3xl rounded-3xl bg-white shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{admissionType} intake</p>
+            <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
+            <p className="text-xs text-slate-500">School number is generated automatically after entering years.</p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+          >
+            Close
+          </button>
+        </div>
+        <form onSubmit={onSubmit} className="space-y-4 px-6 py-4 text-sm text-slate-700">
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-1 font-semibold">
+              <span>Name</span>
+              <input
+                name="studentName"
+                value={form.studentName}
+                onChange={onChange}
+                required
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+            </label>
+            <label className="space-y-1 font-semibold">
+              <span>Class</span>
+              <select
+                name="classApplied"
+                value={form.classApplied}
+                onChange={onChange}
+                required
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              >
+                <option value="">Select class</option>
+                {CLASS_OPTIONS.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1 font-semibold">
+              <span>Section (optional)</span>
+              <input
+                name="section"
+                value={form.section}
+                onChange={onChange}
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                placeholder="A"
+              />
+            </label>
+            <label className="space-y-1 font-semibold">
+              <span>House</span>
+              <select
+                name="house"
+                value={form.house}
+                onChange={onChange}
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              >
+                <option value="">Not assigned</option>
+                {houseOptions.map((house) => (
+                  <option key={house} value={house}>
+                    {house}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-1 font-semibold">
+              <span>Year of joining</span>
+              <input
+                name="yearOfJoining"
+                type="number"
+                value={form.yearOfJoining}
+                onChange={onChange}
+                required
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+            </label>
+            <label className="space-y-1 font-semibold">
+              <span>Year of passing</span>
+              <input
+                name="yearOfPassing"
+                type="number"
+                value={form.yearOfPassing}
+                onChange={onChange}
+                required
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+            </label>
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="space-y-1 font-semibold">
+              <span>Parent email</span>
+              <input
+                name="parentEmail"
+                type="email"
+                value={form.parentEmail}
+                onChange={onChange}
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                placeholder="parent@email.com"
+              />
+            </label>
+            <label className="space-y-1 font-semibold">
+              <span>Parent phone</span>
+              <input
+                name="parentPhone"
+                value={form.parentPhone}
+                onChange={onChange}
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                placeholder="9876543210"
+              />
+            </label>
+          </div>
+          {error && <p className="text-sm font-semibold text-rose-600">{error}</p>}
+          <div className="flex items-center justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={submitting}
+              className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {submitting ? 'Saving…' : 'Save student'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
 
 const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademicYear }) => {
   const [form, setForm] = useState({
@@ -992,12 +1210,34 @@ export default function AdminManagerPortal() {
   const [activeAcademicYear, setActiveAcademicYear] = useState('2026-27');
   const [feeSettings, setFeeSettings] = useState(DEFAULT_FEES);
   const [kitCharges, setKitCharges] = useState(DEFAULT_KIT_CHARGES);
+  const [houses, setHouses] = useState([]);
+  const [defaultDueDate, setDefaultDueDate] = useState('');
+  const [superAdminCharges, setSuperAdminCharges] = useState({
+    new: buildDefaultSuperAdminCharges(true),
+    old: buildDefaultSuperAdminCharges(false),
+  });
   const [savingFees, setSavingFees] = useState(false);
   const [creatingInquiry, setCreatingInquiry] = useState(false);
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const [paymentModal, setPaymentModal] = useState({ open: false, title: '', amount: 0, context: null, type: null });
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const settingsMenuRef = useRef(null);
+  const buildStudentForm = useCallback(
+    (prefill = {}) => ({
+      studentName: prefill.studentName || '',
+      classApplied: prefill.classApplied || '',
+      section: prefill.section || '',
+      house: prefill.house || '',
+      yearOfJoining: prefill.yearOfJoining || new Date().getFullYear(),
+      yearOfPassing: prefill.yearOfPassing || new Date().getFullYear() + 12,
+      parentEmail: prefill.parentEmail || '',
+      parentPhone: prefill.parentPhone || '',
+    }),
+    [],
+  );
+  const [studentForm, setStudentForm] = useState(buildStudentForm());
+  const [studentModal, setStudentModal] = useState({ open: false, admissionType: 'old', admission: null, title: '' });
+  const [studentSubmitting, setStudentSubmitting] = useState(false);
+  const [studentError, setStudentError] = useState('');
 
   useRazorpayScript();
 
@@ -1085,30 +1325,31 @@ export default function AdminManagerPortal() {
     const generalSettingsRef = doc(db, 'settings', 'general');
     const unsub = onSnapshot(generalSettingsRef, (snap) => {
       if (snap.exists()) {
-        setKitCharges((prev) => ({ ...prev, ...(snap.data().kitCharges || {}) }));
+        const data = snap.data();
+        setKitCharges((prev) => ({ ...prev, ...(data.kitCharges || {}) }));
+        setHouses(Array.isArray(data.houses) ? data.houses : []);
+        setDefaultDueDate(data.defaultDueDate || '');
       }
     });
     return () => unsub();
   }, [user]);
 
   useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (settingsMenuRef.current && !settingsMenuRef.current.contains(event.target)) {
-        setSettingsOpen(false);
-      }
-    };
-    const handleEscape = (event) => {
-      if (event.key === 'Escape') {
-        setSettingsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, []);
+    if (!user) return undefined;
+    const superAdminRef = doc(db, 'settings', 'super_admin');
+    const unsub = onSnapshot(superAdminRef, (snap) => {
+      if (!snap.exists()) return;
+      const data = snap.data();
+      const studentSettings = data.students || {};
+      const resolvedNew = studentSettings.new || studentSettings.newAdmission || {};
+      const resolvedOld = studentSettings.old || studentSettings.oldAdmission || studentSettings || {};
+      setSuperAdminCharges({
+        new: { ...buildDefaultSuperAdminCharges(true), ...resolvedNew },
+        old: { ...buildDefaultSuperAdminCharges(false), ...resolvedOld },
+      });
+    });
+    return () => unsub();
+  }, [user]);
 
   const handleSaveFees = useCallback(
     async (className, field, value) => {
@@ -1133,6 +1374,118 @@ export default function AdminManagerPortal() {
     },
     [feeSettings],
   );
+
+  const getSuperAdminFee = useCallback(
+    (className, admissionType = 'new') =>
+      Number(superAdminCharges?.[admissionType]?.[className]?.monthlyFees || 0),
+    [superAdminCharges],
+  );
+
+  const handleStudentFieldChange = (event) => {
+    const { name, value } = event.target;
+    setStudentError('');
+    setStudentForm((prev) => ({
+      ...prev,
+      [name]: name === 'parentEmail' ? value.trim().toLowerCase() : value,
+    }));
+  };
+
+  const closeStudentModal = () => {
+    setStudentModal({ open: false, admissionType: 'old', admission: null, title: '' });
+    setStudentForm(buildStudentForm());
+    setStudentError('');
+  };
+
+  const openManualStudentModal = () => {
+    setStudentForm(buildStudentForm());
+    setStudentModal({
+      open: true,
+      admissionType: 'old',
+      admission: null,
+      title: 'Add student from header',
+    });
+  };
+
+  const openAdmissionStudentModal = (admission) => {
+    const currentYear = new Date().getFullYear();
+    setStudentForm(
+      buildStudentForm({
+        studentName: admission?.studentName || '',
+        classApplied: admission?.classAdmitted || '',
+        parentEmail: admission?.parentEmail || '',
+        parentPhone: admission?.parentPhone || '',
+        yearOfJoining: currentYear,
+        yearOfPassing: currentYear + 12,
+      }),
+    );
+    setStudentModal({
+      open: true,
+      admissionType: 'new',
+      admission,
+      title: 'Welcome to school',
+    });
+  };
+
+  const handleSubmitStudent = async (event) => {
+    event.preventDefault();
+    setStudentSubmitting(true);
+    setStudentError('');
+
+    try {
+      const joiningYear = normaliseYearValue(studentForm.yearOfJoining);
+      const passingYear = normaliseYearValue(studentForm.yearOfPassing);
+      if (!joiningYear || !passingYear) {
+        setStudentError('Please enter valid 4-digit years for joining and passing.');
+        setStudentSubmitting(false);
+        return;
+      }
+      const schoolNumber = await generateSchoolNumber(joiningYear, passingYear);
+      const feeAmount = getSuperAdminFee(studentForm.classApplied, studentModal.admissionType);
+      const parentEmail = (studentForm.parentEmail || '').trim().toLowerCase();
+      const parentPhone = (studentForm.parentPhone || '').trim();
+      const studentPayload = {
+        studentId: schoolNumber,
+        school_number: schoolNumber,
+        name: studentForm.studentName.trim(),
+        class: studentForm.classApplied,
+        section: studentForm.section.trim(),
+        year_of_joining: joiningYear,
+        year_of_passing: passingYear,
+        parent_email: parentEmail,
+        parent_phone: parentPhone,
+        fee_cycle: 'Monthly',
+        fee_amount: feeAmount,
+        due_date: defaultDueDate || '',
+        balance: feeAmount,
+        status: 'Pending',
+        term: '',
+        session: '',
+        house: studentForm.house || '',
+        admission_type: studentModal.admissionType,
+        created_at: serverTimestamp(),
+        added_by: profile?.name || user?.email || 'admission_manager',
+      };
+
+      const studentRef = await addDoc(collection(db, 'students'), studentPayload);
+
+      if (studentModal.admission?.id) {
+        await updateDoc(doc(db, 'admissions', studentModal.admission.id), {
+          studentRecordId: studentRef.id,
+          schoolNumber,
+          status: 'onboarded',
+          onboardedAt: serverTimestamp(),
+        });
+      }
+
+      alert('Student profile created successfully.');
+      closeStudentModal();
+    } catch (error) {
+      console.error('Student creation failed', error);
+      setStudentError(error?.message || 'Unable to save student.');
+    } finally {
+      setStudentSubmitting(false);
+    }
+  };
 
   const getNextInquiryId = useCallback(async () => {
     const counterRef = doc(db, 'counters', 'inquiry');
@@ -1486,56 +1839,29 @@ export default function AdminManagerPortal() {
               <h1 className="text-xl font-semibold text-slate-900">Portal</h1>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             <div className="text-right">
               <p className="text-sm font-semibold text-slate-900">{profile?.name || 'Admission Team'}</p>
               <p className="text-xs text-slate-500">{user.email}</p>
             </div>
-            <div className="relative" ref={settingsMenuRef}>
-              <button
-                type="button"
-                onClick={() => setSettingsOpen((prev) => !prev)}
-                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
-                  settingsOpen
-                    ? 'border-cardinal bg-cardinal/10 text-cardinal shadow'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                <span>Settings</span>
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className={`h-3 w-3 transition ${settingsOpen ? 'rotate-180 text-cardinal' : 'text-slate-500'}`}
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M5.23 7.21a.75.75 0 011.06.02L10 11.188l3.71-3.957a.75.75 0 111.08 1.04l-4.243 4.525a.75.75 0 01-1.082 0L5.21 8.27a.75.75 0 01.02-1.06z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-              </button>
-              {settingsOpen && (
-                <div className="absolute right-0 z-40 mt-2 w-[min(440px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
-                  <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Settings</p>
-                      <p className="text-sm font-semibold text-slate-900">Payments & fees</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setSettingsOpen(false)}
-                      className="rounded-md border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
-                    >
-                      Close
-                    </button>
-                  </div>
-                  <div className="max-h-[70vh] space-y-3 overflow-y-auto p-4">
-                    <FeeSettings fees={feeSettings} onChange={handleSaveFees} saving={savingFees} />
-                  </div>
-                </div>
-              )}
-            </div>
+            <button
+              type="button"
+              onClick={openManualStudentModal}
+              className="rounded-lg border border-cardinal px-3 py-2 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
+            >
+              Add student
+            </button>
+            <button
+              type="button"
+              onClick={() => setSettingsOpen((prev) => !prev)}
+              className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                settingsOpen
+                  ? 'border-cardinal bg-cardinal/10 text-cardinal shadow'
+                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+              }`}
+            >
+              {settingsOpen ? 'Hide fee settings' : 'Fee settings'}
+            </button>
             <button
               type="button"
               onClick={handleSignOut}
@@ -1564,6 +1890,29 @@ export default function AdminManagerPortal() {
           </div>
         </div>
       </header>
+
+      {settingsOpen && (
+        <div className="mx-auto max-w-6xl px-4 pt-4">
+          <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Fee controls</p>
+                <p className="text-sm font-semibold text-slate-900">Admission & registration charges</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSettingsOpen(false)}
+                className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Close
+              </button>
+            </div>
+            <div className="space-y-3 p-4">
+              <FeeSettings fees={feeSettings} onChange={handleSaveFees} saving={savingFees} />
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="mx-auto max-w-6xl px-4 sm:hidden">
         <MobileTabScroller tabs={NAV_TABS} active={activeTab} onChange={setActiveTab} />
@@ -1764,6 +2113,7 @@ export default function AdminManagerPortal() {
                         const totalDue = Number(admission.totalAmountDue ?? admission.totalAmount ?? 0);
                         const paidNow = Number(admission.amountPaid ?? admission.amount ?? 0);
                         const balance = Number(admission.balanceAmount ?? Math.max(totalDue - paidNow, 0));
+                        const onboarded = Boolean(admission.studentRecordId || admission.schoolNumber);
                         return (
                           <tr key={admission.id} className="hover:bg-slate-50/80">
                             <td className="px-4 py-3">{admission.studentName}</td>
@@ -1780,6 +2130,14 @@ export default function AdminManagerPortal() {
                               <p>Balance: ₹{balance.toLocaleString('en-IN')}</p>
                             </td>
                             <td className="px-4 py-3 space-x-2 text-xs font-semibold">
+                              <button
+                                type="button"
+                                onClick={() => openAdmissionStudentModal(admission)}
+                                disabled={onboarded}
+                                className="rounded-lg border border-cardinal px-3 py-1 text-cardinal transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {onboarded ? 'Student created' : 'Welcome to school'}
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => downloadAdmissionReceipt(admission)}
@@ -1808,7 +2166,7 @@ export default function AdminManagerPortal() {
               <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Accountant handoff</p>
                 <p className="mt-2 text-sm">
-                  Paid admissions flow into the accountant dashboard under <strong>Approve admission</strong>, where the accountant manually creates the student profile and reflects the collected registration and admission fees in payment history.
+                  Use <strong>Welcome to school</strong> to generate the student profile instantly. The accountant no longer needs to approve admissions or add students—the record lands in the student list with the correct fee plan.
                 </p>
               </div>
             </div>
@@ -1833,6 +2191,18 @@ export default function AdminManagerPortal() {
           await handlePaymentComplete(info);
           closePaymentModal();
         }}
+      />
+      <StudentIntakeModal
+        open={studentModal.open}
+        title={studentModal.title}
+        admissionType={studentModal.admissionType}
+        form={studentForm}
+        onChange={handleStudentFieldChange}
+        onClose={closeStudentModal}
+        onSubmit={handleSubmitStudent}
+        submitting={studentSubmitting}
+        houseOptions={houses}
+        error={studentError}
       />
     </div>
   );

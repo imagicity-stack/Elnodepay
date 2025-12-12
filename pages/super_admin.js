@@ -9,20 +9,27 @@ import StaffSettingsModal from '../components/StaffSettingsModal';
 
 const CLASS_OPTIONS = ['Nursery', 'UKG', 'LKG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
 
-const emptyCharges = CLASS_OPTIONS.reduce(
-  (acc, className) => ({
-    ...acc,
-    [className]: {
-      monthlyFees: 0,
-      kitCharges: 0,
-      storeCharges: 0,
-      annualCharges: 0,
-      admissionCharges: 0,
-      registrationFees: 0,
-    },
-  }),
-  {},
-);
+const buildEmptyChargeMap = (withExtras = false) =>
+  CLASS_OPTIONS.reduce(
+    (acc, className) => ({
+      ...acc,
+      [className]: {
+        monthlyFees: 0,
+        kitCharges: 0,
+        storeCharges: 0,
+        annualCharges: 0,
+        ...(withExtras
+          ? { admissionCharges: 0, registrationFees: 0 }
+          : {}),
+      },
+    }),
+    {},
+  );
+
+const emptyCharges = {
+  new: buildEmptyChargeMap(true),
+  old: buildEmptyChargeMap(false),
+};
 
 const Tabs = ({ items, active, onChange }) => (
   <div className="flex flex-wrap gap-2" role="tablist">
@@ -140,7 +147,13 @@ const SuperAdminPortal = () => {
       (snap) => {
         if (snap.exists()) {
           const data = snap.data();
-          setCharges({ ...emptyCharges, ...(data.students || emptyCharges) });
+          const studentSettings = data.students || {};
+          const resolvedNew = studentSettings.new || studentSettings.newAdmission || {};
+          const resolvedOld = studentSettings.old || studentSettings.oldAdmission || studentSettings || {};
+          setCharges({
+            new: { ...emptyCharges.new, ...resolvedNew },
+            old: { ...emptyCharges.old, ...resolvedOld },
+          });
         }
         setLoadingCharges(false);
       },
@@ -149,20 +162,19 @@ const SuperAdminPortal = () => {
     return () => unsub();
   }, []);
 
-  const handleChargeChange = async (className, field, value) => {
-    setCharges((prev) => ({
-      ...prev,
-      [className]: { ...prev[className], [field]: value },
-    }));
+  const handleChargeChange = async (admissionType, className, field, value) => {
     setSaving(true);
-    const payload = {
-      students: {
-        ...charges,
-        [className]: { ...charges[className], [field]: value },
-      },
-    };
-    await setDoc(doc(db, 'settings', 'super_admin'), payload, { merge: true });
-    setSaving(false);
+    setCharges((prev) => {
+      const updatedType = {
+        ...prev[admissionType],
+        [className]: { ...prev[admissionType][className], [field]: value },
+      };
+      const nextCharges = { ...prev, [admissionType]: updatedType };
+      setDoc(doc(db, 'settings', 'super_admin'), { students: nextCharges }, { merge: true })
+        .catch(() => setSaving(false))
+        .finally(() => setSaving(false));
+      return nextCharges;
+    });
   };
 
   const handleSignOut = async () => {
@@ -170,13 +182,7 @@ const SuperAdminPortal = () => {
     router.replace('/');
   };
 
-  const studentCharges = useMemo(
-    () => ({
-      new: charges,
-      old: charges,
-    }),
-    [charges],
-  );
+  const studentCharges = useMemo(() => charges, [charges]);
 
   if (!authChecked) {
     return (
@@ -250,7 +256,9 @@ const SuperAdminPortal = () => {
               <ChargeEditor
                 label={studentTab === 'new' ? 'New admission settings' : 'Old admission settings'}
                 charges={studentCharges[studentTab]}
-                onChange={handleChargeChange}
+                onChange={(className, field, value) =>
+                  handleChargeChange(studentTab, className, field, value)
+                }
                 extraFields={studentTab === 'new'}
               />
             )}
