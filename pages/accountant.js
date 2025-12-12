@@ -47,7 +47,6 @@ import { auth, db } from '../lib/firebase';
 import { getCollectionsInRange, groupByMonth, makeExpenseId, makeVoucherNo } from '../lib/reports';
 import { toCSV } from '../lib/csv';
 import SalaryModule from '../components/SalaryModule';
-import StaffSettingsModal from '../components/StaffSettingsModal';
 
 ChartJS.register(
   ArcElement,
@@ -63,12 +62,14 @@ ChartJS.register(
 
 const CLASS_OPTIONS = ['Nursery', 'Kg1', 'Kg2', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
 const ADMISSION_CLASS_OPTIONS = ['Nursery', 'UKG', 'LKG', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
-const DEFAULT_KIT_CHARGES = ADMISSION_CLASS_OPTIONS.reduce(
-  (acc, className) => ({ ...acc, [className]: 0 }),
-  {},
-);
 const SESSION_OPTIONS = ['2023-24', '2024-25', '2025-26', '2026-27', '2027-28'];
+const CURRENT_SESSION_LABEL = '2026-27';
 const STATUS_OPTIONS = ['All', 'Paid', 'Pending', 'Overdue'];
+const STUDENT_SEGMENTS = [
+  { id: 'all', label: 'All' },
+  { id: 'old', label: 'Old' },
+  { id: 'new-session', label: '2026-27' },
+];
 const REQUEST_CYCLE_OPTIONS = [
   { id: 'Monthly', label: 'Monthly' },
   { id: 'Quarterly', label: 'Quarterly' },
@@ -81,10 +82,9 @@ const FEE_NAV_ITEMS = [
   { id: 'students', label: 'Students' },
   { id: 'fee-report', label: 'Fee Report' },
   { id: 'payment-history', label: 'Payment History' },
-  { id: 'approve-admission', label: 'Approve Admission' },
   { id: 'reminders', label: 'Reminders and Notification' },
 ];
-const FEE_SECTION_TAB_IDS = [...FEE_NAV_ITEMS.map((item) => item.id), 'fee-settings', 'settings', 'house-settings'];
+const FEE_SECTION_TAB_IDS = FEE_NAV_ITEMS.map((item) => item.id);
 const FINANCE_NAV_ITEMS = [
   { id: 'ledger', label: 'Ledger' },
   { id: 'expenses', label: 'Expenses' },
@@ -1217,80 +1217,6 @@ const DeleteStudentModal = ({
   </Modal>
 );
 
-const SettingsPanel = ({ settingsState, kitCharges, onChange, onKitChange, onSave, isSaving }) => (
-  <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-    <h3 className="text-lg font-semibold text-slate-900">Settings</h3>
-    <p className="mt-1 text-sm text-slate-600">
-      Configure academic term details, default due dates, kit charges, and reminder templates for automated workflows.
-    </p>
-    <form className="mt-6 space-y-4" onSubmit={onSave}>
-      <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-        Current Academic Term
-        <input
-          name="currentTerm"
-          value={settingsState.currentTerm}
-          onChange={onChange}
-          placeholder="2024-2025 Term 1"
-          className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-        />
-      </label>
-      <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-        Default Due Date
-        <input
-          type="date"
-          name="defaultDueDate"
-          value={settingsState.defaultDueDate}
-          onChange={onChange}
-          className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-        />
-      </label>
-      <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-        Reminder Message Template
-        <textarea
-          name="reminderTemplate"
-          value={settingsState.reminderTemplate}
-          onChange={onChange}
-          rows={4}
-          className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-          placeholder="Dear Parent, your fee payment is due on {{due_date}}. Kindly clear the dues at the earliest."
-        />
-      </label>
-      <div className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Kit charges</p>
-            <p className="text-sm text-slate-600">Manual rates shared with the admission manager for fee collection.</p>
-          </div>
-          <span className="rounded-full bg-cardinal/10 px-3 py-1 text-[11px] font-semibold text-cardinal">Admission sync</span>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {ADMISSION_CLASS_OPTIONS.map((className) => (
-            <label key={className} className="space-y-1 text-sm font-semibold text-slate-700">
-              <span>Class {className}</span>
-              <input
-                type="number"
-                min="0"
-                value={kitCharges[className] ?? 0}
-                onChange={(event) => onKitChange(className, event.target.value)}
-                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-              />
-            </label>
-          ))}
-        </div>
-      </div>
-      <div className="flex justify-end">
-        <button
-          type="submit"
-          disabled={isSaving}
-          className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
-        >
-          {isSaving ? 'Saving…' : 'Save settings'}
-        </button>
-      </div>
-    </form>
-  </div>
-);
-
 const AccountantDashboard = () => {
   const router = useRouter();
   const [authChecked, setAuthChecked] = useState(false);
@@ -1307,10 +1233,8 @@ const AccountantDashboard = () => {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [formSubmitting, setFormSubmitting] = useState(false);
   const [activeTab, setActiveTab] = useState('overview');
+  const [studentSegment, setStudentSegment] = useState('all');
   const [activeSection, setActiveSection] = useState('fees');
-  const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
-  const [staffSettingsOpen, setStaffSettingsOpen] = useState(false);
-  const settingsMenuRef = useRef(null);
   const [filters, setFilters] = useState({
     class: 'All',
     status: 'All',
@@ -1331,8 +1255,6 @@ const AccountantDashboard = () => {
     reminderTemplate: '',
     houses: [],
   });
-  const [kitCharges, setKitCharges] = useState(DEFAULT_KIT_CHARGES);
-  const [savingSettings, setSavingSettings] = useState(false);
   const [bulkSending, setBulkSending] = useState(false);
   const [feeStructure, setFeeStructure] = useState({ session: '', defaultDueDate: '', fees: {} });
   const [feeStructureDraft, setFeeStructureDraft] = useState({ session: '', defaultDueDate: '', fees: {} });
@@ -1363,8 +1285,6 @@ const AccountantDashboard = () => {
   const [transactionsLog, setTransactionsLog] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [loadingExpenses, setLoadingExpenses] = useState(true);
-  const [admissionsQueue, setAdmissionsQueue] = useState([]);
-  const [loadingAdmissions, setLoadingAdmissions] = useState(true);
   const [updatingAdmissionId, setUpdatingAdmissionId] = useState(null);
   const [ledgerFilters, setLedgerFilters] = useState({
     startDate: DEFAULT_FY_START,
@@ -1378,8 +1298,6 @@ const AccountantDashboard = () => {
   });
   const [manualEntryModalOpen, setManualEntryModalOpen] = useState(false);
   const [manualEntrySubmitting, setManualEntrySubmitting] = useState(false);
-  const [newHouseName, setNewHouseName] = useState('');
-  const [houseSettingsSaving, setHouseSettingsSaving] = useState(false);
 
   const houseOptions = useMemo(
     () => sanitiseHouseList(settingsState.houses || []),
@@ -1478,32 +1396,6 @@ const AccountantDashboard = () => {
     setSignOutConfirmOpen(false);
     handleSignOut();
   }, [handleSignOut]);
-
-  useEffect(() => {
-    if (typeof document === 'undefined') {
-      return undefined;
-    }
-
-    const handleClickOutside = (event) => {
-      if (settingsMenuRef.current && !settingsMenuRef.current.contains(event.target)) {
-        setIsSettingsMenuOpen(false);
-      }
-    };
-
-    const handleEscape = (event) => {
-      if (event.key === 'Escape') {
-        setIsSettingsMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, []);
 
   const closeStudentActions = () => {
     setStudentActionsContext({ open: false, student: null });
@@ -1840,7 +1732,6 @@ const resolveTransactionMonthLabel = (entry) => {
             data.reminderTemplate || 'Dear Parent, your fee payment is due on {{due_date}}. Kindly clear the dues.',
           houses: sanitiseHouseList(data.houses || []),
         });
-        setKitCharges((prev) => ({ ...DEFAULT_KIT_CHARGES, ...prev, ...(data.kitCharges || {}) }));
       }
     });
 
@@ -1870,17 +1761,6 @@ const resolveTransactionMonthLabel = (entry) => {
       () => setLoadingExpenses(false),
     );
 
-    const admissionsQuery = query(collection(db, 'admissions'), orderBy('createdAt', 'desc'));
-    const unsubscribeAdmissions = onSnapshot(
-      admissionsQuery,
-      (snapshot) => {
-        const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-        setAdmissionsQueue(data);
-        setLoadingAdmissions(false);
-      },
-      () => setLoadingAdmissions(false),
-    );
-
     return () => {
       unsubscribeStudents();
       unsubscribePayments();
@@ -1890,7 +1770,6 @@ const resolveTransactionMonthLabel = (entry) => {
       unsubscribeFeeStructure();
       unsubscribeTransactions();
       unsubscribeExpenses();
-      unsubscribeAdmissions();
     };
   }, [user]);
 
@@ -2386,6 +2265,33 @@ const resolveTransactionMonthLabel = (entry) => {
     return sorted;
   }, [students, filters]);
 
+  const segmentedStudents = useMemo(() => {
+    const base = filteredStudents || [];
+    const segments = {
+      all: base,
+      old: [],
+      'new-session': [],
+    };
+
+    base.forEach((student) => {
+      const admissionType = (student.admission_type || student.admissionType || '').toLowerCase();
+      const session = student.session || '';
+      const isNewSession = admissionType === 'new' || session === CURRENT_SESSION_LABEL;
+      const isOld = admissionType === 'old' || (!admissionType && session !== CURRENT_SESSION_LABEL);
+
+      if (isOld) {
+        segments.old.push(student);
+      }
+      if (isNewSession) {
+        segments['new-session'].push(student);
+      }
+    });
+
+    return segments;
+  }, [filteredStudents]);
+
+  const visibleStudents = segmentedStudents[studentSegment] || filteredStudents;
+
   const commonFilteredStudents = useMemo(() => {
     const safeStudents = Array.isArray(students) ? students : [];
     if (!safeStudents || safeStudents.length === 0) {
@@ -2393,7 +2299,19 @@ const resolveTransactionMonthLabel = (entry) => {
     }
     const classFilter = commonRequestState.classFilter;
     const searchValue = commonRequestState.search.trim().toLowerCase();
+    const segmentMatch = (student) => {
+      if (studentSegment === 'old') {
+        return (student.admission_type || student.admissionType || '').toLowerCase() === 'old';
+      }
+      if (studentSegment === 'new-session') {
+        const type = (student.admission_type || student.admissionType || '').toLowerCase();
+        return type === 'new' || (student.session || '') === CURRENT_SESSION_LABEL;
+      }
+      return true;
+    };
+
     return safeStudents
+      .filter(segmentMatch)
       .filter((student) => classFilter === 'All' || student.class === classFilter)
       .filter((student) => {
         if (!searchValue) {
@@ -2410,7 +2328,7 @@ const resolveTransactionMonthLabel = (entry) => {
         }
         return (a.name || '').localeCompare(b.name || '');
       });
-  }, [students, commonRequestState.classFilter, commonRequestState.search]);
+  }, [students, commonRequestState.classFilter, commonRequestState.search, studentSegment]);
 
   const paymentModeOptions = useMemo(() => {
     const safePayments = Array.isArray(payments) ? payments : [];
@@ -4026,42 +3944,6 @@ const resolveTransactionMonthLabel = (entry) => {
     );
   };
 
-  const handleSettingsChange = (event) => {
-    const { name, value } = event.target;
-    setSettingsState((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleKitChargeChange = (className, value) => {
-    const numericValue = Math.max(0, Number(value) || 0);
-    setKitCharges((prev) => ({ ...prev, [className]: numericValue }));
-  };
-
-  const handleSettingsSave = async (event) => {
-    event.preventDefault();
-    setSavingSettings(true);
-    try {
-      const houses = sanitiseHouseList(settingsState.houses || []);
-      await setDoc(
-        doc(db, 'settings', 'general'),
-        {
-          currentTerm: settingsState.currentTerm,
-          defaultDueDate: settingsState.defaultDueDate,
-          reminderTemplate: settingsState.reminderTemplate,
-          houses,
-          kitCharges,
-          updated_at: serverTimestamp(),
-        },
-        { merge: true },
-      );
-      alert('Settings saved.');
-    } catch (error) {
-      console.error('Settings error', error);
-      alert('Unable to save settings.');
-    } finally {
-      setSavingSettings(false);
-    }
-  };
-
   const handleConvertAdmissionPlan = async (admission) => {
     if (!admission?.id) return;
     setUpdatingAdmissionId(admission.id);
@@ -4097,53 +3979,6 @@ const resolveTransactionMonthLabel = (entry) => {
       setUpdatingAdmissionId(null);
     }
   };
-
-  const handleHouseNameChange = (index, value) => {
-    setSettingsState((prev) => {
-      const current = Array.isArray(prev.houses) ? [...prev.houses] : [];
-      current[index] = value;
-      return { ...prev, houses: current };
-    });
-  };
-
-  const handleRemoveHouse = (index) => {
-    setSettingsState((prev) => {
-      const current = Array.isArray(prev.houses) ? [...prev.houses] : [];
-      current.splice(index, 1);
-      return { ...prev, houses: current };
-    });
-  };
-
-  const handleAddHouseName = () => {
-    const trimmed = newHouseName.trim();
-    if (!trimmed) return;
-    setSettingsState((prev) => {
-      const current = Array.isArray(prev.houses) ? [...prev.houses] : [];
-      current.push(trimmed);
-      return { ...prev, houses: current };
-    });
-    setNewHouseName('');
-  };
-
-  const handleHouseSettingsSave = async (event) => {
-    event.preventDefault();
-    setHouseSettingsSaving(true);
-    try {
-      const houses = sanitiseHouseList(settingsState.houses || []);
-      await setDoc(
-        doc(db, 'settings', 'general'),
-        { houses, updated_at: serverTimestamp() },
-        { merge: true },
-      );
-      triggerToast('Houses updated successfully.', 'success');
-    } catch (error) {
-      console.error('House settings error', error);
-      triggerToast('Unable to update houses. Please try again.', 'error');
-    } finally {
-      setHouseSettingsSaving(false);
-    }
-  };
-
   const handleSectionChange = (sectionId) => {
     if (sectionId === 'finances') {
       setActiveSection('finances');
@@ -4167,23 +4002,6 @@ const resolveTransactionMonthLabel = (entry) => {
       });
     }
   };
-
-  const handleSettingsNavigate = useCallback(
-    (tabId) => {
-      setActiveTab(tabId);
-      setActiveSection('fees');
-      setIsSettingsMenuOpen(false);
-      if (typeof window !== 'undefined') {
-        window.requestAnimationFrame(() => {
-          const section = document.getElementById(tabId);
-          if (section) {
-            section.scrollIntoView({ behavior: 'smooth', block: 'start' });
-          }
-        });
-      }
-    },
-    [],
-  );
 
   const resetManualEntryForm = () => {
     setManualEntryForm({
@@ -4596,67 +4414,11 @@ const resolveTransactionMonthLabel = (entry) => {
               <>
                 <button
                   type="button"
-                  onClick={handleOpenAddStudent}
-                  className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
-                >
-                  Add Student
-                </button>
-                <button
-                  type="button"
                   onClick={openReportModal}
                   className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
                 >
                   Generate Report
                 </button>
-                <div className="relative" ref={settingsMenuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setIsSettingsMenuOpen((prev) => !prev)}
-                    className="flex items-center gap-2 rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100 focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                    aria-haspopup="true"
-                    aria-expanded={isSettingsMenuOpen}
-                    aria-controls="settings-menu"
-                  >
-                    Settings
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      className={`h-4 w-4 transition-transform ${isSettingsMenuOpen ? 'rotate-180' : ''}`}
-                      aria-hidden="true"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M5.23 7.21a.75.75 0 011.06.02L10 10.94l3.71-3.71a.75.75 0 111.06 1.06l-4.24 4.25a.75.75 0 01-1.06 0L5.218 8.29a.75.75 0 01.02-1.08z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </button>
-                  {isSettingsMenuOpen && (
-                    <div
-                      id="settings-menu"
-                      className="absolute right-0 z-10 mt-2 w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 shadow-lg"
-                      role="menu"
-                      aria-label="Settings"
-                    >
-                      {[
-                        { id: 'fee-settings', label: 'Fee Settings' },
-                        { id: 'settings', label: 'Automation Settings' },
-                        { id: 'house-settings', label: 'House Settings' },
-                      ].map((item) => (
-                        <button
-                          key={item.id}
-                          type="button"
-                          onClick={() => handleSettingsNavigate(item.id)}
-                          className="block w-full px-4 py-2 text-left text-sm text-slate-700 transition hover:bg-cardinal/10"
-                          role="menuitem"
-                        >
-                          {item.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
                 <button
                   type="button"
                   onClick={handleClearPaymentData}
@@ -4666,15 +4428,6 @@ const resolveTransactionMonthLabel = (entry) => {
                   {clearingDemoData ? 'Clearing…' : 'Clear Payment Data'}
                 </button>
               </>
-            )}
-            {isSalarySection && (
-              <button
-                type="button"
-                onClick={() => setStaffSettingsOpen(true)}
-                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-              >
-                Staff Settings
-              </button>
             )}
             <button
               type="button"
@@ -4733,11 +4486,6 @@ const resolveTransactionMonthLabel = (entry) => {
         {activeSection === 'salary' && SALARY_TAB_IDS.includes(activeTab) && (
           <SalaryModule processorUid={user?.uid} category={SALARY_TAB_CATEGORY[activeTab]} />
         )}
-        <StaffSettingsModal
-          open={staffSettingsOpen}
-          onClose={() => setStaffSettingsOpen(false)}
-          secondaryAuth={secondaryAuthRef.current}
-        />
 
         {activeTab === 'overview' && (
           <section className="mt-8 space-y-8">
@@ -5009,22 +4757,40 @@ const resolveTransactionMonthLabel = (entry) => {
                   </p>
                 </div>
                 <div className="space-y-3 md:w-1/2 xl:w-2/5">
-                  <StudentFilterControls />
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={handleOpenCommonRequest}
-                      className="rounded-full border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
-                    >
-                      Create Common Fee Request
-                    </button>
+                  <div className="flex flex-wrap justify-end gap-2">
+                    {STUDENT_SEGMENTS.map((segment) => (
+                      <button
+                        key={segment.id}
+                        type="button"
+                        onClick={() => setStudentSegment(segment.id)}
+                        className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
+                          studentSegment === segment.id
+                            ? 'bg-cardinal text-white shadow'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
+                      >
+                        {segment.label}
+                      </button>
+                    ))}
                   </div>
+                  <StudentFilterControls />
+                  {studentSegment !== 'all' && (
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={handleOpenCommonRequest}
+                        className="rounded-full border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
+                      >
+                        Create Common Fee Request
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div className="mt-6">
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {filteredStudents.map((student) => {
+                  {visibleStudents.map((student) => {
                     const advanceNotice = buildAdvancePlanNotice(student);
                     const isSelected = selectedStudentId === student.id;
                     const statusLabel = student.status || 'Pending';
@@ -5080,7 +4846,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     );
                   })}
                 </div>
-                {filteredStudents.length === 0 && (
+                {visibleStudents.length === 0 && (
                   <div className="mt-6 rounded-3xl border border-dashed border-slate-200 bg-white p-10 text-center text-sm text-slate-500">
                     {loadingStudents ? 'Loading student records…' : 'No students match the current filters.'}
                   </div>
@@ -5186,118 +4952,6 @@ const resolveTransactionMonthLabel = (entry) => {
                   </div>
                 )}
               </div>
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'fee-settings' && (
-          <section className="mt-8 space-y-6">
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-2">
-                <h2 className="text-lg font-semibold text-slate-900">Fee Structure</h2>
-                <p className="text-sm text-slate-500">
-                  Manage tuition fee slabs, billing cycles, and the default due date for reminders.
-                </p>
-              </div>
-              <form className="mt-6 space-y-6" onSubmit={handleFeeStructureSave}>
-                <div className="grid gap-4 md:grid-cols-3">
-                  <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                    Session
-                    <select
-                      name="session"
-                      value={feeStructureDraft.session}
-                      onChange={handleFeeStructureFieldChange}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                    >
-                      <option value="">Select session</option>
-                      {sessionOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {option}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                    Default Due Date
-                    <input
-                      type="date"
-                      name="defaultDueDate"
-                      value={feeStructureDraft.defaultDueDate || ''}
-                      onChange={handleFeeStructureFieldChange}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                    />
-                  </label>
-                  <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-                    <p className="font-medium text-slate-900">Fee Cycle Notes</p>
-                    <p className="mt-1">Half-yearly and annual dues are auto-calculated when left blank.</p>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-slate-200 text-sm">
-                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                      <tr>
-                        <th className="px-4 py-3 text-left">Class</th>
-                        <th className="px-4 py-3 text-left">Monthly Fee (₹)</th>
-                        <th className="px-4 py-3 text-left">Quarterly Fee (₹)</th>
-                        <th className="px-4 py-3 text-left">Half-Yearly Fee (₹)</th>
-                        <th className="px-4 py-3 text-left">Annual Fee (₹)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {CLASS_OPTIONS.map((item) => (
-                        <tr key={item}>
-                          <td className="px-4 py-3 font-medium text-slate-700">{item}</td>
-                          <td className="px-4 py-3">
-                            <input
-                              value={feeStructureDraft.fees?.[item]?.monthly ?? ''}
-                              onChange={(event) => handleFeeValueChange(item, 'monthly', event.target.value)}
-                              placeholder="0"
-                              inputMode="decimal"
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                            />
-                          </td>
-                          <td className="px-4 py-3">
-                            <input
-                              value={feeStructureDraft.fees?.[item]?.quarterly ?? ''}
-                              onChange={(event) => handleFeeValueChange(item, 'quarterly', event.target.value)}
-                              placeholder="0"
-                              inputMode="decimal"
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                            />
-                          </td>
-                          <td className="px-4 py-3">
-                            <input
-                              value={feeStructureDraft.fees?.[item]?.halfYearly ?? ''}
-                              onChange={(event) => handleFeeValueChange(item, 'halfYearly', event.target.value)}
-                              placeholder="0"
-                              inputMode="decimal"
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                            />
-                          </td>
-                          <td className="px-4 py-3">
-                            <input
-                              value={feeStructureDraft.fees?.[item]?.annual ?? ''}
-                              onChange={(event) => handleFeeValueChange(item, 'annual', event.target.value)}
-                              placeholder="0"
-                              inputMode="decimal"
-                              className="w-full rounded-xl border border-slate-200 px-3 py-2 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                            />
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={feeStructureSaving}
-                    className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {feeStructureSaving ? 'Saving…' : 'Save Fee Settings'}
-                  </button>
-                </div>
-              </form>
             </div>
           </section>
         )}
@@ -6057,123 +5711,6 @@ const resolveTransactionMonthLabel = (entry) => {
           </section>
         )}
 
-        {activeTab === 'approve-admission' && (
-          <section className="mt-8 space-y-6">
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-2">
-                <h2 className="text-lg font-semibold text-slate-900">Approve Admission</h2>
-                <p className="text-sm text-slate-600">
-                  Review admitted students forwarded from the admission manager. Create the student record in your portal and
-                  keep track of any remaining dues from special cases.
-                </p>
-              </div>
-            </div>
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-semibold text-slate-900">Admitted students</h3>
-                  <p className="text-sm text-slate-500">Includes admission + kit charges collected in the admission portal.</p>
-                </div>
-              </div>
-              <div className="mt-4 overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3 text-left">Student</th>
-                      <th className="px-4 py-3 text-left">Class</th>
-                      <th className="px-4 py-3 text-left">Plan</th>
-                      <th className="px-4 py-3 text-left">Collected</th>
-                      <th className="px-4 py-3 text-left">Balance</th>
-                      <th className="px-4 py-3 text-left">Schedule</th>
-                      <th className="px-4 py-3 text-left">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {loadingAdmissions && (
-                      <tr>
-                        <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
-                          Loading admissions…
-                        </td>
-                      </tr>
-                    )}
-                    {!loadingAdmissions &&
-                      admissionsQueue.map((admission) => {
-                        const totalAmount = Number(
-                          admission.totalAmountDue ?? admission.totalAmount ?? admission.amountPaid ?? 0,
-                        );
-                        const paidAmount = Number(admission.amountPaid ?? 0);
-                        const balanceAmount = Number(
-                          admission.balanceAmount ?? Math.max(totalAmount - paidAmount, 0),
-                        );
-                        const remainingInstallments = Array.isArray(admission.remainingInstallments)
-                          ? admission.remainingInstallments
-                          : [];
-                        return (
-                          <tr key={admission.id} className="hover:bg-slate-50/80">
-                            <td className="px-4 py-3">
-                              <div className="font-semibold text-slate-900">{admission.studentName || '—'}</div>
-                              <div className="text-xs text-slate-500">{admission.registrationId || 'Direct'}</div>
-                            </td>
-                            <td className="px-4 py-3">{admission.classAdmitted || '—'}</td>
-                            <td className="px-4 py-3">
-                              <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
-                                {admissionPlanLabel(admission.paymentPlan)}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="font-semibold text-emerald-700">₹{paidAmount.toLocaleString('en-IN')}</div>
-                              <p className="text-xs text-slate-500">Total: ₹{totalAmount.toLocaleString('en-IN')}</p>
-                            </td>
-                            <td className="px-4 py-3 text-amber-700">₹{balanceAmount.toLocaleString('en-IN')}</td>
-                            <td className="px-4 py-3 text-xs text-slate-600">
-                              {remainingInstallments.length > 0 ? (
-                                <ul className="space-y-1">
-                                  {remainingInstallments.map((installment) => (
-                                    <li key={installment.id} className="flex items-center justify-between gap-2">
-                                      <span>
-                                        {installment.label} ({installment.due || 'TBD'})
-                                      </span>
-                                      <span className="font-semibold">
-                                        ₹{Number(installment.amount || 0).toLocaleString('en-IN')}
-                                      </span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : (
-                                <span className="text-slate-500">No pending schedule</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 space-y-2 text-xs font-semibold">
-                              {admission.paymentPlan === 'half' && balanceAmount > 0 ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleConvertAdmissionPlan(admission)}
-                                  disabled={updatingAdmissionId === admission.id}
-                                  className="rounded-lg border border-cardinal px-3 py-1 text-cardinal transition hover:bg-cardinal/10 disabled:opacity-60"
-                                >
-                                  {updatingAdmissionId === admission.id ? 'Updating…' : 'Convert to 50-25-25'}
-                                </button>
-                              ) : (
-                                <span className="text-slate-500">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    {!loadingAdmissions && admissionsQueue.length === 0 && (
-                      <tr>
-                        <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
-                          No admitted students waiting for approval yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-        )}
-
         {activeTab === 'reminders' && (
           <section className="mt-8 space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -6230,82 +5767,7 @@ const resolveTransactionMonthLabel = (entry) => {
           </section>
         )}
 
-        {activeTab === 'settings' && (
-          <section className="mt-8">
-            <SettingsPanel
-              settingsState={settingsState}
-              kitCharges={kitCharges}
-              onChange={handleSettingsChange}
-              onKitChange={handleKitChargeChange}
-              onSave={handleSettingsSave}
-              isSaving={savingSettings}
-            />
-          </section>
-        )}
 
-        {activeTab === 'house-settings' && (
-          <section id="house-settings" className="mt-8 space-y-6">
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-2">
-                <h2 className="text-lg font-semibold text-slate-900">House Settings</h2>
-                <p className="text-sm text-slate-500">
-                  Manage the list of school houses. These names appear while adding or editing students.
-                </p>
-              </div>
-              <form className="mt-6 space-y-5" onSubmit={handleHouseSettingsSave}>
-                <div className="space-y-3">
-                  {(settingsState.houses || []).length > 0 ? (
-                    settingsState.houses.map((house, index) => (
-                      <div key={`${house}-${index}`} className="flex flex-col gap-2 sm:flex-row">
-                        <input
-                          value={house}
-                          onChange={(event) => handleHouseNameChange(index, event.target.value)}
-                          className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                          placeholder="House name"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveHouse(index)}
-                          className="rounded-xl border border-rose-200 px-4 py-2 text-sm font-semibold text-rose-600 transition hover:bg-rose-50"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    ))
-                  ) : (
-                    <p className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
-                      No houses added yet. Use the field below to add your first house.
-                    </p>
-                  )}
-                </div>
-                <div className="flex flex-col gap-3 sm:flex-row">
-                  <input
-                    value={newHouseName}
-                    onChange={(event) => setNewHouseName(event.target.value)}
-                    className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-                    placeholder="Add a house name"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleAddHouseName}
-                    className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100"
-                  >
-                    Add House
-                  </button>
-                </div>
-                <div className="flex justify-end">
-                  <button
-                    type="submit"
-                    disabled={houseSettingsSaving}
-                    className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {houseSettingsSaving ? 'Saving…' : 'Save Houses'}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </section>
-        )}
       </main>
 
       {manualEntryModalOpen && (

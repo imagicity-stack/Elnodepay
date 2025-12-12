@@ -68,6 +68,11 @@ const LoginPage = () => {
           return;
         }
 
+        if (role === 'super_admin') {
+          await router.replace('/super_admin');
+          return;
+        }
+
         alert('Role not assigned.');
         await signOut(auth);
         setCheckingAuth(false);
