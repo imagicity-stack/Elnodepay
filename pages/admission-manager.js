@@ -1424,9 +1424,16 @@ export default function AdminManagerPortal() {
       const resolvedSession = studentModal.admissionType === 'new' ? activeAcademicYear : 'old';
       const parentEmail = (studentForm.parentEmail || '').trim().toLowerCase();
       const parentPhone = (studentForm.parentPhone || '').trim();
-      if (parentEmail) {
-        await ensureParentAccount(parentEmail, { name: studentForm.parentName, phone: parentPhone });
-      }
+      const parentUid = parentEmail
+        ? await ensureParentAccount(parentEmail, { name: studentForm.parentName, phone: parentPhone })
+        : '';
+
+      const admissionInstallments = Array.isArray(studentModal.admission?.remainingInstallments)
+        ? studentModal.admission.remainingInstallments.filter((item) => !item.status || item.status === 'pending')
+        : [];
+      const admissionOutstanding = admissionInstallments.length
+        ? admissionInstallments.reduce((sum, entry) => sum + Number(entry.amount || 0), 0)
+        : Math.max(Number(studentModal.admission?.balanceAmount || 0), 0);
       const studentPayload = {
         studentId: schoolNumber,
         school_number: schoolNumber,
@@ -1437,10 +1444,12 @@ export default function AdminManagerPortal() {
         year_of_passing: passingYear,
         parent_email: parentEmail,
         parent_phone: parentPhone,
+        parent_uid: parentUid,
         fee_cycle: 'Monthly',
         fee_amount: feeAmount,
         due_date: defaultDueDate || '',
-        balance: feeAmount,
+        balance: feeAmount + admissionOutstanding,
+        admission_balance: admissionOutstanding,
         status: 'Pending',
         term: '',
         session: resolvedSession,
@@ -1503,6 +1512,48 @@ export default function AdminManagerPortal() {
             );
           }),
         );
+
+        if (admissionOutstanding > 0 && admissionInstallments.length > 0) {
+          const timestamp = serverTimestamp();
+          await Promise.all(
+            admissionInstallments.map((installment) => {
+              const installmentAmount = Number(installment.amount || 0);
+              if (!(installmentAmount > 0)) return null;
+              const breakdown = {
+                custom: {
+                  label: installment.label || 'Admission balance',
+                  amount: installmentAmount,
+                  note:
+                    installment.due ||
+                    (studentModal.admission?.paymentPlan === 'half'
+                      ? '50-50 balance'
+                      : 'Admission installment'),
+                },
+              };
+              return addDoc(collection(db, 'fee_requests'), {
+                student_doc_id: studentRef.id,
+                studentId: schoolNumber,
+                student_name: studentForm.studentName,
+                class: studentForm.classApplied,
+                parent_email: parentEmail,
+                parent_uid: parentUid,
+                admission_id: studentModal.admission.id,
+                fee_cycle: 'Admission',
+                cycle: studentModal.admission.paymentPlan || 'admission',
+                base_amount: 0,
+                custom_amount: installmentAmount,
+                extras_total: 0,
+                amount_total: installmentAmount,
+                due_date: installment.due || '',
+                breakdown,
+                balance: installmentAmount,
+                status: 'Pending',
+                tuition_enabled: false,
+                created_at: timestamp,
+              });
+            }),
+          );
+        }
       }
 
       alert('Student profile created successfully.');
@@ -1639,6 +1690,7 @@ export default function AdminManagerPortal() {
       paymentMode: paymentInfo.mode,
       paymentMethod: paymentInfo.method,
       paymentReference: paymentInfo.reference,
+      parentEmail: baseData.parentEmail || '',
     };
     const docRef = await addDoc(collection(db, 'admissions'), admissionPayload);
     if (baseData.registrationId) {
@@ -1659,6 +1711,7 @@ export default function AdminManagerPortal() {
       payment_plan_label: planMeta?.label || 'Admission payment',
       admission_amount: baseData.admissionFeeAmount ?? null,
       kit_amount: baseData.kitChargeAmount ?? null,
+      parent_email: baseData.parentEmail || '',
       mode: paymentInfo.mode,
       method: paymentInfo.method,
       reference: paymentInfo.reference,
@@ -1748,6 +1801,7 @@ export default function AdminManagerPortal() {
         classAdmitted: registration.classApplied || registration.classAdmitted || '',
         parentName: registration.parentName,
         parentPhone: registration.parentPhone,
+        parentEmail: registration.parentEmail || registration.parent_email || '',
         registrationId: registration.id,
         notes: registration.notes || '',
         academicYear: registration.academicYear || '',
