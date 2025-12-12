@@ -26,22 +26,6 @@ const NAV_TABS = [
   { id: 'admission', label: 'Admission' },
 ];
 
-const DEFAULT_FEES = CLASS_OPTIONS.reduce(
-  (acc, className) => ({
-    ...acc,
-    [className]: { registration: 0, admission: 0 },
-  }),
-  {},
-);
-
-const DEFAULT_KIT_CHARGES = CLASS_OPTIONS.reduce(
-  (acc, className) => ({
-    ...acc,
-    [className]: 0,
-  }),
-  {},
-);
-
 const ADMISSION_PAYMENT_PLANS = [
   {
     id: 'full',
@@ -170,52 +154,6 @@ const SectionTabs = ({ tabs, active, onChange }) => (
         {tab.label}
       </button>
     ))}
-  </div>
-);
-
-const FeeSettings = ({ fees, onChange, saving }) => (
-  <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
-    <div className="flex items-center justify-between gap-3">
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Settings</p>
-        <h3 className="text-lg font-semibold text-slate-900">Class-wise fees</h3>
-        <p className="text-xs text-slate-500">Update admission and registration fees for each class.</p>
-      </div>
-      <span className="rounded-full bg-cardinal/10 px-3 py-1 text-[11px] font-semibold text-cardinal">Saved automatically</span>
-    </div>
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {CLASS_OPTIONS.map((className) => (
-        <div key={className} className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50/60 p-4">
-          <div className="flex items-center justify-between text-sm font-semibold text-slate-700">
-            <span>Class {className}</span>
-            <span className="text-[11px] font-medium text-slate-500">Tap fields for full-width editing</span>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2 text-xs font-semibold text-slate-600">
-            <label className="space-y-1">
-              <span>Registration</span>
-              <input
-                type="number"
-                min="0"
-                value={fees[className]?.registration ?? 0}
-                onChange={(event) => onChange(className, 'registration', Number(event.target.value) || 0)}
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-              />
-            </label>
-            <label className="space-y-1">
-              <span>Admission</span>
-              <input
-                type="number"
-                min="0"
-                value={fees[className]?.admission ?? 0}
-                onChange={(event) => onChange(className, 'admission', Number(event.target.value) || 0)}
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-              />
-            </label>
-          </div>
-        </div>
-      ))}
-    </div>
-    {saving && <p className="text-xs font-semibold text-cardinal">Saving settings...</p>}
   </div>
 );
 
@@ -1208,19 +1146,15 @@ export default function AdminManagerPortal() {
   const [payments, setPayments] = useState([]);
   const [academicYears, setAcademicYears] = useState(['2025-26', '2026-27', '2027-28']);
   const [activeAcademicYear, setActiveAcademicYear] = useState('2026-27');
-  const [feeSettings, setFeeSettings] = useState(DEFAULT_FEES);
-  const [kitCharges, setKitCharges] = useState(DEFAULT_KIT_CHARGES);
   const [houses, setHouses] = useState([]);
   const [defaultDueDate, setDefaultDueDate] = useState('');
   const [superAdminCharges, setSuperAdminCharges] = useState({
     new: buildDefaultSuperAdminCharges(true),
     old: buildDefaultSuperAdminCharges(false),
   });
-  const [savingFees, setSavingFees] = useState(false);
   const [creatingInquiry, setCreatingInquiry] = useState(false);
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const [paymentModal, setPaymentModal] = useState({ open: false, title: '', amount: 0, context: null, type: null });
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const buildStudentForm = useCallback(
     (prefill = {}) => ({
       studentName: prefill.studentName || '',
@@ -1242,11 +1176,17 @@ export default function AdminManagerPortal() {
   useRazorpayScript();
 
   const getRegistrationFee = useCallback(
-    (className) => feeSettings[className]?.registration ?? 0,
-    [feeSettings],
+    (className) => superAdminCharges.new?.[className]?.registrationFees ?? 0,
+    [superAdminCharges],
   );
-  const getAdmissionFee = useCallback((className) => feeSettings[className]?.admission ?? 0, [feeSettings]);
-  const getKitCharge = useCallback((className) => kitCharges[className] ?? 0, [kitCharges]);
+  const getAdmissionFee = useCallback(
+    (className) => superAdminCharges.new?.[className]?.admissionCharges ?? 0,
+    [superAdminCharges],
+  );
+  const getKitCharge = useCallback(
+    (className) => superAdminCharges.new?.[className]?.kitCharges ?? 0,
+    [superAdminCharges],
+  );
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
@@ -1311,22 +1251,10 @@ export default function AdminManagerPortal() {
 
   useEffect(() => {
     if (!user) return undefined;
-    const settingsRef = doc(db, 'settings', 'admissionFees');
-    const unsub = onSnapshot(settingsRef, (snap) => {
-      if (snap.exists()) {
-        setFeeSettings((prev) => ({ ...prev, ...snap.data().fees }));
-      }
-    });
-    return () => unsub();
-  }, [user]);
-
-  useEffect(() => {
-    if (!user) return undefined;
     const generalSettingsRef = doc(db, 'settings', 'general');
     const unsub = onSnapshot(generalSettingsRef, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        setKitCharges((prev) => ({ ...prev, ...(data.kitCharges || {}) }));
         setHouses(Array.isArray(data.houses) ? data.houses : []);
         setDefaultDueDate(data.defaultDueDate || '');
       }
@@ -1350,30 +1278,6 @@ export default function AdminManagerPortal() {
     });
     return () => unsub();
   }, [user]);
-
-  const handleSaveFees = useCallback(
-    async (className, field, value) => {
-      setFeeSettings((prev) => ({
-        ...prev,
-        [className]: {
-          ...(prev[className] || {}),
-          [field]: value,
-        },
-      }));
-      setSavingFees(true);
-      try {
-        const settingsRef = doc(db, 'settings', 'admissionFees');
-        await setDoc(
-          settingsRef,
-          { fees: { ...feeSettings, [className]: { ...(feeSettings[className] || {}), [field]: value } } },
-          { merge: true },
-        );
-      } finally {
-        setSavingFees(false);
-      }
-    },
-    [feeSettings],
-  );
 
   const getSuperAdminFee = useCallback(
     (className, admissionType = 'new') =>
@@ -1441,6 +1345,7 @@ export default function AdminManagerPortal() {
       }
       const schoolNumber = await generateSchoolNumber(joiningYear, passingYear);
       const feeAmount = getSuperAdminFee(studentForm.classApplied, studentModal.admissionType);
+      const resolvedSession = studentModal.admissionType === 'new' ? activeAcademicYear : 'old';
       const parentEmail = (studentForm.parentEmail || '').trim().toLowerCase();
       const parentPhone = (studentForm.parentPhone || '').trim();
       const studentPayload = {
@@ -1459,7 +1364,7 @@ export default function AdminManagerPortal() {
         balance: feeAmount,
         status: 'Pending',
         term: '',
-        session: '',
+        session: resolvedSession,
         house: studentForm.house || '',
         admission_type: studentModal.admissionType,
         created_at: serverTimestamp(),
@@ -1853,17 +1758,6 @@ export default function AdminManagerPortal() {
             </button>
             <button
               type="button"
-              onClick={() => setSettingsOpen((prev) => !prev)}
-              className={`rounded-lg border px-3 py-2 text-xs font-semibold transition ${
-                settingsOpen
-                  ? 'border-cardinal bg-cardinal/10 text-cardinal shadow'
-                  : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-              }`}
-            >
-              {settingsOpen ? 'Hide fee settings' : 'Fee settings'}
-            </button>
-            <button
-              type="button"
               onClick={handleSignOut}
               className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
             >
@@ -1890,29 +1784,6 @@ export default function AdminManagerPortal() {
           </div>
         </div>
       </header>
-
-      {settingsOpen && (
-        <div className="mx-auto max-w-6xl px-4 pt-4">
-          <div className="rounded-3xl border border-slate-200 bg-white shadow-sm">
-            <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-              <div>
-                <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Fee controls</p>
-                <p className="text-sm font-semibold text-slate-900">Admission & registration charges</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setSettingsOpen(false)}
-                className="rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                Close
-              </button>
-            </div>
-            <div className="space-y-3 p-4">
-              <FeeSettings fees={feeSettings} onChange={handleSaveFees} saving={savingFees} />
-            </div>
-          </div>
-        </div>
-      )}
 
       <div className="mx-auto max-w-6xl px-4 sm:hidden">
         <MobileTabScroller tabs={NAV_TABS} active={activeTab} onChange={setActiveTab} />
