@@ -62,6 +62,11 @@ ChartJS.register(
 );
 
 const CLASS_OPTIONS = ['Nursery', 'Kg1', 'Kg2', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+const ADMISSION_CLASS_OPTIONS = ['Nursery', 'UKG', 'LKG', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
+const DEFAULT_KIT_CHARGES = ADMISSION_CLASS_OPTIONS.reduce(
+  (acc, className) => ({ ...acc, [className]: 0 }),
+  {},
+);
 const SESSION_OPTIONS = ['2023-24', '2024-25', '2025-26', '2026-27', '2027-28'];
 const STATUS_OPTIONS = ['All', 'Paid', 'Pending', 'Overdue'];
 const REQUEST_CYCLE_OPTIONS = [
@@ -76,6 +81,7 @@ const FEE_NAV_ITEMS = [
   { id: 'students', label: 'Students' },
   { id: 'fee-report', label: 'Fee Report' },
   { id: 'payment-history', label: 'Payment History' },
+  { id: 'approve-admission', label: 'Approve Admission' },
   { id: 'reminders', label: 'Reminders and Notification' },
 ];
 const FEE_SECTION_TAB_IDS = [...FEE_NAV_ITEMS.map((item) => item.id), 'fee-settings', 'settings', 'house-settings'];
@@ -1211,11 +1217,11 @@ const DeleteStudentModal = ({
   </Modal>
 );
 
-const SettingsPanel = ({ settingsState, onChange, onSave, isSaving }) => (
+const SettingsPanel = ({ settingsState, kitCharges, onChange, onKitChange, onSave, isSaving }) => (
   <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
     <h3 className="text-lg font-semibold text-slate-900">Settings</h3>
     <p className="mt-1 text-sm text-slate-600">
-      Configure academic term details, default due dates, and reminder templates for automated workflows.
+      Configure academic term details, default due dates, kit charges, and reminder templates for automated workflows.
     </p>
     <form className="mt-6 space-y-4" onSubmit={onSave}>
       <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
@@ -1249,6 +1255,29 @@ const SettingsPanel = ({ settingsState, onChange, onSave, isSaving }) => (
           placeholder="Dear Parent, your fee payment is due on {{due_date}}. Kindly clear the dues at the earliest."
         />
       </label>
+      <div className="space-y-2 rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Kit charges</p>
+            <p className="text-sm text-slate-600">Manual rates shared with the admission manager for fee collection.</p>
+          </div>
+          <span className="rounded-full bg-cardinal/10 px-3 py-1 text-[11px] font-semibold text-cardinal">Admission sync</span>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {ADMISSION_CLASS_OPTIONS.map((className) => (
+            <label key={className} className="space-y-1 text-sm font-semibold text-slate-700">
+              <span>Class {className}</span>
+              <input
+                type="number"
+                min="0"
+                value={kitCharges[className] ?? 0}
+                onChange={(event) => onKitChange(className, event.target.value)}
+                className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              />
+            </label>
+          ))}
+        </div>
+      </div>
       <div className="flex justify-end">
         <button
           type="submit"
@@ -1302,6 +1331,7 @@ const AccountantDashboard = () => {
     reminderTemplate: '',
     houses: [],
   });
+  const [kitCharges, setKitCharges] = useState(DEFAULT_KIT_CHARGES);
   const [savingSettings, setSavingSettings] = useState(false);
   const [bulkSending, setBulkSending] = useState(false);
   const [feeStructure, setFeeStructure] = useState({ session: '', defaultDueDate: '', fees: {} });
@@ -1333,6 +1363,9 @@ const AccountantDashboard = () => {
   const [transactionsLog, setTransactionsLog] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [loadingExpenses, setLoadingExpenses] = useState(true);
+  const [admissionsQueue, setAdmissionsQueue] = useState([]);
+  const [loadingAdmissions, setLoadingAdmissions] = useState(true);
+  const [updatingAdmissionId, setUpdatingAdmissionId] = useState(null);
   const [ledgerFilters, setLedgerFilters] = useState({
     startDate: DEFAULT_FY_START,
     endDate: DEFAULT_FY_END,
@@ -1352,6 +1385,11 @@ const AccountantDashboard = () => {
     () => sanitiseHouseList(settingsState.houses || []),
     [settingsState.houses],
   );
+  const admissionPlanLabel = useCallback((planId) => {
+    if (planId === 'staggered') return '50-25-25';
+    if (planId === 'half') return '50-50';
+    return 'Full';
+  }, []);
   const [manualEntryForm, setManualEntryForm] = useState(() => ({
     date: formatDateInput(new Date()),
     studentId: '',
@@ -1802,6 +1840,7 @@ const resolveTransactionMonthLabel = (entry) => {
             data.reminderTemplate || 'Dear Parent, your fee payment is due on {{due_date}}. Kindly clear the dues.',
           houses: sanitiseHouseList(data.houses || []),
         });
+        setKitCharges((prev) => ({ ...DEFAULT_KIT_CHARGES, ...prev, ...(data.kitCharges || {}) }));
       }
     });
 
@@ -1831,6 +1870,17 @@ const resolveTransactionMonthLabel = (entry) => {
       () => setLoadingExpenses(false),
     );
 
+    const admissionsQuery = query(collection(db, 'admissions'), orderBy('createdAt', 'desc'));
+    const unsubscribeAdmissions = onSnapshot(
+      admissionsQuery,
+      (snapshot) => {
+        const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+        setAdmissionsQueue(data);
+        setLoadingAdmissions(false);
+      },
+      () => setLoadingAdmissions(false),
+    );
+
     return () => {
       unsubscribeStudents();
       unsubscribePayments();
@@ -1840,6 +1890,7 @@ const resolveTransactionMonthLabel = (entry) => {
       unsubscribeFeeStructure();
       unsubscribeTransactions();
       unsubscribeExpenses();
+      unsubscribeAdmissions();
     };
   }, [user]);
 
@@ -3980,6 +4031,11 @@ const resolveTransactionMonthLabel = (entry) => {
     setSettingsState((prev) => ({ ...prev, [name]: value }));
   };
 
+  const handleKitChargeChange = (className, value) => {
+    const numericValue = Math.max(0, Number(value) || 0);
+    setKitCharges((prev) => ({ ...prev, [className]: numericValue }));
+  };
+
   const handleSettingsSave = async (event) => {
     event.preventDefault();
     setSavingSettings(true);
@@ -3992,6 +4048,7 @@ const resolveTransactionMonthLabel = (entry) => {
           defaultDueDate: settingsState.defaultDueDate,
           reminderTemplate: settingsState.reminderTemplate,
           houses,
+          kitCharges,
           updated_at: serverTimestamp(),
         },
         { merge: true },
@@ -4002,6 +4059,42 @@ const resolveTransactionMonthLabel = (entry) => {
       alert('Unable to save settings.');
     } finally {
       setSavingSettings(false);
+    }
+  };
+
+  const handleConvertAdmissionPlan = async (admission) => {
+    if (!admission?.id) return;
+    setUpdatingAdmissionId(admission.id);
+    try {
+      const totalAmount = Number(admission.totalAmountDue ?? admission.totalAmount ?? 0);
+      const amountPaid = Number(admission.amountPaid ?? 0);
+      const remaining = Math.max(totalAmount - amountPaid, 0);
+      const staggeredInstallments = [
+        { id: 'staggered-25a', label: 'Second 25%', percent: 0.25, due: 'within one month' },
+        { id: 'staggered-25b', label: 'Final 25%', percent: 0.25, due: 'before the session starts' },
+      ].map((entry) => ({
+        ...entry,
+        amount: Number((totalAmount * entry.percent).toFixed(2)),
+        status: 'pending',
+      }));
+      const remainderTotal = staggeredInstallments.reduce((sum, item) => sum + (item.amount || 0), 0);
+      if (remainderTotal > 0 && remaining > 0 && remainderTotal !== remaining) {
+        const scale = remaining / remainderTotal;
+        staggeredInstallments.forEach((item) => {
+          item.amount = Number((item.amount * scale).toFixed(2));
+        });
+      }
+      await updateDoc(doc(db, 'admissions', admission.id), {
+        paymentPlan: 'staggered',
+        remainingInstallments: staggeredInstallments,
+        balanceAmount: remaining,
+      });
+      alert('Converted to 50-25-25. Remaining dues updated.');
+    } catch (error) {
+      console.error('Plan conversion failed', error);
+      alert('Unable to convert to 50-25-25. Please try again.');
+    } finally {
+      setUpdatingAdmissionId(null);
     }
   };
 
@@ -5964,6 +6057,123 @@ const resolveTransactionMonthLabel = (entry) => {
           </section>
         )}
 
+        {activeTab === 'approve-admission' && (
+          <section className="mt-8 space-y-6">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-col gap-2">
+                <h2 className="text-lg font-semibold text-slate-900">Approve Admission</h2>
+                <p className="text-sm text-slate-600">
+                  Review admitted students forwarded from the admission manager. Create the student record in your portal and
+                  keep track of any remaining dues from special cases.
+                </p>
+              </div>
+            </div>
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-900">Admitted students</h3>
+                  <p className="text-sm text-slate-500">Includes admission + kit charges collected in the admission portal.</p>
+                </div>
+              </div>
+              <div className="mt-4 overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Student</th>
+                      <th className="px-4 py-3 text-left">Class</th>
+                      <th className="px-4 py-3 text-left">Plan</th>
+                      <th className="px-4 py-3 text-left">Collected</th>
+                      <th className="px-4 py-3 text-left">Balance</th>
+                      <th className="px-4 py-3 text-left">Schedule</th>
+                      <th className="px-4 py-3 text-left">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {loadingAdmissions && (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
+                          Loading admissions…
+                        </td>
+                      </tr>
+                    )}
+                    {!loadingAdmissions &&
+                      admissionsQueue.map((admission) => {
+                        const totalAmount = Number(
+                          admission.totalAmountDue ?? admission.totalAmount ?? admission.amountPaid ?? 0,
+                        );
+                        const paidAmount = Number(admission.amountPaid ?? 0);
+                        const balanceAmount = Number(
+                          admission.balanceAmount ?? Math.max(totalAmount - paidAmount, 0),
+                        );
+                        const remainingInstallments = Array.isArray(admission.remainingInstallments)
+                          ? admission.remainingInstallments
+                          : [];
+                        return (
+                          <tr key={admission.id} className="hover:bg-slate-50/80">
+                            <td className="px-4 py-3">
+                              <div className="font-semibold text-slate-900">{admission.studentName || '—'}</div>
+                              <div className="text-xs text-slate-500">{admission.registrationId || 'Direct'}</div>
+                            </td>
+                            <td className="px-4 py-3">{admission.classAdmitted || '—'}</td>
+                            <td className="px-4 py-3">
+                              <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
+                                {admissionPlanLabel(admission.paymentPlan)}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="font-semibold text-emerald-700">₹{paidAmount.toLocaleString('en-IN')}</div>
+                              <p className="text-xs text-slate-500">Total: ₹{totalAmount.toLocaleString('en-IN')}</p>
+                            </td>
+                            <td className="px-4 py-3 text-amber-700">₹{balanceAmount.toLocaleString('en-IN')}</td>
+                            <td className="px-4 py-3 text-xs text-slate-600">
+                              {remainingInstallments.length > 0 ? (
+                                <ul className="space-y-1">
+                                  {remainingInstallments.map((installment) => (
+                                    <li key={installment.id} className="flex items-center justify-between gap-2">
+                                      <span>
+                                        {installment.label} ({installment.due || 'TBD'})
+                                      </span>
+                                      <span className="font-semibold">
+                                        ₹{Number(installment.amount || 0).toLocaleString('en-IN')}
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <span className="text-slate-500">No pending schedule</span>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 space-y-2 text-xs font-semibold">
+                              {admission.paymentPlan === 'half' && balanceAmount > 0 ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleConvertAdmissionPlan(admission)}
+                                  disabled={updatingAdmissionId === admission.id}
+                                  className="rounded-lg border border-cardinal px-3 py-1 text-cardinal transition hover:bg-cardinal/10 disabled:opacity-60"
+                                >
+                                  {updatingAdmissionId === admission.id ? 'Updating…' : 'Convert to 50-25-25'}
+                                </button>
+                              ) : (
+                                <span className="text-slate-500">—</span>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    {!loadingAdmissions && admissionsQueue.length === 0 && (
+                      <tr>
+                        <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
+                          No admitted students waiting for approval yet.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        )}
+
         {activeTab === 'reminders' && (
           <section className="mt-8 space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -6024,7 +6234,9 @@ const resolveTransactionMonthLabel = (entry) => {
           <section className="mt-8">
             <SettingsPanel
               settingsState={settingsState}
+              kitCharges={kitCharges}
               onChange={handleSettingsChange}
+              onKitChange={handleKitChargeChange}
               onSave={handleSettingsSave}
               isSaving={savingSettings}
             />
