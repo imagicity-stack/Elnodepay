@@ -47,7 +47,6 @@ import { auth, db } from '../lib/firebase';
 import { getCollectionsInRange, groupByMonth, makeExpenseId, makeVoucherNo } from '../lib/reports';
 import { toCSV } from '../lib/csv';
 import SalaryModule from '../components/SalaryModule';
-import StaffSettingsModal from '../components/StaffSettingsModal';
 
 ChartJS.register(
   ArcElement,
@@ -81,7 +80,6 @@ const FEE_NAV_ITEMS = [
   { id: 'students', label: 'Students' },
   { id: 'fee-report', label: 'Fee Report' },
   { id: 'payment-history', label: 'Payment History' },
-  { id: 'approve-admission', label: 'Approve Admission' },
   { id: 'reminders', label: 'Reminders and Notification' },
 ];
 const FEE_SECTION_TAB_IDS = [...FEE_NAV_ITEMS.map((item) => item.id), 'fee-settings', 'settings', 'house-settings'];
@@ -1309,7 +1307,6 @@ const AccountantDashboard = () => {
   const [activeTab, setActiveTab] = useState('overview');
   const [activeSection, setActiveSection] = useState('fees');
   const [isSettingsMenuOpen, setIsSettingsMenuOpen] = useState(false);
-  const [staffSettingsOpen, setStaffSettingsOpen] = useState(false);
   const settingsMenuRef = useRef(null);
   const [filters, setFilters] = useState({
     class: 'All',
@@ -1363,8 +1360,6 @@ const AccountantDashboard = () => {
   const [transactionsLog, setTransactionsLog] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [loadingExpenses, setLoadingExpenses] = useState(true);
-  const [admissionsQueue, setAdmissionsQueue] = useState([]);
-  const [loadingAdmissions, setLoadingAdmissions] = useState(true);
   const [updatingAdmissionId, setUpdatingAdmissionId] = useState(null);
   const [ledgerFilters, setLedgerFilters] = useState({
     startDate: DEFAULT_FY_START,
@@ -1870,17 +1865,6 @@ const resolveTransactionMonthLabel = (entry) => {
       () => setLoadingExpenses(false),
     );
 
-    const admissionsQuery = query(collection(db, 'admissions'), orderBy('createdAt', 'desc'));
-    const unsubscribeAdmissions = onSnapshot(
-      admissionsQuery,
-      (snapshot) => {
-        const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-        setAdmissionsQueue(data);
-        setLoadingAdmissions(false);
-      },
-      () => setLoadingAdmissions(false),
-    );
-
     return () => {
       unsubscribeStudents();
       unsubscribePayments();
@@ -1890,7 +1874,6 @@ const resolveTransactionMonthLabel = (entry) => {
       unsubscribeFeeStructure();
       unsubscribeTransactions();
       unsubscribeExpenses();
-      unsubscribeAdmissions();
     };
   }, [user]);
 
@@ -4596,13 +4579,6 @@ const resolveTransactionMonthLabel = (entry) => {
               <>
                 <button
                   type="button"
-                  onClick={handleOpenAddStudent}
-                  className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
-                >
-                  Add Student
-                </button>
-                <button
-                  type="button"
                   onClick={openReportModal}
                   className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
                 >
@@ -4667,15 +4643,6 @@ const resolveTransactionMonthLabel = (entry) => {
                 </button>
               </>
             )}
-            {isSalarySection && (
-              <button
-                type="button"
-                onClick={() => setStaffSettingsOpen(true)}
-                className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
-              >
-                Staff Settings
-              </button>
-            )}
             <button
               type="button"
               onClick={() => setSignOutConfirmOpen(true)}
@@ -4733,11 +4700,6 @@ const resolveTransactionMonthLabel = (entry) => {
         {activeSection === 'salary' && SALARY_TAB_IDS.includes(activeTab) && (
           <SalaryModule processorUid={user?.uid} category={SALARY_TAB_CATEGORY[activeTab]} />
         )}
-        <StaffSettingsModal
-          open={staffSettingsOpen}
-          onClose={() => setStaffSettingsOpen(false)}
-          secondaryAuth={secondaryAuthRef.current}
-        />
 
         {activeTab === 'overview' && (
           <section className="mt-8 space-y-8">
@@ -6047,123 +6009,6 @@ const resolveTransactionMonthLabel = (entry) => {
                       <tr>
                         <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
                           No payments match the selected filter yet.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-        )}
-
-        {activeTab === 'approve-admission' && (
-          <section className="mt-8 space-y-6">
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex flex-col gap-2">
-                <h2 className="text-lg font-semibold text-slate-900">Approve Admission</h2>
-                <p className="text-sm text-slate-600">
-                  Review admitted students forwarded from the admission manager. Create the student record in your portal and
-                  keep track of any remaining dues from special cases.
-                </p>
-              </div>
-            </div>
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-semibold text-slate-900">Admitted students</h3>
-                  <p className="text-sm text-slate-500">Includes admission + kit charges collected in the admission portal.</p>
-                </div>
-              </div>
-              <div className="mt-4 overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                    <tr>
-                      <th className="px-4 py-3 text-left">Student</th>
-                      <th className="px-4 py-3 text-left">Class</th>
-                      <th className="px-4 py-3 text-left">Plan</th>
-                      <th className="px-4 py-3 text-left">Collected</th>
-                      <th className="px-4 py-3 text-left">Balance</th>
-                      <th className="px-4 py-3 text-left">Schedule</th>
-                      <th className="px-4 py-3 text-left">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {loadingAdmissions && (
-                      <tr>
-                        <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
-                          Loading admissions…
-                        </td>
-                      </tr>
-                    )}
-                    {!loadingAdmissions &&
-                      admissionsQueue.map((admission) => {
-                        const totalAmount = Number(
-                          admission.totalAmountDue ?? admission.totalAmount ?? admission.amountPaid ?? 0,
-                        );
-                        const paidAmount = Number(admission.amountPaid ?? 0);
-                        const balanceAmount = Number(
-                          admission.balanceAmount ?? Math.max(totalAmount - paidAmount, 0),
-                        );
-                        const remainingInstallments = Array.isArray(admission.remainingInstallments)
-                          ? admission.remainingInstallments
-                          : [];
-                        return (
-                          <tr key={admission.id} className="hover:bg-slate-50/80">
-                            <td className="px-4 py-3">
-                              <div className="font-semibold text-slate-900">{admission.studentName || '—'}</div>
-                              <div className="text-xs text-slate-500">{admission.registrationId || 'Direct'}</div>
-                            </td>
-                            <td className="px-4 py-3">{admission.classAdmitted || '—'}</td>
-                            <td className="px-4 py-3">
-                              <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-700">
-                                {admissionPlanLabel(admission.paymentPlan)}
-                              </span>
-                            </td>
-                            <td className="px-4 py-3">
-                              <div className="font-semibold text-emerald-700">₹{paidAmount.toLocaleString('en-IN')}</div>
-                              <p className="text-xs text-slate-500">Total: ₹{totalAmount.toLocaleString('en-IN')}</p>
-                            </td>
-                            <td className="px-4 py-3 text-amber-700">₹{balanceAmount.toLocaleString('en-IN')}</td>
-                            <td className="px-4 py-3 text-xs text-slate-600">
-                              {remainingInstallments.length > 0 ? (
-                                <ul className="space-y-1">
-                                  {remainingInstallments.map((installment) => (
-                                    <li key={installment.id} className="flex items-center justify-between gap-2">
-                                      <span>
-                                        {installment.label} ({installment.due || 'TBD'})
-                                      </span>
-                                      <span className="font-semibold">
-                                        ₹{Number(installment.amount || 0).toLocaleString('en-IN')}
-                                      </span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : (
-                                <span className="text-slate-500">No pending schedule</span>
-                              )}
-                            </td>
-                            <td className="px-4 py-3 space-y-2 text-xs font-semibold">
-                              {admission.paymentPlan === 'half' && balanceAmount > 0 ? (
-                                <button
-                                  type="button"
-                                  onClick={() => handleConvertAdmissionPlan(admission)}
-                                  disabled={updatingAdmissionId === admission.id}
-                                  className="rounded-lg border border-cardinal px-3 py-1 text-cardinal transition hover:bg-cardinal/10 disabled:opacity-60"
-                                >
-                                  {updatingAdmissionId === admission.id ? 'Updating…' : 'Convert to 50-25-25'}
-                                </button>
-                              ) : (
-                                <span className="text-slate-500">—</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    {!loadingAdmissions && admissionsQueue.length === 0 && (
-                      <tr>
-                        <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
-                          No admitted students waiting for approval yet.
                         </td>
                       </tr>
                     )}
