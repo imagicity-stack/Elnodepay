@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Head from 'next/head';
 import Image from 'next/image';
 import { useRouter } from 'next/router';
@@ -957,6 +957,8 @@ export default function AdminManagerPortal() {
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const [admissionSubmitting, setAdmissionSubmitting] = useState(false);
   const [paymentModal, setPaymentModal] = useState({ open: false, title: '', amount: 0, context: null, type: null });
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsMenuRef = useRef(null);
 
   useRazorpayScript();
 
@@ -1037,6 +1039,25 @@ export default function AdminManagerPortal() {
     });
     return () => unsub();
   }, [user]);
+
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (settingsMenuRef.current && !settingsMenuRef.current.contains(event.target)) {
+        setSettingsOpen(false);
+      }
+    };
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        setSettingsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, []);
 
   const handleSaveFees = useCallback(
     async (className, field, value) => {
@@ -1353,6 +1374,51 @@ export default function AdminManagerPortal() {
               <p className="text-sm font-semibold text-slate-900">{profile?.name || 'Admission Team'}</p>
               <p className="text-xs text-slate-500">{user.email}</p>
             </div>
+            <div className="relative" ref={settingsMenuRef}>
+              <button
+                type="button"
+                onClick={() => setSettingsOpen((prev) => !prev)}
+                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold transition ${
+                  settingsOpen
+                    ? 'border-cardinal bg-cardinal/10 text-cardinal shadow'
+                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
+                }`}
+              >
+                <span>Settings</span>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className={`h-3 w-3 transition ${settingsOpen ? 'rotate-180 text-cardinal' : 'text-slate-500'}`}
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M5.23 7.21a.75.75 0 011.06.02L10 11.188l3.71-3.957a.75.75 0 111.08 1.04l-4.243 4.525a.75.75 0 01-1.082 0L5.21 8.27a.75.75 0 01.02-1.06z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </button>
+              {settingsOpen && (
+                <div className="absolute right-0 z-20 mt-2 w-[min(440px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                  <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Settings</p>
+                      <p className="text-sm font-semibold text-slate-900">Payments & fees</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSettingsOpen(false)}
+                      className="rounded-md border border-slate-200 px-2 py-1 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <div className="max-h-[70vh] space-y-3 overflow-y-auto p-4">
+                    <FeeSettings fees={feeSettings} onChange={handleSaveFees} saving={savingFees} />
+                  </div>
+                </div>
+              )}
+            </div>
             <button
               type="button"
               onClick={handleSignOut}
@@ -1604,7 +1670,6 @@ export default function AdminManagerPortal() {
               </div>
 
               <div className="space-y-4">
-                <FeeSettings fees={feeSettings} onChange={handleSaveFees} saving={savingFees} />
                 <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
                   <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Accountant handoff</p>
                   <p className="mt-2 text-sm">
