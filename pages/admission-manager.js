@@ -34,6 +34,43 @@ const DEFAULT_FEES = CLASS_OPTIONS.reduce(
   {},
 );
 
+const DEFAULT_KIT_CHARGES = CLASS_OPTIONS.reduce(
+  (acc, className) => ({
+    ...acc,
+    [className]: 0,
+  }),
+  {},
+);
+
+const ADMISSION_PAYMENT_PLANS = [
+  {
+    id: 'full',
+    label: 'Standard',
+    description: 'Collect 100% of admission + kit charges now.',
+    upfrontFraction: 1,
+    remainder: [],
+  },
+  {
+    id: 'half',
+    label: 'Special case · 50-50',
+    description: 'Collect 50% now and the balance 50% within one month.',
+    upfrontFraction: 0.5,
+    remainder: [
+      { id: 'half-balance', label: 'Remaining 50%', percent: 0.5, due: 'within one month' },
+    ],
+  },
+  {
+    id: 'staggered',
+    label: 'Special case · 50-25-25',
+    description: 'Collect 50% now, 25% within one month, and 25% before the session starts.',
+    upfrontFraction: 0.5,
+    remainder: [
+      { id: 'staggered-25a', label: 'Second 25%', percent: 0.25, due: 'within one month' },
+      { id: 'staggered-25b', label: 'Final 25%', percent: 0.25, due: 'before the session starts' },
+    ],
+  },
+];
+
 const useRazorpayScript = () => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -406,12 +443,32 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
   );
 };
 
-const PaymentModal = ({ open, title, amount, studentName, onClose, onComplete }) => {
+const PaymentModal = ({ open, title, amount, studentName, onClose, onComplete, paymentPlans = [] }) => {
   const [mode, setMode] = useState('online');
   const [onlineMethod, setOnlineMethod] = useState('now');
   const [reference, setReference] = useState('');
   const [transactionId, setTransactionId] = useState('');
   const [processing, setProcessing] = useState(false);
+  const plans = useMemo(
+    () =>
+      paymentPlans.length
+        ? paymentPlans
+        : [
+            {
+              id: 'full',
+              label: 'Standard',
+              description: 'Collect the full amount now.',
+              upfrontFraction: 1,
+              remainder: [],
+            },
+          ],
+    [paymentPlans],
+  );
+  const [selectedPlanId, setSelectedPlanId] = useState(plans[0]?.id || 'full');
+
+  useEffect(() => {
+    setSelectedPlanId(plans[0]?.id || 'full');
+  }, [plans]);
 
   useEffect(() => {
     if (open) {
@@ -420,18 +477,29 @@ const PaymentModal = ({ open, title, amount, studentName, onClose, onComplete })
       setReference('');
       setTransactionId('');
       setProcessing(false);
+      setSelectedPlanId(plans[0]?.id || 'full');
     }
-  }, [open]);
+  }, [open, plans]);
 
   if (!open) return null;
 
   const numericAmount = Number(amount) || 0;
+  const activePlan = plans.find((plan) => plan.id === selectedPlanId) || plans[0];
+  const payableAmount = Math.max(
+    0,
+    Number((numericAmount * (activePlan?.upfrontFraction ?? 1)).toFixed(2)),
+  );
+  const planRemainder = (activePlan?.remainder || []).map((entry) => ({
+    ...entry,
+    amount: Number((numericAmount * (entry.percent ?? 0)).toFixed(2)),
+    status: 'pending',
+  }));
   const canSubmit =
     mode === 'online'
       ? onlineMethod === 'now'
-        ? numericAmount > 0
-        : numericAmount > 0 && transactionId.trim().length > 0
-      : numericAmount > 0 && reference.trim().length > 0;
+        ? payableAmount > 0
+        : payableAmount > 0 && transactionId.trim().length > 0
+      : payableAmount > 0 && reference.trim().length > 0;
 
   const startOnlinePayment = async () => {
     if (typeof window === 'undefined' || !window.Razorpay) {
@@ -443,7 +511,7 @@ const PaymentModal = ({ open, title, amount, studentName, onClose, onComplete })
       const orderResponse = await fetch('/api/createOrder', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: numericAmount, studentName }),
+        body: JSON.stringify({ amount: payableAmount, studentName }),
       });
       const orderData = await orderResponse.json();
       if (!orderData.success) {
@@ -462,17 +530,20 @@ const PaymentModal = ({ open, title, amount, studentName, onClose, onComplete })
             const verifyResponse = await fetch('/api/verifyPayment', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ ...response, amount: numericAmount }),
+              body: JSON.stringify({ ...response, amount: payableAmount }),
             });
             const verifyData = await verifyResponse.json();
             if (!verifyData.success) {
               throw new Error(verifyData.message || 'Payment verification failed');
             }
             await onComplete({
-              amount: numericAmount,
+              amount: payableAmount,
+              totalAmount: numericAmount,
               mode: 'Online',
               method: 'razorpay',
               reference: response.razorpay_payment_id,
+              planId: activePlan?.id || 'full',
+              planRemainder,
             });
             onClose();
           } catch (error) {
@@ -499,7 +570,8 @@ const PaymentModal = ({ open, title, amount, studentName, onClose, onComplete })
         mode === 'online' && onlineMethod === 'now'
           ? null
           : {
-              amount: numericAmount,
+              amount: payableAmount,
+              totalAmount: numericAmount,
               mode: mode === 'online' ? 'Online' : mode === 'cash' ? 'Cash' : 'Bank Transfer',
               method:
                 mode === 'online'
@@ -510,6 +582,8 @@ const PaymentModal = ({ open, title, amount, studentName, onClose, onComplete })
                     ? 'cash'
                     : 'bank',
               reference: mode === 'online' ? transactionId : reference,
+              planId: activePlan?.id || 'full',
+              planRemainder,
             };
 
       if (payload) {
@@ -543,6 +617,57 @@ const PaymentModal = ({ open, title, amount, studentName, onClose, onComplete })
         </div>
         <div className="px-6 py-5 text-sm text-slate-700">
           <p className="text-sm text-slate-600">Choose how you want to collect the amount.</p>
+
+          {plans.length > 0 && (
+            <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Payment plan</p>
+              <div className="space-y-2">
+                {plans.map((plan) => (
+                  <label
+                    key={plan.id}
+                    className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 transition ${
+                      selectedPlanId === plan.id
+                        ? 'border-cardinal bg-cardinal/10 text-cardinal'
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-cardinal/30'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="payment-plan"
+                      value={plan.id}
+                      checked={selectedPlanId === plan.id}
+                      onChange={() => setSelectedPlanId(plan.id)}
+                      className="mt-1"
+                    />
+                    <div className="space-y-0.5">
+                      <p className="text-sm font-semibold">{plan.label}</p>
+                      <p className="text-xs text-slate-500">{plan.description}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <div className="rounded-lg bg-white px-3 py-2 text-xs text-slate-600">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-semibold text-slate-700">Total (admission + kit)</span>
+                  <span className="font-semibold">₹{numericAmount.toLocaleString('en-IN')}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between gap-3">
+                  <span className="text-slate-500">Collect now</span>
+                  <span className="font-semibold text-cardinal">₹{payableAmount.toLocaleString('en-IN')}</span>
+                </div>
+                {planRemainder.length > 0 && (
+                  <ul className="mt-2 space-y-1">
+                    {planRemainder.map((installment) => (
+                      <li key={installment.id} className="flex items-center justify-between gap-2">
+                        <span className="text-slate-500">{installment.label} ({installment.due})</span>
+                        <span className="font-semibold text-amber-600">₹{installment.amount.toLocaleString('en-IN')}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="mt-4 space-y-2">
             <label className="text-xs font-semibold text-slate-500" htmlFor="payment-mode">
@@ -598,10 +723,13 @@ const PaymentModal = ({ open, title, amount, studentName, onClose, onComplete })
               id="payment-amount"
               type="number"
               min="0"
-              value={amount}
+              value={payableAmount}
               readOnly
               className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
             />
+            {numericAmount !== payableAmount && (
+              <p className="mt-1 text-xs text-slate-500">Total due: ₹{numericAmount.toLocaleString('en-IN')}</p>
+            )}
           </div>
 
           {mode === 'online' && onlineMethod === 'website' && (
@@ -852,6 +980,7 @@ export default function AdminManagerPortal() {
   const [academicYears, setAcademicYears] = useState(['2025-26', '2026-27', '2027-28']);
   const [activeAcademicYear, setActiveAcademicYear] = useState('2026-27');
   const [feeSettings, setFeeSettings] = useState(DEFAULT_FEES);
+  const [kitCharges, setKitCharges] = useState(DEFAULT_KIT_CHARGES);
   const [savingFees, setSavingFees] = useState(false);
   const [creatingInquiry, setCreatingInquiry] = useState(false);
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
@@ -866,6 +995,7 @@ export default function AdminManagerPortal() {
     [feeSettings],
   );
   const getAdmissionFee = useCallback((className) => feeSettings[className]?.admission ?? 0, [feeSettings]);
+  const getKitCharge = useCallback((className) => kitCharges[className] ?? 0, [kitCharges]);
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
@@ -934,6 +1064,17 @@ export default function AdminManagerPortal() {
     const unsub = onSnapshot(settingsRef, (snap) => {
       if (snap.exists()) {
         setFeeSettings((prev) => ({ ...prev, ...snap.data().fees }));
+      }
+    });
+    return () => unsub();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return undefined;
+    const generalSettingsRef = doc(db, 'settings', 'general');
+    const unsub = onSnapshot(generalSettingsRef, (snap) => {
+      if (snap.exists()) {
+        setKitCharges((prev) => ({ ...prev, ...(snap.data().kitCharges || {}) }));
       }
     });
     return () => unsub();
@@ -1068,25 +1209,51 @@ export default function AdminManagerPortal() {
   );
 
   const handleAdmissionPayment = useCallback(async (paymentInfo, baseData) => {
+    const totalAmount = Number(paymentInfo.totalAmount ?? baseData.totalAmount ?? paymentInfo.amount ?? 0);
+    const collectedAmount = Number(paymentInfo.amount ?? 0);
+    const paymentPlan = paymentInfo.planId || 'full';
+    const remainingInstallments = (paymentInfo.planRemainder || []).map((entry) => ({
+      id: entry.id,
+      label: entry.label,
+      due: entry.due,
+      percent: entry.percent,
+      amount: Number((totalAmount * (entry.percent ?? 0)).toFixed(2)) || entry.amount || 0,
+      status: 'pending',
+    }));
+    const balanceAmount = Math.max(totalAmount - collectedAmount, 0);
     const admissionPayload = {
       ...baseData,
-      status: 'paid',
+      admissionFeeAmount: baseData.admissionFeeAmount ?? 0,
+      kitChargeAmount: baseData.kitChargeAmount ?? 0,
+      totalAmountDue: totalAmount,
+      amountPaid: collectedAmount,
+      balanceAmount,
+      paymentPlan,
+      remainingInstallments,
+      status: balanceAmount > 0 ? 'partially_paid' : 'paid',
       sentToAccounts: true,
       createdAt: serverTimestamp(),
       paymentMode: paymentInfo.mode,
       paymentMethod: paymentInfo.method,
       paymentReference: paymentInfo.reference,
-      amountPaid: paymentInfo.amount,
     };
     const docRef = await addDoc(collection(db, 'admissions'), admissionPayload);
     if (baseData.registrationId) {
-      await updateDoc(doc(db, 'registrations', baseData.registrationId), { admissionStatus: 'admitted' });
+      await updateDoc(doc(db, 'registrations', baseData.registrationId), {
+        admissionStatus: 'admitted',
+        admissionPlan: paymentPlan,
+      });
     }
     await addDoc(collection(db, 'payments'), {
       admission_id: docRef.id,
       registration_id: baseData.registrationId || null,
       student_name: baseData.studentName,
-      amount: paymentInfo.amount,
+      amount: collectedAmount,
+      total_amount: totalAmount,
+      balance_after: balanceAmount,
+      payment_plan: paymentPlan,
+      admission_amount: baseData.admissionFeeAmount ?? null,
+      kit_amount: baseData.kitChargeAmount ?? null,
       mode: paymentInfo.mode,
       method: paymentInfo.method,
       reference: paymentInfo.reference,
@@ -1121,16 +1288,19 @@ export default function AdminManagerPortal() {
 
   const startAdmissionFromRegistration = useCallback(
     (registration) => {
-      const amount = getAdmissionFee(registration.classApplied || registration.classAdmitted);
+      const admissionAmount = getAdmissionFee(registration.classApplied || registration.classAdmitted);
+      const kitAmount = getKitCharge(registration.classApplied || registration.classAdmitted);
+      const totalAmount = admissionAmount + kitAmount;
       setPaymentModal({
         open: true,
         title: 'Admission payment',
-        amount,
-        context: { registration },
+        amount: totalAmount,
+        context: { registration, admissionAmount, kitAmount, totalAmount },
         type: 'admission',
+        plans: ADMISSION_PAYMENT_PLANS,
       });
     },
-    [getAdmissionFee],
+    [getAdmissionFee, getKitCharge],
   );
 
   const closePaymentModal = () => {
@@ -1162,7 +1332,7 @@ export default function AdminManagerPortal() {
       if (reset) reset();
     }
     if (paymentModal.type === 'admission') {
-      const { registration } = paymentModal.context;
+      const { registration, admissionAmount, kitAmount, totalAmount } = paymentModal.context;
       if (!registration) return;
       const baseData = {
         studentName: registration.studentName,
@@ -1172,6 +1342,9 @@ export default function AdminManagerPortal() {
         registrationId: registration.id,
         notes: registration.notes || '',
         academicYear: registration.academicYear || '',
+        admissionFeeAmount: admissionAmount ?? getAdmissionFee(registration.classApplied || registration.classAdmitted || ''),
+        kitChargeAmount: kitAmount ?? getKitCharge(registration.classApplied || registration.classAdmitted || ''),
+        totalAmount: totalAmount ?? paymentModal.amount,
       };
       await handleAdmissionPayment(paymentInfo, baseData);
     }
@@ -1199,6 +1372,17 @@ export default function AdminManagerPortal() {
   const downloadAdmissionReceipt = (admission) => {
     if (!admission) return;
     const date = parseDate(admission.createdAt);
+    const admissionFeeAmount = Number(admission.admissionFeeAmount ?? 0);
+    const kitChargeAmount = Number(admission.kitChargeAmount ?? 0);
+    const totalAmount = Number(admission.totalAmountDue ?? admission.totalAmount ?? admission.amountPaid ?? 0);
+    const paidNow = Number(admission.amountPaid ?? admission.amount ?? 0);
+    const balanceAmount = Number(admission.balanceAmount ?? Math.max(totalAmount - paidNow, 0));
+    const planLabel =
+      admission.paymentPlan === 'staggered'
+        ? '50-25-25'
+        : admission.paymentPlan === 'half'
+          ? '50-50'
+          : 'Full payment';
     handlePrint(
       'Admission Receipt',
       `
@@ -1207,7 +1391,12 @@ export default function AdminManagerPortal() {
           <tr><td>Student</td><td>${admission.studentName || ''}</td></tr>
           <tr><td>Class</td><td>${admission.classAdmitted || ''}</td></tr>
           <tr><td>Linked registration</td><td>${admission.registrationId || 'N/A'}</td></tr>
-          <tr><td>Amount</td><td>₹${Number(admission.amountPaid || 0).toLocaleString('en-IN')}</td></tr>
+          <tr><td>Admission fee</td><td>₹${admissionFeeAmount.toLocaleString('en-IN')}</td></tr>
+          <tr><td>Kit charges</td><td>₹${kitChargeAmount.toLocaleString('en-IN')}</td></tr>
+          <tr><td>Total due</td><td>₹${totalAmount.toLocaleString('en-IN')}</td></tr>
+          <tr><td>Collected now</td><td>₹${paidNow.toLocaleString('en-IN')}</td></tr>
+          <tr><td>Balance</td><td>₹${balanceAmount.toLocaleString('en-IN')}</td></tr>
+          <tr><td>Plan</td><td>${planLabel}</td></tr>
           <tr><td>Mode</td><td>${admission.paymentMode || ''}</td></tr>
           <tr><td>Date</td><td>${date ? date.toLocaleString() : ''}</td></tr>
         </table>
@@ -1275,7 +1464,7 @@ export default function AdminManagerPortal() {
         <title>Admission Manager Portal</title>
       </Head>
 
-      <header className="relative overflow-hidden border-b border-white/60 bg-white/80 shadow-sm backdrop-blur-xl">
+      <header className="relative z-30 overflow-hidden border-b border-white/60 bg-white/80 shadow-sm backdrop-blur-xl">
         <div className="absolute -left-16 top-0 h-32 w-32 rounded-full bg-cardinal/10 blur-3xl" aria-hidden="true" />
         <div className="absolute right-0 top-0 h-28 w-44 rounded-full bg-indigo-200/30 blur-3xl" aria-hidden="true" />
         <div className="relative mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
@@ -1316,7 +1505,7 @@ export default function AdminManagerPortal() {
                 </svg>
               </button>
               {settingsOpen && (
-                <div className="absolute right-0 z-20 mt-2 w-[min(440px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
+                <div className="absolute right-0 z-40 mt-2 w-[min(440px,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl">
                   <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Settings</p>
@@ -1555,26 +1744,42 @@ export default function AdminManagerPortal() {
                         <th className="px-4 py-3 text-left">Student</th>
                         <th className="px-4 py-3 text-left">Class</th>
                         <th className="px-4 py-3 text-left">Linked registration</th>
+                        <th className="px-4 py-3 text-left">Plan & balance</th>
                         <th className="px-4 py-3 text-left">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {admissions.map((admission) => (
-                        <tr key={admission.id} className="hover:bg-slate-50/80">
-                          <td className="px-4 py-3">{admission.studentName}</td>
-                          <td className="px-4 py-3">{admission.classAdmitted || '—'}</td>
-                          <td className="px-4 py-3">{admission.registrationId || 'Direct'}</td>
-                          <td className="px-4 py-3 space-x-2 text-xs font-semibold">
-                            <button
-                              type="button"
-                              onClick={() => downloadAdmissionReceipt(admission)}
-                              className="rounded-lg border border-slate-200 px-3 py-1 text-slate-700 hover:bg-slate-50"
-                            >
-                              Admission receipt
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                      {admissions.map((admission) => {
+                        const totalDue = Number(admission.totalAmountDue ?? admission.totalAmount ?? 0);
+                        const paidNow = Number(admission.amountPaid ?? admission.amount ?? 0);
+                        const balance = Number(admission.balanceAmount ?? Math.max(totalDue - paidNow, 0));
+                        return (
+                          <tr key={admission.id} className="hover:bg-slate-50/80">
+                            <td className="px-4 py-3">{admission.studentName}</td>
+                            <td className="px-4 py-3">{admission.classAdmitted || '—'}</td>
+                            <td className="px-4 py-3">{admission.registrationId || 'Direct'}</td>
+                            <td className="px-4 py-3 space-y-1 text-xs text-slate-600">
+                              <p className="font-semibold text-slate-800">
+                                {admission.paymentPlan === 'staggered'
+                                  ? '50-25-25'
+                                  : admission.paymentPlan === 'half'
+                                    ? '50-50'
+                                    : 'Full'}
+                              </p>
+                              <p>Balance: ₹{balance.toLocaleString('en-IN')}</p>
+                            </td>
+                            <td className="px-4 py-3 space-x-2 text-xs font-semibold">
+                              <button
+                                type="button"
+                                onClick={() => downloadAdmissionReceipt(admission)}
+                                className="rounded-lg border border-slate-200 px-3 py-1 text-slate-700 hover:bg-slate-50"
+                              >
+                                Admission receipt
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
                       {admissions.length === 0 && (
                         <tr>
                           <td colSpan={4} className="py-6 text-center text-sm text-slate-500">
@@ -1611,6 +1816,7 @@ export default function AdminManagerPortal() {
           ''
         }
         onClose={closePaymentModal}
+        paymentPlans={paymentModal.plans || []}
         onComplete={async (info) => {
           await handlePaymentComplete(info);
           closePaymentModal();
