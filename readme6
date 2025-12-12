@@ -7,3 +7,4 @@
   - `admissionFeeAmount`, `kitChargeAmount`, `totalAmountDue`, `amountPaid`, `balanceAmount`, `paymentPlan`, and `remainingInstallments`.
   - Payments created for admissions also store `total_amount`, `balance_after`, `payment_plan`, `admission_amount`, and `kit_amount`.
 - No Firebase config or security rule changes are required at this time; existing authenticated read/write rules already cover the new fields and collections.
+ - Registration payments continue to charge only the class-wise registration fee set in the admission manager; admissions combine the admission fee plus kit charges from the accountant portal settings. No Firebase config or security rule changes are required at this time.

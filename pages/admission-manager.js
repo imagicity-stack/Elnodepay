@@ -443,7 +443,16 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
   );
 };
 
-const PaymentModal = ({ open, title, amount, studentName, onClose, onComplete, paymentPlans = [] }) => {
+const PaymentModal = ({
+  open,
+  title,
+  amount,
+  studentName,
+  onClose,
+  onComplete,
+  paymentPlans = [],
+  summaryLabel = 'Total due',
+}) => {
   const [mode, setMode] = useState('online');
   const [onlineMethod, setOnlineMethod] = useState('now');
   const [reference, setReference] = useState('');
@@ -464,6 +473,7 @@ const PaymentModal = ({ open, title, amount, studentName, onClose, onComplete, p
           ],
     [paymentPlans],
   );
+  const hasPlans = plans.length > 1;
   const [selectedPlanId, setSelectedPlanId] = useState(plans[0]?.id || 'full');
 
   useEffect(() => {
@@ -618,7 +628,7 @@ const PaymentModal = ({ open, title, amount, studentName, onClose, onComplete, p
         <div className="px-6 py-5 text-sm text-slate-700">
           <p className="text-sm text-slate-600">Choose how you want to collect the amount.</p>
 
-          {plans.length > 0 && (
+          {hasPlans && (
             <div className="mt-4 space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Payment plan</p>
               <div className="space-y-2">
@@ -646,28 +656,29 @@ const PaymentModal = ({ open, title, amount, studentName, onClose, onComplete, p
                   </label>
                 ))}
               </div>
-              <div className="rounded-lg bg-white px-3 py-2 text-xs text-slate-600">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="font-semibold text-slate-700">Total (admission + kit)</span>
-                  <span className="font-semibold">₹{numericAmount.toLocaleString('en-IN')}</span>
-                </div>
-                <div className="mt-1 flex items-center justify-between gap-3">
-                  <span className="text-slate-500">Collect now</span>
-                  <span className="font-semibold text-cardinal">₹{payableAmount.toLocaleString('en-IN')}</span>
-                </div>
-                {planRemainder.length > 0 && (
-                  <ul className="mt-2 space-y-1">
-                    {planRemainder.map((installment) => (
-                      <li key={installment.id} className="flex items-center justify-between gap-2">
-                        <span className="text-slate-500">{installment.label} ({installment.due})</span>
-                        <span className="font-semibold text-amber-600">₹{installment.amount.toLocaleString('en-IN')}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
             </div>
           )}
+
+          <div className="mt-4 rounded-lg bg-white px-3 py-2 text-xs text-slate-600">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-semibold text-slate-700">{summaryLabel}</span>
+              <span className="font-semibold">₹{numericAmount.toLocaleString('en-IN')}</span>
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-3">
+              <span className="text-slate-500">Collect now</span>
+              <span className="font-semibold text-cardinal">₹{payableAmount.toLocaleString('en-IN')}</span>
+            </div>
+            {planRemainder.length > 0 && (
+              <ul className="mt-2 space-y-1">
+                {planRemainder.map((installment) => (
+                  <li key={installment.id} className="flex items-center justify-between gap-2">
+                    <span className="text-slate-500">{installment.label} ({installment.due})</span>
+                    <span className="font-semibold text-amber-600">₹{installment.amount.toLocaleString('en-IN')}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
 
           <div className="mt-4 space-y-2">
             <label className="text-xs font-semibold text-slate-500" htmlFor="payment-mode">
@@ -1464,7 +1475,7 @@ export default function AdminManagerPortal() {
         <title>Admission Manager Portal</title>
       </Head>
 
-      <header className="relative z-30 overflow-hidden border-b border-white/60 bg-white/80 shadow-sm backdrop-blur-xl">
+      <header className="relative z-50 overflow-visible border-b border-white/60 bg-white/80 shadow-sm backdrop-blur-xl">
         <div className="absolute -left-16 top-0 h-32 w-32 rounded-full bg-cardinal/10 blur-3xl" aria-hidden="true" />
         <div className="absolute right-0 top-0 h-28 w-44 rounded-full bg-indigo-200/30 blur-3xl" aria-hidden="true" />
         <div className="relative mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
@@ -1817,6 +1828,7 @@ export default function AdminManagerPortal() {
         }
         onClose={closePaymentModal}
         paymentPlans={paymentModal.plans || []}
+        summaryLabel={paymentModal.type === 'admission' ? 'Total (admission + kit)' : 'Registration fee'}
         onComplete={async (info) => {
           await handlePaymentComplete(info);
           closePaymentModal();
