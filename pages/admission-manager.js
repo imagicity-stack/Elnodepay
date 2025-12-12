@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Head from 'next/head';
 import Image from 'next/image';
 import { useRouter } from 'next/router';
@@ -7,15 +7,19 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
+  limit,
   runTransaction,
   serverTimestamp,
   setDoc,
   updateDoc,
+  where,
 } from 'firebase/firestore';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { getApps, initializeApp } from 'firebase/app';
+import { createUserWithEmailAndPassword, getAuth as getFirebaseAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
 
 const CLASS_OPTIONS = ['Nursery', 'UKG', 'LKG', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -1152,6 +1156,7 @@ export default function AdminManagerPortal() {
     new: buildDefaultSuperAdminCharges(true),
     old: buildDefaultSuperAdminCharges(false),
   });
+  const secondaryAuthRef = useRef(null);
   const [creatingInquiry, setCreatingInquiry] = useState(false);
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
   const [paymentModal, setPaymentModal] = useState({ open: false, title: '', amount: 0, context: null, type: null });
@@ -1187,6 +1192,16 @@ export default function AdminManagerPortal() {
     (className) => superAdminCharges.new?.[className]?.kitCharges ?? 0,
     [superAdminCharges],
   );
+
+  useEffect(() => {
+    if (!secondaryAuthRef.current) {
+      const parentApp = auth.app;
+      const existing = getApps().find((app) => app.name === 'secondary');
+      const secondaryApp = existing || initializeApp(parentApp.options, 'secondary');
+      secondaryAuthRef.current = getFirebaseAuth(secondaryApp);
+    }
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       if (!currentUser) {
@@ -1330,6 +1345,67 @@ export default function AdminManagerPortal() {
     });
   };
 
+  const ensureParentAccount = useCallback(
+    async (email, details = {}) => {
+      if (!email) return null;
+      const parentQuery = query(collection(db, 'users'), where('email', '==', email), limit(1));
+      const existing = await getDocs(parentQuery);
+      if (!existing.empty) {
+        const existingId = existing.docs[0].id;
+        if (details.name || details.phone) {
+          const updates = {};
+          if (details.name) updates.name = details.name;
+          if (details.phone) updates.contactNumber = details.phone;
+          if (Object.keys(updates).length > 0) {
+            await setDoc(doc(db, 'users', existingId), updates, { merge: true });
+          }
+        }
+        return existingId;
+      }
+
+      if (!secondaryAuthRef.current) {
+        return null;
+      }
+
+      try {
+        const defaultPassword = 'elnparent123';
+        const parentAuth = secondaryAuthRef.current;
+        const credentials = await createUserWithEmailAndPassword(parentAuth, email, defaultPassword);
+        await setDoc(
+          doc(db, 'users', credentials.user.uid),
+          {
+            email,
+            name: details.name || email.split('@')[0],
+            role: 'parent',
+            contactNumber: details.phone || '',
+            created_at: serverTimestamp(),
+          },
+          { merge: true },
+        );
+        return credentials.user.uid;
+      } catch (error) {
+        if (error?.code === 'auth/email-already-in-use') {
+          const recheck = await getDocs(parentQuery);
+          if (!recheck.empty) {
+            const existingId = recheck.docs[0].id;
+            if (details.name || details.phone) {
+              const updates = {};
+              if (details.name) updates.name = details.name;
+              if (details.phone) updates.contactNumber = details.phone;
+              if (Object.keys(updates).length > 0) {
+                await setDoc(doc(db, 'users', existingId), updates, { merge: true });
+              }
+            }
+            return existingId;
+          }
+        }
+        console.warn('Parent account creation skipped', error);
+        return null;
+      }
+    },
+    [],
+  );
+
   const handleSubmitStudent = async (event) => {
     event.preventDefault();
     setStudentSubmitting(true);
@@ -1348,6 +1424,9 @@ export default function AdminManagerPortal() {
       const resolvedSession = studentModal.admissionType === 'new' ? activeAcademicYear : 'old';
       const parentEmail = (studentForm.parentEmail || '').trim().toLowerCase();
       const parentPhone = (studentForm.parentPhone || '').trim();
+      if (parentEmail) {
+        await ensureParentAccount(parentEmail, { name: studentForm.parentName, phone: parentPhone });
+      }
       const studentPayload = {
         studentId: schoolNumber,
         school_number: schoolNumber,
@@ -1380,6 +1459,50 @@ export default function AdminManagerPortal() {
           status: 'onboarded',
           onboardedAt: serverTimestamp(),
         });
+
+        const paymentQuery = query(collection(db, 'payments'), where('admission_id', '==', studentModal.admission.id));
+        const paymentSnapshot = await getDocs(paymentQuery);
+        const admissionAmount = Number(studentModal.admission?.admissionFeeAmount ?? 0);
+        const kitAmount = Number(studentModal.admission?.kitChargeAmount ?? 0);
+        await Promise.all(
+          paymentSnapshot.docs.map(async (docSnap) => {
+            const paymentData = docSnap.data();
+            const currentBreakdown = Array.isArray(paymentData.breakdown) ? paymentData.breakdown : [];
+            const paidAmount = Number(paymentData.amount ?? 0);
+            const admissionPortion = Math.min(paidAmount, admissionAmount);
+            const kitPortion = Math.min(Math.max(paidAmount - admissionPortion, 0), kitAmount);
+            const breakdown = currentBreakdown.length
+              ? currentBreakdown
+              : [
+                  admissionPortion > 0
+                    ? {
+                        label: 'Admission charges (collected on admission)',
+                        amount: admissionPortion,
+                      }
+                    : null,
+                  kitPortion > 0
+                    ? {
+                        label: 'Kit charges (collected on admission)',
+                        amount: kitPortion,
+                      }
+                    : null,
+                ].filter(Boolean);
+
+            await setDoc(
+              doc(db, 'payments', docSnap.id),
+              {
+                studentId: schoolNumber,
+                student_doc_id: studentRef.id,
+                student_class: studentForm.classApplied,
+                student_name: studentForm.studentName,
+                fee_type: paymentData.fee_type || 'Admission',
+                term: paymentData.term || 'Admission',
+                breakdown,
+              },
+              { merge: true },
+            );
+          }),
+        );
       }
 
       alert('Student profile created successfully.');
@@ -1481,6 +1604,7 @@ export default function AdminManagerPortal() {
     const totalAmount = Number(paymentInfo.totalAmount ?? baseData.totalAmount ?? paymentInfo.amount ?? 0);
     const collectedAmount = Number(paymentInfo.amount ?? 0);
     const paymentPlan = paymentInfo.planId || 'full';
+    const planMeta = ADMISSION_PAYMENT_PLANS.find((plan) => plan.id === paymentPlan);
     const remainingInstallments = (paymentInfo.planRemainder || []).map((entry) => ({
       id: entry.id,
       label: entry.label,
@@ -1490,6 +1614,16 @@ export default function AdminManagerPortal() {
       status: 'pending',
     }));
     const balanceAmount = Math.max(totalAmount - collectedAmount, 0);
+    const admissionPortion = Math.min(collectedAmount, Number(baseData.admissionFeeAmount ?? 0));
+    const kitPortion = Math.min(Math.max(collectedAmount - admissionPortion, 0), Number(baseData.kitChargeAmount ?? 0));
+    const breakdown = [
+      admissionPortion > 0
+        ? { label: `Admission charges${paymentPlan === 'full' ? '' : ' (upfront)'}`, amount: admissionPortion }
+        : null,
+      kitPortion > 0
+        ? { label: `Kit charges${paymentPlan === 'full' ? '' : ' (upfront)'}`, amount: kitPortion }
+        : null,
+    ].filter(Boolean);
     const admissionPayload = {
       ...baseData,
       admissionFeeAmount: baseData.admissionFeeAmount ?? 0,
@@ -1517,16 +1651,22 @@ export default function AdminManagerPortal() {
       admission_id: docRef.id,
       registration_id: baseData.registrationId || null,
       student_name: baseData.studentName,
+      class: baseData.classAdmitted,
       amount: collectedAmount,
       total_amount: totalAmount,
       balance_after: balanceAmount,
       payment_plan: paymentPlan,
+      payment_plan_label: planMeta?.label || 'Admission payment',
       admission_amount: baseData.admissionFeeAmount ?? null,
       kit_amount: baseData.kitChargeAmount ?? null,
       mode: paymentInfo.mode,
       method: paymentInfo.method,
       reference: paymentInfo.reference,
       type: 'admission',
+      fee_type: 'Admission',
+      term: 'Admission',
+      breakdown,
+      description: planMeta?.description || 'Admission charges collected',
       date: serverTimestamp(),
     });
   }, []);
