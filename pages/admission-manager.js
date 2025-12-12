@@ -795,106 +795,6 @@ const RegistrationForm = ({ onSubmit, academicYears, activeAcademicYear, submitt
     </form>
   );
 };
-const AdmissionForm = ({ onSubmit, submitting, registrations }) => {
-  const [form, setForm] = useState({
-    studentName: '',
-    classAdmitted: '',
-    parentName: '',
-    parentPhone: '',
-    registrationId: '',
-    notes: '',
-  });
-
-  const handleChange = (event) => {
-    const { name, value } = event.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleSubmit = (event) => {
-    event.preventDefault();
-    onSubmit(form, () =>
-      setForm({ studentName: '', classAdmitted: '', parentName: '', parentPhone: '', registrationId: '', notes: '' }),
-    );
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm md:p-6">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <input
-          name="studentName"
-          value={form.studentName}
-          onChange={handleChange}
-          placeholder="Student name"
-          required
-          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-        />
-        <select
-          name="classAdmitted"
-          value={form.classAdmitted}
-          onChange={handleChange}
-          required
-          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-        >
-          <option value="">Class admitted</option>
-          {CLASS_OPTIONS.map((classOption) => (
-            <option key={classOption} value={classOption}>
-              {classOption}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <input
-          name="parentName"
-          value={form.parentName}
-          onChange={handleChange}
-          placeholder="Parent/Guardian name"
-          required
-          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-        />
-        <input
-          name="parentPhone"
-          value={form.parentPhone}
-          onChange={handleChange}
-          placeholder="Mobile number"
-          required
-          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-        />
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <select
-          name="registrationId"
-          value={form.registrationId}
-          onChange={handleChange}
-          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-        >
-          <option value="">Link registration (optional)</option>
-          {registrations.map((reg) => (
-            <option key={reg.id} value={reg.id}>
-              {reg.studentName} · Class {reg.classApplied || reg.classAdmitted || '—'}
-            </option>
-          ))}
-        </select>
-        <input
-          name="notes"
-          value={form.notes}
-          onChange={handleChange}
-          placeholder="Notes"
-          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
-        />
-      </div>
-      <div className="flex justify-end">
-        <button
-          type="submit"
-          disabled={submitting}
-          className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:opacity-60"
-        >
-          {submitting ? 'Preparing payment...' : 'Create & collect admission'}
-        </button>
-      </div>
-    </form>
-  );
-};
 const MobileTabScroller = ({ tabs, active, onChange }) => (
   <div className="flex gap-2 overflow-x-auto pb-4 sm:hidden" role="tablist" aria-label="Admissions navigation">
     {tabs.map((tab) => (
@@ -955,7 +855,6 @@ export default function AdminManagerPortal() {
   const [savingFees, setSavingFees] = useState(false);
   const [creatingInquiry, setCreatingInquiry] = useState(false);
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
-  const [admissionSubmitting, setAdmissionSubmitting] = useState(false);
   const [paymentModal, setPaymentModal] = useState({ open: false, title: '', amount: 0, context: null, type: null });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsMenuRef = useRef(null);
@@ -1180,6 +1079,9 @@ export default function AdminManagerPortal() {
       amountPaid: paymentInfo.amount,
     };
     const docRef = await addDoc(collection(db, 'admissions'), admissionPayload);
+    if (baseData.registrationId) {
+      await updateDoc(doc(db, 'registrations', baseData.registrationId), { admissionStatus: 'admitted' });
+    }
     await addDoc(collection(db, 'payments'), {
       admission_id: docRef.id,
       registration_id: baseData.registrationId || null,
@@ -1217,22 +1119,23 @@ export default function AdminManagerPortal() {
     setRegistrationSubmitting(true);
   };
 
-  const startAdmissionFlow = (form, reset) => {
-    const amount = getAdmissionFee(form.classAdmitted);
-    setPaymentModal({
-      open: true,
-      title: 'Admission payment',
-      amount,
-      context: { form, reset },
-      type: 'admission',
-    });
-    setAdmissionSubmitting(true);
-  };
+  const startAdmissionFromRegistration = useCallback(
+    (registration) => {
+      const amount = getAdmissionFee(registration.classApplied || registration.classAdmitted);
+      setPaymentModal({
+        open: true,
+        title: 'Admission payment',
+        amount,
+        context: { registration },
+        type: 'admission',
+      });
+    },
+    [getAdmissionFee],
+  );
 
   const closePaymentModal = () => {
     setPaymentModal({ open: false, title: '', amount: 0, context: null, type: null });
     setRegistrationSubmitting(false);
-    setAdmissionSubmitting(false);
   };
 
   const handlePaymentComplete = async (paymentInfo) => {
@@ -1259,9 +1162,18 @@ export default function AdminManagerPortal() {
       if (reset) reset();
     }
     if (paymentModal.type === 'admission') {
-      const { form, reset } = paymentModal.context;
-      await handleAdmissionPayment(paymentInfo, form);
-      if (reset) reset();
+      const { registration } = paymentModal.context;
+      if (!registration) return;
+      const baseData = {
+        studentName: registration.studentName,
+        classAdmitted: registration.classApplied || registration.classAdmitted || '',
+        parentName: registration.parentName,
+        parentPhone: registration.parentPhone,
+        registrationId: registration.id,
+        notes: registration.notes || '',
+        academicYear: registration.academicYear || '',
+      };
+      await handleAdmissionPayment(paymentInfo, baseData);
     }
   };
   const downloadRegistrationReceipt = (registration) => {
@@ -1303,6 +1215,11 @@ export default function AdminManagerPortal() {
       `,
     );
   };
+
+  const admittedRegistrationIds = useMemo(
+    () => new Set(admissions.filter((item) => item.registrationId).map((item) => item.registrationId)),
+    [admissions],
+  );
 
   const handleSignOut = useCallback(async () => {
     await signOut(auth);
@@ -1582,6 +1499,14 @@ export default function AdminManagerPortal() {
                           <td className="px-4 py-3 space-x-2 text-xs font-semibold">
                             <button
                               type="button"
+                              onClick={() => startAdmissionFromRegistration(item)}
+                              disabled={admittedRegistrationIds.has(item.id)}
+                              className="rounded-lg border border-slate-200 px-3 py-1 text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                            >
+                              {admittedRegistrationIds.has(item.id) ? 'Admission completed' : 'Proceed for admission'}
+                            </button>
+                            <button
+                              type="button"
                               onClick={() => downloadRegistrationReceipt(item)}
                               className="rounded-lg border border-slate-200 px-3 py-1 text-slate-700 hover:bg-slate-50"
                             >
@@ -1614,68 +1539,61 @@ export default function AdminManagerPortal() {
           </div>
         )}
         {activeTab === 'admission' && (
-          <div className="space-y-4">
-            <div className="grid gap-4 lg:grid-cols-3">
-              <div className="lg:col-span-2 space-y-4">
-                <AdmissionForm
-                  onSubmit={startAdmissionFlow}
-                  submitting={admissionSubmitting}
-                  registrations={registrations}
-                />
-                <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Admissions</p>
-                      <h3 className="text-xl font-semibold text-slate-900">Paid students</h3>
-                    </div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="lg:col-span-2 space-y-4">
+              <div className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Admissions</p>
+                    <h3 className="text-xl font-semibold text-slate-900">Admitted students</h3>
                   </div>
-                  <div className="mt-4 overflow-x-auto">
-                    <table className="min-w-full divide-y divide-slate-200 text-sm">
-                      <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                        <tr>
-                          <th className="px-4 py-3 text-left">Student</th>
-                          <th className="px-4 py-3 text-left">Class</th>
-                          <th className="px-4 py-3 text-left">Linked registration</th>
-                          <th className="px-4 py-3 text-left">Actions</th>
+                </div>
+                <div className="mt-4 overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-sm">
+                    <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3 text-left">Student</th>
+                        <th className="px-4 py-3 text-left">Class</th>
+                        <th className="px-4 py-3 text-left">Linked registration</th>
+                        <th className="px-4 py-3 text-left">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {admissions.map((admission) => (
+                        <tr key={admission.id} className="hover:bg-slate-50/80">
+                          <td className="px-4 py-3">{admission.studentName}</td>
+                          <td className="px-4 py-3">{admission.classAdmitted || '—'}</td>
+                          <td className="px-4 py-3">{admission.registrationId || 'Direct'}</td>
+                          <td className="px-4 py-3 space-x-2 text-xs font-semibold">
+                            <button
+                              type="button"
+                              onClick={() => downloadAdmissionReceipt(admission)}
+                              className="rounded-lg border border-slate-200 px-3 py-1 text-slate-700 hover:bg-slate-50"
+                            >
+                              Admission receipt
+                            </button>
+                          </td>
                         </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {admissions.map((admission) => (
-                          <tr key={admission.id} className="hover:bg-slate-50/80">
-                            <td className="px-4 py-3">{admission.studentName}</td>
-                            <td className="px-4 py-3">{admission.classAdmitted || '—'}</td>
-                            <td className="px-4 py-3">{admission.registrationId || 'Direct'}</td>
-                            <td className="px-4 py-3 space-x-2 text-xs font-semibold">
-                              <button
-                                type="button"
-                                onClick={() => downloadAdmissionReceipt(admission)}
-                                className="rounded-lg border border-slate-200 px-3 py-1 text-slate-700 hover:bg-slate-50"
-                              >
-                                Admission receipt
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                        {admissions.length === 0 && (
-                          <tr>
-                            <td colSpan={4} className="py-6 text-center text-sm text-slate-500">
-                              No admissions yet.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
+                      ))}
+                      {admissions.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="py-6 text-center text-sm text-slate-500">
+                            No admissions yet.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
+            </div>
 
-              <div className="space-y-4">
-                <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Accountant handoff</p>
-                  <p className="mt-2 text-sm">
-                    Every paid admission is listed in the accountant portal under <strong>Admission approval</strong> for manual student creation and to reflect registration and admission fee receipts in payment history.
-                  </p>
-                </div>
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 text-sm text-slate-700">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Accountant handoff</p>
+                <p className="mt-2 text-sm">
+                  Paid admissions flow into the accountant dashboard under <strong>Approve admission</strong>, where the accountant manually creates the student profile and reflects the collected registration and admission fees in payment history.
+                </p>
               </div>
             </div>
           </div>
@@ -1686,7 +1604,12 @@ export default function AdminManagerPortal() {
         open={paymentModal.open}
         title={paymentModal.title}
         amount={paymentModal.amount}
-        studentName={paymentModal.context?.inquiry?.studentName || paymentModal.context?.form?.studentName || ''}
+        studentName={
+          paymentModal.context?.inquiry?.studentName ||
+          paymentModal.context?.form?.studentName ||
+          paymentModal.context?.registration?.studentName ||
+          ''
+        }
         onClose={closePaymentModal}
         onComplete={async (info) => {
           await handlePaymentComplete(info);
