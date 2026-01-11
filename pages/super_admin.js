@@ -182,8 +182,8 @@ const SuperAdminPortal = () => {
     <PortalLayout
       sidebar={
         <>
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
+          <div className="flex items-center gap-3 border border-slate-700/60 bg-slate-900/40 px-4 py-3">
+            <div className="flex h-12 w-12 items-center justify-center border border-slate-700 bg-slate-900/40">
               <Image src="/elnode.png" alt="EL-NODE logo" width={32} height={32} className="h-8 w-8" />
             </div>
             <div>
@@ -191,20 +191,32 @@ const SuperAdminPortal = () => {
               <h1 className="text-xl font-semibold text-white">Central Controls</h1>
             </div>
           </div>
-          <div className="space-y-2 rounded-2xl bg-white/5 p-4">
+          <div className="space-y-2 border border-slate-700/60 bg-slate-900/40 px-4 py-3">
             <p className="text-xs uppercase tracking-wide text-slate-300">Actions</p>
             <button
               type="button"
               onClick={() => setShowStaffModal(true)}
-              className="w-full rounded-xl bg-white/10 px-3 py-2 text-left text-xs font-semibold text-white transition hover:bg-white/20"
+              className="group flex w-full items-center gap-3 border border-transparent px-3 py-2 text-left text-xs font-semibold text-white transition hover:border-slate-600/70 hover:bg-white/5"
             >
+              <img
+                src="/icons/sidebar/settings.svg"
+                alt=""
+                className="h-4 w-4 opacity-80 transition group-hover:opacity-100"
+                aria-hidden="true"
+              />
               Manage Teachers & Staff
             </button>
             <button
               type="button"
               onClick={handleSignOut}
-              className="w-full rounded-xl bg-white/10 px-3 py-2 text-left text-xs font-semibold text-white transition hover:bg-white/20"
+              className="group flex w-full items-center gap-3 border border-transparent px-3 py-2 text-left text-xs font-semibold text-white transition hover:border-slate-600/70 hover:bg-white/5"
             >
+              <img
+                src="/icons/sidebar/logout.svg"
+                alt=""
+                className="h-4 w-4 opacity-80 transition group-hover:opacity-100"
+                aria-hidden="true"
+              />
               Sign out
             </button>
           </div>
@@ -218,16 +230,24 @@ const SuperAdminPortal = () => {
                 key={item.id}
                 type="button"
                 onClick={() => setActiveTab(item.id)}
-                className={`w-full rounded-xl px-4 py-2 text-left text-sm font-semibold transition ${
-                  activeTab === item.id ? 'bg-portal text-white shadow' : 'bg-white/10 text-slate-200 hover:bg-white/20'
+                className={`group flex w-full items-center gap-3 border px-4 py-2 text-left text-sm font-semibold transition ${
+                  activeTab === item.id
+                    ? 'border-portal/70 bg-white/10 text-white'
+                    : 'border-transparent text-slate-200 hover:border-slate-600/70 hover:bg-white/5'
                 }`}
               >
+                <img
+                  src={item.id === 'students' ? '/icons/sidebar/users.svg' : '/icons/sidebar/user-check.svg'}
+                  alt=""
+                  className={`h-4 w-4 transition ${activeTab === item.id ? 'opacity-100' : 'opacity-70 group-hover:opacity-100'}`}
+                  aria-hidden="true"
+                />
                 {item.label}
               </button>
             ))}
           </div>
           {activeTab === 'students' && (
-            <div className="space-y-2 rounded-2xl bg-white/5 p-4">
+            <div className="space-y-2 border border-slate-700/60 bg-slate-900/40 px-4 py-3">
               <p className="text-xs uppercase tracking-wide text-slate-300">Student submenu</p>
               {[
                 { id: 'new', label: 'New admission' },
@@ -237,10 +257,10 @@ const SuperAdminPortal = () => {
                   key={item.id}
                   type="button"
                   onClick={() => setStudentTab(item.id)}
-                  className={`w-full rounded-lg px-3 py-2 text-left text-xs font-semibold transition ${
+                  className={`w-full border px-3 py-2 text-left text-xs font-semibold transition ${
                     studentTab === item.id
-                      ? 'bg-white text-portal shadow'
-                      : 'bg-white/10 text-slate-200 hover:bg-white/20'
+                      ? 'border-portal/70 bg-white/10 text-white'
+                      : 'border-transparent text-slate-200 hover:border-slate-600/70 hover:bg-white/5'
                   }`}
                 >
                   {item.label}

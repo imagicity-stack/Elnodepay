@@ -4394,8 +4394,8 @@ const resolveTransactionMonthLabel = (entry) => {
     <PortalLayout
       sidebar={
         <>
-          <div className="flex items-start gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
+          <div className="flex items-start gap-3 border border-slate-700/60 bg-slate-900/40 px-4 py-3">
+            <div className="flex h-12 w-12 items-center justify-center border border-slate-700 bg-slate-900/40">
               <Image src="/elnode.png" alt="EL-NODE Pay logo" width={32} height={32} className="h-8 w-8" />
             </div>
             <div>
@@ -4406,62 +4406,88 @@ const resolveTransactionMonthLabel = (entry) => {
           </div>
           <div className="space-y-3">
             <p className="text-xs uppercase tracking-wide text-slate-300">Menu</p>
-            {[
-              { id: 'fees', label: 'Fees' },
-              { id: 'salary', label: 'Salary' },
-              { id: 'finances', label: 'Finances' },
-            ].map((section) => (
-              <button
-                key={section.id}
-                type="button"
-                onClick={() => handleSectionChange(section.id)}
-                className={`w-full rounded-xl px-4 py-2 text-left text-sm font-semibold transition ${
-                  activeSection === section.id ? 'bg-portal text-white shadow' : 'bg-white/10 text-slate-200 hover:bg-white/20'
-                }`}
-              >
-                {section.label}
-              </button>
-            ))}
+            <div className="space-y-2">
+              {[
+                { id: 'fees', label: 'Fees', icon: '/icons/sidebar/wallet.svg', items: FEE_NAV_ITEMS },
+                { id: 'salary', label: 'Salary', icon: '/icons/sidebar/banknote.svg', items: SALARY_NAV_ITEMS },
+                { id: 'finances', label: 'Finances', icon: '/icons/sidebar/chart.svg', items: FINANCE_NAV_ITEMS },
+              ].map((section) => (
+                <div key={section.id} className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSectionChange(section.id)}
+                    className={`group flex w-full items-center gap-3 border px-4 py-2 text-left text-sm font-semibold transition ${
+                      activeSection === section.id
+                        ? 'border-portal/70 bg-white/10 text-white'
+                        : 'border-transparent text-slate-200 hover:border-slate-600/70 hover:bg-white/5'
+                    }`}
+                  >
+                    <img
+                      src={section.icon}
+                      alt=""
+                      className={`h-4 w-4 transition ${
+                        activeSection === section.id ? 'opacity-100' : 'opacity-70 group-hover:opacity-100'
+                      }`}
+                      aria-hidden="true"
+                    />
+                    {section.label}
+                  </button>
+                  <div
+                    className={`overflow-hidden transition-all duration-300 ease-out ${
+                      activeSection === section.id ? 'max-h-96 translate-y-0 opacity-100' : 'max-h-0 -translate-y-2 opacity-0'
+                    }`}
+                  >
+                    <div className="space-y-2 border border-slate-700/60 bg-slate-900/40 px-4 py-3">
+                      <p className="text-xs uppercase tracking-wide text-slate-300">{section.label} submenu</p>
+                      {section.items.map((tab) => (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          onClick={() => setActiveTab(tab.id)}
+                          className={`w-full border px-3 py-2 text-left text-xs font-semibold transition ${
+                            activeTab === tab.id
+                              ? 'border-portal/70 bg-white/10 text-white'
+                              : 'border-transparent text-slate-200 hover:border-slate-600/70 hover:bg-white/5'
+                          }`}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
-          <div className="space-y-2 rounded-2xl bg-white/5 p-4">
-            <p className="text-xs uppercase tracking-wide text-slate-300">Submenu</p>
-            {(activeSection === 'finances'
-              ? FINANCE_NAV_ITEMS
-              : activeSection === 'salary'
-                ? SALARY_NAV_ITEMS
-                : FEE_NAV_ITEMS
-            ).map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`w-full rounded-lg px-3 py-2 text-left text-xs font-semibold transition ${
-                  activeTab === tab.id
-                    ? 'bg-white text-portal shadow'
-                    : 'bg-white/10 text-slate-200 hover:bg-white/20'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-          <div className="space-y-2 rounded-2xl bg-white/5 p-4">
+          <div className="space-y-2 border border-slate-700/60 bg-slate-900/40 px-4 py-3">
             <p className="text-xs uppercase tracking-wide text-slate-300">Actions</p>
             {showFeeActions && (
               <>
                 <button
                   type="button"
                   onClick={openReportModal}
-                  className="w-full rounded-xl bg-white/10 px-3 py-2 text-left text-xs font-semibold text-white transition hover:bg-white/20"
+                  className="group flex w-full items-center gap-3 border border-transparent px-3 py-2 text-left text-xs font-semibold text-white transition hover:border-slate-600/70 hover:bg-white/5"
                 >
+                  <img
+                    src="/icons/sidebar/chart.svg"
+                    alt=""
+                    className="h-4 w-4 opacity-80 transition group-hover:opacity-100"
+                    aria-hidden="true"
+                  />
                   Generate Report
                 </button>
                 <button
                   type="button"
                   onClick={handleClearPaymentData}
                   disabled={clearingDemoData}
-                  className="w-full rounded-xl bg-rose-500/10 px-3 py-2 text-left text-xs font-semibold text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="group flex w-full items-center gap-3 border border-transparent bg-rose-500/10 px-3 py-2 text-left text-xs font-semibold text-rose-100 transition hover:border-rose-400/60 hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                 >
+                  <img
+                    src="/icons/sidebar/trash.svg"
+                    alt=""
+                    className="h-4 w-4 opacity-80 transition group-hover:opacity-100"
+                    aria-hidden="true"
+                  />
                   {clearingDemoData ? 'Clearing…' : 'Clear Payment Data'}
                 </button>
               </>
@@ -4469,8 +4495,14 @@ const resolveTransactionMonthLabel = (entry) => {
             <button
               type="button"
               onClick={() => setSignOutConfirmOpen(true)}
-              className="w-full rounded-xl bg-white/10 px-3 py-2 text-left text-xs font-semibold text-white transition hover:bg-white/20"
+              className="group flex w-full items-center gap-3 border border-transparent px-3 py-2 text-left text-xs font-semibold text-white transition hover:border-slate-600/70 hover:bg-white/5"
             >
+              <img
+                src="/icons/sidebar/logout.svg"
+                alt=""
+                className="h-4 w-4 opacity-80 transition group-hover:opacity-100"
+                aria-hidden="true"
+              />
               Sign Out
             </button>
           </div>
