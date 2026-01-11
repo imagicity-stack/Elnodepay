@@ -479,7 +479,7 @@ const Modal = ({ title, children, onClose, size = 'lg' }) => {
         </div>
         <div className="max-h-[70vh] overflow-y-auto px-6 py-4">{children}</div>
       </div>
-    </PortalLayout>
+    </div>
   );
 };
 
