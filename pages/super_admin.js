@@ -6,6 +6,7 @@ import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import StaffSettingsModal from '../components/StaffSettingsModal';
+import PortalLayout from '../components/PortalLayout';
 
 const CLASS_OPTIONS = ['Nursery', 'UKG', 'LKG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
 
@@ -31,23 +32,6 @@ const emptyCharges = {
   old: buildEmptyChargeMap(false),
 };
 
-const Tabs = ({ items, active, onChange }) => (
-  <div className="flex flex-wrap gap-2" role="tablist">
-    {items.map((tab) => (
-      <button
-        key={tab.id}
-        type="button"
-        onClick={() => onChange(tab.id)}
-        className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-          active === tab.id ? 'bg-cardinal text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-        }`}
-      >
-        {tab.label}
-      </button>
-    ))}
-  </div>
-);
-
 const ChargeEditor = ({ label, charges, onChange, extraFields = false }) => {
   const [activeClass, setActiveClass] = useState(CLASS_OPTIONS[0]);
   const fields = [
@@ -69,7 +53,7 @@ const ChargeEditor = ({ label, charges, onChange, extraFields = false }) => {
           <h3 className="text-lg font-semibold text-slate-900">Class-wise structure</h3>
           <p className="text-xs text-slate-500">Update default fee heads for this admission path.</p>
         </div>
-        <span className="rounded-full bg-cardinal/10 px-3 py-1 text-[11px] font-semibold text-cardinal">Auto-save</span>
+        <span className="rounded-full bg-portal/10 px-3 py-1 text-[11px] font-semibold text-portal">Auto-save</span>
       </div>
       <div className="flex flex-wrap gap-2">
         {CLASS_OPTIONS.map((className) => (
@@ -79,7 +63,7 @@ const ChargeEditor = ({ label, charges, onChange, extraFields = false }) => {
             onClick={() => setActiveClass(className)}
             className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
               activeClass === className
-                ? 'bg-cardinal text-white shadow'
+                ? 'bg-portal text-white shadow'
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
           >
@@ -98,7 +82,7 @@ const ChargeEditor = ({ label, charges, onChange, extraFields = false }) => {
               onChange={(event) =>
                 onChange(activeClass, field.id, Number(event.target.value) || 0)
               }
-              className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             />
           </label>
         ))}
@@ -186,7 +170,7 @@ const SuperAdminPortal = () => {
 
   if (!authChecked) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white text-cardinal">
+      <div className="flex min-h-screen items-center justify-center bg-white text-portal">
         <p className="text-sm font-semibold">Loading super admin portal…</p>
       </div>
     );
@@ -195,59 +179,85 @@ const SuperAdminPortal = () => {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-rose-50 via-white to-slate-50">
-      <Head>
-        <title>Super Admin Portal</title>
-      </Head>
-      <header className="border-b border-white/60 bg-white/80 shadow-sm backdrop-blur-xl">
-        <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
+    <PortalLayout
+      sidebar={
+        <>
           <div className="flex items-center gap-3">
-            <Image src="/elnode.png" alt="EL-NODE logo" width={40} height={40} className="h-10 w-10" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
+              <Image src="/elnode.png" alt="EL-NODE logo" width={32} height={32} className="h-8 w-8" />
+            </div>
             <div>
-              <p className="text-xs uppercase tracking-wide text-slate-500">Super Admin</p>
-              <h1 className="text-xl font-semibold text-slate-900">Central Controls</h1>
+              <p className="text-xs uppercase tracking-wide text-slate-300">Super Admin</p>
+              <h1 className="text-xl font-semibold text-white">Central Controls</h1>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="space-y-2 rounded-2xl bg-white/5 p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-300">Actions</p>
             <button
               type="button"
               onClick={() => setShowStaffModal(true)}
-              className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+              className="w-full rounded-xl bg-white/10 px-3 py-2 text-left text-xs font-semibold text-white transition hover:bg-white/20"
             >
               Manage Teachers & Staff
             </button>
             <button
               type="button"
               onClick={handleSignOut}
-              className="rounded-xl border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+              className="w-full rounded-xl bg-white/10 px-3 py-2 text-left text-xs font-semibold text-white transition hover:bg-white/20"
             >
               Sign out
             </button>
           </div>
-        </div>
-        <div className="mx-auto max-w-6xl px-4 pb-4">
-          <Tabs
-            items={[
+          <div className="space-y-3">
+            <p className="text-xs uppercase tracking-wide text-slate-300">Menu</p>
+            {[
               { id: 'students', label: 'Students' },
               { id: 'teachers', label: 'Teachers' },
-            ]}
-            active={activeTab}
-            onChange={setActiveTab}
-          />
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
-        {activeTab === 'students' && (
-          <div className="space-y-4">
-            <Tabs
-              items={[
+            ].map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveTab(item.id)}
+                className={`w-full rounded-xl px-4 py-2 text-left text-sm font-semibold transition ${
+                  activeTab === item.id ? 'bg-portal text-white shadow' : 'bg-white/10 text-slate-200 hover:bg-white/20'
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          {activeTab === 'students' && (
+            <div className="space-y-2 rounded-2xl bg-white/5 p-4">
+              <p className="text-xs uppercase tracking-wide text-slate-300">Student submenu</p>
+              {[
                 { id: 'new', label: 'New admission' },
                 { id: 'old', label: 'Old admission' },
-              ]}
-              active={studentTab}
-              onChange={setStudentTab}
-            />
+              ].map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setStudentTab(item.id)}
+                  className={`w-full rounded-lg px-3 py-2 text-left text-xs font-semibold transition ${
+                    studentTab === item.id
+                      ? 'bg-white text-portal shadow'
+                      : 'bg-white/10 text-slate-200 hover:bg-white/20'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </>
+      }
+    >
+      <Head>
+        <title>Super Admin Portal</title>
+      </Head>
+
+      <div className="space-y-6">
+        {activeTab === 'students' && (
+          <div className="space-y-4">
             {loadingCharges ? (
               <div className="rounded-3xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
                 Loading fee settings…
@@ -263,7 +273,7 @@ const SuperAdminPortal = () => {
               />
             )}
             {saving && (
-              <p className="text-xs font-semibold text-cardinal">Saving changes…</p>
+              <p className="text-xs font-semibold text-portal">Saving changes…</p>
             )}
           </div>
         )}
@@ -279,7 +289,7 @@ const SuperAdminPortal = () => {
               <button
                 type="button"
                 onClick={() => setShowStaffModal(true)}
-                className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
+                className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90"
               >
                 Add teacher / staff
               </button>
@@ -290,7 +300,7 @@ const SuperAdminPortal = () => {
             </p>
           </div>
         )}
-      </main>
+      </div>
 
       <StaffSettingsModal
         open={showStaffModal}
@@ -303,7 +313,7 @@ const SuperAdminPortal = () => {
           {roleError}
         </div>
       )}
-    </div>
+    </PortalLayout>
   );
 };
 

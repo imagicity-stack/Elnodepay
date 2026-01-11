@@ -5,6 +5,7 @@ import { useRouter } from 'next/router';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { collection, doc, getDoc, getDocs, limit, orderBy, query, where } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import PortalLayout from '../components/PortalLayout';
 import { SalarySlip } from '../components/SalaryModule';
 
 const formatCurrency = (value = 0) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
@@ -86,7 +87,7 @@ const SalarySlipPreview = ({ open, salary, staff, onClose }) => {
             <button
               type="button"
               onClick={() => window.print()}
-              className="rounded-lg border border-cardinal px-3 py-1.5 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
+              className="rounded-lg border border-portal px-3 py-1.5 text-sm font-semibold text-portal transition hover:bg-portal/10"
             >
               Print / PDF
             </button>
@@ -288,11 +289,11 @@ const StaffDashboard = () => {
 
   if (!authChecked) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white text-cardinal">
+      <div className="flex min-h-screen items-center justify-center bg-white text-portal">
         <Head>
           <title>Staff Portal</title>
         </Head>
-        <span className="h-8 w-8 animate-spin rounded-full border-2 border-cardinal/40 border-t-cardinal" />
+        <span className="h-8 w-8 animate-spin rounded-full border-2 border-portal/40 border-t-portal" />
       </div>
     );
   }
@@ -323,7 +324,7 @@ const StaffDashboard = () => {
                 type="email"
                 value={loginState.email}
                 onChange={(event) => setLoginState((prev) => ({ ...prev, email: event.target.value }))}
-                className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 required
               />
             </label>
@@ -333,7 +334,7 @@ const StaffDashboard = () => {
                 type="password"
                 value={loginState.password}
                 onChange={(event) => setLoginState((prev) => ({ ...prev, password: event.target.value }))}
-                className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 required
               />
             </label>
@@ -341,7 +342,7 @@ const StaffDashboard = () => {
             <button
               type="submit"
               disabled={loginState.loading}
-              className="w-full rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed"
+              className="w-full rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed"
             >
               {loginState.loading ? 'Signing in…' : 'Sign In'}
             </button>
@@ -352,37 +353,41 @@ const StaffDashboard = () => {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-rose-50 via-white to-slate-50">
-      <Head>
-        <title>Staff Dashboard · EL-NODE Pay</title>
-      </Head>
-      <header className="relative overflow-hidden border-b border-white/60 bg-white/80 shadow-sm backdrop-blur-xl">
-        <div className="absolute -left-10 top-0 h-32 w-32 rounded-full bg-cardinal/10 blur-3xl" aria-hidden="true" />
-        <div className="absolute right-2 top-2 h-28 w-40 rounded-full bg-indigo-200/30 blur-3xl" aria-hidden="true" />
-        <div className="relative mx-auto flex max-w-6xl items-center justify-between px-6 py-5">
+    <PortalLayout
+      sidebar={
+        <>
           <div className="flex items-center gap-3">
-            <Image src="/elnode.png" alt="EL-NODE Pay" width={48} height={48} />
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
+              <Image src="/elnode.png" alt="EL-NODE Pay" width={32} height={32} className="h-8 w-8" />
+            </div>
             <div>
-              <h1 className="text-2xl font-semibold text-slate-900">Staff Dashboard</h1>
-              <p className="text-sm text-slate-600">View your profile, attendance, and salary slips.</p>
+              <p className="text-xs uppercase tracking-wide text-slate-300">Staff</p>
+              <h1 className="text-xl font-semibold text-white">Dashboard</h1>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="rounded-full bg-cardinal/10 px-3 py-1 text-xs font-semibold text-cardinal">
-              Staff access
-            </div>
+          <div className="rounded-2xl bg-white/5 p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-300">Access</p>
+            <p className="mt-2 text-sm font-semibold text-white">{staffDoc?.fullName || 'Staff access'}</p>
+            <p className="text-xs text-slate-300">{staffDoc?.staffId || 'Active staff member'}</p>
+          </div>
+          <div className="space-y-2 rounded-2xl bg-white/5 p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-300">Quick actions</p>
             <button
               type="button"
               onClick={handleSignOut}
-              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              className="w-full rounded-xl bg-white/10 px-3 py-2 text-left text-xs font-semibold text-white transition hover:bg-white/20"
             >
               Sign Out
             </button>
           </div>
-        </div>
-      </header>
+        </>
+      }
+    >
+      <Head>
+        <title>Staff Dashboard · EL-NODE Pay</title>
+      </Head>
 
-      <main className="mx-auto max-w-6xl px-6 py-8 space-y-6">
+      <div className="space-y-6">
         <section className="grid gap-4 md:grid-cols-2">
           <div className="space-y-3 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <h3 className="text-lg font-semibold text-slate-900">Profile</h3>
@@ -478,7 +483,7 @@ const StaffDashboard = () => {
                       <button
                         type="button"
                         onClick={() => setSlipContext({ open: true, salary: row })}
-                        className="rounded-lg border border-cardinal px-3 py-1.5 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
+                        className="rounded-lg border border-portal px-3 py-1.5 text-xs font-semibold text-portal transition hover:bg-portal/10"
                       >
                         View Slip
                       </button>
@@ -496,7 +501,7 @@ const StaffDashboard = () => {
             </table>
           </div>
         </section>
-      </main>
+      </div>
 
       <SalarySlipPreview
         open={slipContext.open}
@@ -504,7 +509,7 @@ const StaffDashboard = () => {
         staff={staffDoc}
         onClose={() => setSlipContext({ open: false, salary: null })}
       />
-    </div>
+    </PortalLayout>
   );
 };
 

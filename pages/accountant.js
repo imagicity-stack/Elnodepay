@@ -47,6 +47,7 @@ import { auth, db } from '../lib/firebase';
 import { getCollectionsInRange, groupByMonth, makeExpenseId, makeVoucherNo } from '../lib/reports';
 import { toCSV } from '../lib/csv';
 import SalaryModule from '../components/SalaryModule';
+import PortalLayout from '../components/PortalLayout';
 
 ChartJS.register(
   ArcElement,
@@ -478,7 +479,7 @@ const Modal = ({ title, children, onClose, size = 'lg' }) => {
         </div>
         <div className="max-h-[70vh] overflow-y-auto px-6 py-4">{children}</div>
       </div>
-    </div>
+    </PortalLayout>
   );
 };
 
@@ -501,7 +502,7 @@ const StudentFormModal = ({
             value={formState.studentId}
             onChange={onChange}
             readOnly
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             placeholder="Auto-generated after entering years"
           />
           <span className="text-xs font-normal text-slate-500">Generated from year of joining/passing and a unique sequence.</span>
@@ -513,7 +514,7 @@ const StudentFormModal = ({
             value={formState.name}
             onChange={onChange}
             required
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             placeholder="Student name"
           />
         </label>
@@ -524,7 +525,7 @@ const StudentFormModal = ({
             value={formState.class}
             onChange={onChange}
             required
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
           >
             <option value="">Select class</option>
             {CLASS_OPTIONS.map((item) => (
@@ -540,7 +541,7 @@ const StudentFormModal = ({
             name="section"
             value={formState.section}
             onChange={onChange}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             placeholder="A"
           />
         </label>
@@ -552,7 +553,7 @@ const StudentFormModal = ({
             value={formState.year_of_joining}
             onChange={onChange}
             required
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             placeholder="2024"
           />
         </label>
@@ -564,7 +565,7 @@ const StudentFormModal = ({
             value={formState.year_of_passing}
             onChange={onChange}
             required
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             placeholder="2026"
           />
         </label>
@@ -575,8 +576,8 @@ const StudentFormModal = ({
               name="house"
               value={formState.house}
               onChange={onChange}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
-s:ring-2 focus:ring-cardinal/20"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focu
+s:ring-2 focus:ring-portal/20"
             >
               <option value="">No house assigned</option>
               {houseOptions.map((house) => (
@@ -591,8 +592,8 @@ s:ring-2 focus:ring-cardinal/20"
               value={formState.house}
               onChange={onChange}
               placeholder="Add houses from Settings"
-              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
-s:ring-2 focus:ring-cardinal/20"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focu
+s:ring-2 focus:ring-portal/20"
               readOnly
             />
           )}
@@ -604,7 +605,7 @@ s:ring-2 focus:ring-cardinal/20"
             name="student_email"
             value={formState.student_email}
             onChange={onChange}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             placeholder="student@example.com"
           />
           <span className="text-xs font-normal text-slate-500">An account with role student will be prepared for this email.</span>
@@ -616,7 +617,7 @@ s:ring-2 focus:ring-cardinal/20"
             value={formState.parent_phone}
             onChange={onChange}
             placeholder="9876543210"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
           />
         </label>
         <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
@@ -627,7 +628,7 @@ s:ring-2 focus:ring-cardinal/20"
             value={formState.parent_email}
             onChange={onChange}
             required
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             placeholder="parent@example.com"
           />
         </label>
@@ -643,7 +644,7 @@ s:ring-2 focus:ring-cardinal/20"
         <button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+          className="rounded-xl bg-portal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? 'Saving…' : isEditing ? 'Save changes' : 'Add student'}
         </button>
@@ -670,7 +671,7 @@ const FeeRequestModal = ({
           type="checkbox"
           checked={formState.tuitionEnabled}
           onChange={(event) => onFieldChange('tuitionEnabled', event.target.checked)}
-          className="mt-1 h-4 w-4 rounded border-slate-300 text-cardinal focus:ring-cardinal"
+          className="mt-1 h-4 w-4 rounded border-slate-300 text-portal focus:ring-portal"
         />
         <label htmlFor="fee-request-tuition" className="space-y-1 text-sm">
           <span className="block font-semibold text-slate-900">Tuition fees</span>
@@ -688,8 +689,8 @@ const FeeRequestModal = ({
                 name="cycle"
                 value={formState.cycle}
                 onChange={(event) => onFieldChange(event.target.name, event.target.value)}
-                className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
-s:ring-2 focus:ring-cardinal/20"
+                className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focu
+s:ring-2 focus:ring-portal/20"
               >
                 {cycleOptions.map((option) => (
                   <option key={option.id} value={option.id}>
@@ -705,8 +706,8 @@ s:ring-2 focus:ring-cardinal/20"
                 name="dueDate"
                 value={formState.dueDate}
                 onChange={(event) => onFieldChange(event.target.name, event.target.value)}
-                className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
-s:ring-2 focus:ring-cardinal/20"
+                className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focu
+s:ring-2 focus:ring-portal/20"
               />
             </label>
           </>
@@ -719,8 +720,8 @@ s:ring-2 focus:ring-cardinal/20"
             onChange={(event) => onFieldChange(event.target.name, event.target.value)}
             placeholder="0"
             inputMode="decimal"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
-s:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focu
+s:ring-2 focus:ring-portal/20"
           />
         </label>
         <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
@@ -730,8 +731,8 @@ s:ring-2 focus:ring-cardinal/20"
             value={formState.customNote}
             onChange={(event) => onFieldChange(event.target.name, event.target.value)}
             placeholder="Reason for custom amount"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
-s:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focu
+s:ring-2 focus:ring-portal/20"
           />
         </label>
         <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
@@ -742,8 +743,8 @@ s:ring-2 focus:ring-cardinal/20"
             onChange={(event) => onFieldChange(event.target.name, event.target.value)}
             placeholder="0"
             inputMode="decimal"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
-s:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focu
+s:ring-2 focus:ring-portal/20"
           />
         </label>
         <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
@@ -753,8 +754,8 @@ s:ring-2 focus:ring-cardinal/20"
             value={formState.othersLabel}
             onChange={(event) => onFieldChange(event.target.name, event.target.value)}
             placeholder="Lab fee, picnic…"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
-s:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focu
+s:ring-2 focus:ring-portal/20"
           />
         </label>
         <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
@@ -763,8 +764,8 @@ s:ring-2 focus:ring-cardinal/20"
             name="includeStore"
             value={formState.includeStore ? 'yes' : 'no'}
             onChange={(event) => onFieldChange('includeStore', event.target.value === 'yes')}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focu
-s:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focu
+s:ring-2 focus:ring-portal/20"
           >
             <option value="no">No</option>
             <option value="yes">Yes</option>
@@ -780,7 +781,7 @@ s:ring-2 focus:ring-cardinal/20"
               value={formState.storeItem}
               onChange={(event) => onFieldChange(event.target.name, event.target.value)}
               placeholder="Uniform, books…"
-              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             />
           </label>
           <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
@@ -791,7 +792,7 @@ s:ring-2 focus:ring-cardinal/20"
               onChange={(event) => onFieldChange(event.target.name, event.target.value)}
               placeholder="0"
               inputMode="decimal"
-              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             />
           </label>
         </div>
@@ -839,7 +840,7 @@ s:ring-2 focus:ring-cardinal/20"
         <button
           type="submit"
           disabled={isSubmitting}
-          className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+          className="rounded-xl bg-portal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
         >
           {isSubmitting ? 'Creating…' : 'Create Request'}
         </button>
@@ -883,7 +884,7 @@ const CommonFeeRequestModal = ({
             <select
               value={state.cycle}
               onChange={(event) => onCycleChange(event.target.value)}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             >
               {cycleOptions.map((option) => (
                 <option key={option.id} value={option.id}>
@@ -898,7 +899,7 @@ const CommonFeeRequestModal = ({
               type="date"
               value={state.dueDate}
               onChange={(event) => onDueDateChange(event.target.value)}
-              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             />
           </label>
         </div>
@@ -910,7 +911,7 @@ const CommonFeeRequestModal = ({
                 <select
                   value={state.classFilter}
                   onChange={(event) => onClassFilterChange(event.target.value)}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 >
                   <option value="All">All Classes</option>
                   {CLASS_OPTIONS.map((option) => (
@@ -926,7 +927,7 @@ const CommonFeeRequestModal = ({
                   value={state.search}
                   onChange={(event) => onSearchChange(event.target.value)}
                   placeholder="Search by name or ID"
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 />
               </label>
             </div>
@@ -971,7 +972,7 @@ const CommonFeeRequestModal = ({
                           checked={checked}
                           onChange={() => onToggleStudent(student.id, disabled)}
                           disabled={disabled}
-                          className="h-4 w-4 rounded border-slate-300 text-cardinal focus:ring-cardinal"
+                          className="h-4 w-4 rounded border-slate-300 text-portal focus:ring-portal"
                         />
                         <span>
                           <p className="font-semibold text-slate-900">{student.name}</p>
@@ -1006,7 +1007,7 @@ const CommonFeeRequestModal = ({
           <button
             type="submit"
             disabled={isSubmitting || selectedCount === 0}
-            className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+            className="rounded-xl bg-portal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {isSubmitting
               ? 'Creating requests…'
@@ -1029,7 +1030,7 @@ const PaymentHistoryModal = ({ student, payments, onClose, onDownload, onDownloa
           type="button"
           onClick={onDownload}
           disabled={!payments.length}
-          className="rounded-lg border border-cardinal px-3 py-1.5 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-lg border border-portal px-3 py-1.5 text-xs font-semibold text-portal transition hover:bg-portal/10 disabled:cursor-not-allowed disabled:opacity-60"
         >
           Download CSV
         </button>
@@ -1112,7 +1113,7 @@ const StudentActionsModal = ({
         <button
           type="button"
           onClick={onCreateFeeRequest}
-          className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-cardinal/90"
+          className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-portal/90"
         >
           Create Fee Request
         </button>
@@ -1165,7 +1166,7 @@ const DeleteStudentModal = ({
             type="password"
             value={password}
             onChange={onPasswordChange}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             placeholder="Enter password"
           />
         </label>
@@ -1182,7 +1183,7 @@ const DeleteStudentModal = ({
             type="button"
             onClick={onVerifyPassword}
             disabled={submitting || !password.trim()}
-            className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-60"
           >
             Verify
           </button>
@@ -2816,7 +2817,7 @@ const resolveTransactionMonthLabel = (entry) => {
         name="class"
         value={filters.class}
         onChange={handleFilterChange}
-        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
       >
         <option value="All">All Classes</option>
         {CLASS_OPTIONS.map((option) => (
@@ -2829,7 +2830,7 @@ const resolveTransactionMonthLabel = (entry) => {
         name="status"
         value={filters.status}
         onChange={handleFilterChange}
-        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
       >
         {STATUS_OPTIONS.map((option) => (
           <option key={option} value={option}>
@@ -2842,20 +2843,20 @@ const resolveTransactionMonthLabel = (entry) => {
         value={filters.term}
         onChange={handleFilterChange}
         placeholder="Term"
-        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
       />
       <input
         name="search"
         value={filters.search}
         onChange={handleFilterChange}
         placeholder="Search"
-        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
       />
       <select
         name="sort"
         value={filters.sort}
         onChange={handleFilterChange}
-        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
       >
         <option value="name-asc">Name (A-Z)</option>
         <option value="class-asc">Class</option>
@@ -4358,11 +4359,11 @@ const resolveTransactionMonthLabel = (entry) => {
 
   if (!authChecked) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white text-cardinal">
+      <div className="flex min-h-screen items-center justify-center bg-white text-portal">
         <Head>
           <title>Accountant Dashboard</title>
         </Head>
-        <span className="h-8 w-8 animate-spin rounded-full border-2 border-cardinal/40 border-t-cardinal" />
+        <span className="h-8 w-8 animate-spin rounded-full border-2 border-portal/40 border-t-portal" />
       </div>
     );
   }
@@ -4390,32 +4391,68 @@ const resolveTransactionMonthLabel = (entry) => {
   const showFeeActions = activeSection === 'fees';
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-rose-50 via-white to-slate-50">
-      <Head>
-        <title>Accountant Dashboard · EL-NODE Pay</title>
-      </Head>
-      <header className="sticky top-0 z-30 border-b border-white/60 bg-white/80 shadow-sm backdrop-blur-xl">
-        <div className="absolute -left-16 top-0 h-36 w-36 rounded-full bg-cardinal/10 blur-3xl" aria-hidden="true" />
-        <div className="absolute right-4 top-0 h-28 w-52 rounded-full bg-indigo-200/40 blur-3xl" aria-hidden="true" />
-        <div className="relative mx-auto flex max-w-7xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
+    <PortalLayout
+      sidebar={
+        <>
           <div className="flex items-start gap-3">
-            <Image src="/elnode.png" alt="EL-NODE Pay logo" width={48} height={48} priority />
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
+              <Image src="/elnode.png" alt="EL-NODE Pay logo" width={32} height={32} className="h-8 w-8" />
+            </div>
             <div>
-              <h1 className="text-2xl font-semibold text-slate-900">{headerCopy.title}</h1>
-              <p className="text-sm text-slate-600">{headerCopy.description}</p>
+              <p className="text-xs uppercase tracking-wide text-slate-300">Accountant</p>
+              <h1 className="text-xl font-semibold text-white">{headerCopy.title}</h1>
+              <p className="text-xs text-slate-300">{headerCopy.description}</p>
             </div>
           </div>
-          <div
-            className={`flex flex-wrap items-center gap-3 ${
-              activeSection !== 'fees' ? 'justify-end md:justify-end' : ''
-            }`}
-          >
+          <div className="space-y-3">
+            <p className="text-xs uppercase tracking-wide text-slate-300">Menu</p>
+            {[
+              { id: 'fees', label: 'Fees' },
+              { id: 'salary', label: 'Salary' },
+              { id: 'finances', label: 'Finances' },
+            ].map((section) => (
+              <button
+                key={section.id}
+                type="button"
+                onClick={() => handleSectionChange(section.id)}
+                className={`w-full rounded-xl px-4 py-2 text-left text-sm font-semibold transition ${
+                  activeSection === section.id ? 'bg-portal text-white shadow' : 'bg-white/10 text-slate-200 hover:bg-white/20'
+                }`}
+              >
+                {section.label}
+              </button>
+            ))}
+          </div>
+          <div className="space-y-2 rounded-2xl bg-white/5 p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-300">Submenu</p>
+            {(activeSection === 'finances'
+              ? FINANCE_NAV_ITEMS
+              : activeSection === 'salary'
+                ? SALARY_NAV_ITEMS
+                : FEE_NAV_ITEMS
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`w-full rounded-lg px-3 py-2 text-left text-xs font-semibold transition ${
+                  activeTab === tab.id
+                    ? 'bg-white text-portal shadow'
+                    : 'bg-white/10 text-slate-200 hover:bg-white/20'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+          <div className="space-y-2 rounded-2xl bg-white/5 p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-300">Actions</p>
             {showFeeActions && (
               <>
                 <button
                   type="button"
                   onClick={openReportModal}
-                  className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
+                  className="w-full rounded-xl bg-white/10 px-3 py-2 text-left text-xs font-semibold text-white transition hover:bg-white/20"
                 >
                   Generate Report
                 </button>
@@ -4423,7 +4460,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   type="button"
                   onClick={handleClearPaymentData}
                   disabled={clearingDemoData}
-                  className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full rounded-xl bg-rose-500/10 px-3 py-2 text-left text-xs font-semibold text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {clearingDemoData ? 'Clearing…' : 'Clear Payment Data'}
                 </button>
@@ -4432,56 +4469,19 @@ const resolveTransactionMonthLabel = (entry) => {
             <button
               type="button"
               onClick={() => setSignOutConfirmOpen(true)}
-              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              className="w-full rounded-xl bg-white/10 px-3 py-2 text-left text-xs font-semibold text-white transition hover:bg-white/20"
             >
               Sign Out
             </button>
           </div>
-        </div>
-      </header>
+        </>
+      }
+    >
+      <Head>
+        <title>Accountant Dashboard · EL-NODE Pay</title>
+      </Head>
 
-      <main className="mx-auto max-w-7xl px-6 py-8">
-        <div className="flex flex-wrap gap-3">
-          {[
-            { id: 'fees', label: 'Fees' },
-            { id: 'salary', label: 'Salary' },
-            { id: 'finances', label: 'Finances' },
-          ].map((section) => (
-            <button
-              key={section.id}
-              type="button"
-              onClick={() => handleSectionChange(section.id)}
-              className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                activeSection === section.id
-                  ? 'bg-cardinal text-white shadow'
-                  : 'bg-white text-slate-600 shadow-sm hover:bg-cardinal/10'
-              }`}
-            >
-              {section.label}
-            </button>
-          ))}
-        </div>
-        <nav className="mt-4 flex flex-wrap gap-3">
-          {(activeSection === 'finances'
-            ? FINANCE_NAV_ITEMS
-            : activeSection === 'salary'
-              ? SALARY_NAV_ITEMS
-              : FEE_NAV_ITEMS
-          ).map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                activeTab === tab.id
-                  ? 'bg-cardinal text-white shadow'
-                  : 'bg-white text-slate-600 shadow-sm hover:bg-cardinal/10'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
+      <div className="space-y-6">
 
         {activeSection === 'salary' && SALARY_TAB_IDS.includes(activeTab) && (
           <SalaryModule processorUid={user?.uid} category={SALARY_TAB_CATEGORY[activeTab]} />
@@ -4765,7 +4765,7 @@ const resolveTransactionMonthLabel = (entry) => {
                         onClick={() => setStudentSegment(segment.id)}
                         className={`rounded-full px-3 py-1.5 text-xs font-semibold transition ${
                           studentSegment === segment.id
-                            ? 'bg-cardinal text-white shadow'
+                            ? 'bg-portal text-white shadow'
                             : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                         }`}
                       >
@@ -4779,7 +4779,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       <button
                         type="button"
                         onClick={handleOpenCommonRequest}
-                        className="rounded-full border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
+                        className="rounded-full border border-portal px-4 py-2 text-sm font-semibold text-portal transition hover:bg-portal/10"
                       >
                         Create Common Fee Request
                       </button>
@@ -4798,7 +4798,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       <div
                         key={student.id}
                         className={`rounded-3xl border ${
-                          isSelected ? 'border-cardinal ring-2 ring-cardinal/20' : 'border-slate-200'
+                          isSelected ? 'border-portal ring-2 ring-portal/20' : 'border-slate-200'
                         } bg-white p-5 shadow-sm transition hover:shadow-md`}
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -4830,7 +4830,7 @@ const resolveTransactionMonthLabel = (entry) => {
                           <button
                             type="button"
                             onClick={() => handleOpenStudentActions(student)}
-                            className="rounded-full border border-cardinal px-4 py-2 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
+                            className="rounded-full border border-portal px-4 py-2 text-xs font-semibold text-portal transition hover:bg-portal/10"
                           >
                             Manage
                           </button>
@@ -4892,7 +4892,7 @@ const resolveTransactionMonthLabel = (entry) => {
                         key={`${student.id}-fee-report`}
                         onClick={() => openFeeReportDetail(student)}
                         className={`text-left rounded-3xl border ${
-                          isDetailOpen ? 'border-cardinal ring-2 ring-cardinal/20' : 'border-slate-200'
+                          isDetailOpen ? 'border-portal ring-2 ring-portal/20' : 'border-slate-200'
                         } bg-white p-5 shadow-sm transition hover:shadow-md`}
                       >
                         <div className="flex items-start justify-between gap-3">
@@ -4973,7 +4973,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   <button
                     type="button"
                     onClick={handleOpenManualEntryModal}
-                    className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
+                    className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90"
                   >
                     Add Manual Entry
                   </button>
@@ -4987,7 +4987,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     type="date"
                     value={ledgerFilters.startDate}
                     onChange={handleLedgerFilterChange('startDate')}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -4996,7 +4996,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     type="date"
                     value={ledgerFilters.endDate}
                     onChange={handleLedgerFilterChange('endDate')}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                   />
                 </label>
                 <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -5004,7 +5004,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   <select
                     value={ledgerFilters.feeType}
                     onChange={handleLedgerFilterChange('feeType')}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                   >
                     <option value="All">All</option>
                     <option value="Tuition">Tuition</option>
@@ -5019,7 +5019,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   <select
                     value={ledgerFilters.paymentMode}
                     onChange={handleLedgerFilterChange('paymentMode')}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                   >
                     <option value="All">All</option>
                     {PAYMENT_MODES.map((modeOption) => (
@@ -5034,7 +5034,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   <select
                     value={ledgerFilters.coa}
                     onChange={handleLedgerFilterChange('coa')}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                   >
                     <option value="All">All</option>
                     {COA_INCOME.map((coaOption) => (
@@ -5049,7 +5049,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   <select
                     value={ledgerFilters.costCenter}
                     onChange={handleLedgerFilterChange('costCenter')}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                   >
                     <option value="All">All</option>
                     {COST_CENTERS.map((center) => (
@@ -5064,7 +5064,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   <select
                     value={ledgerFilters.className}
                     onChange={handleLedgerFilterChange('className')}
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                   >
                     <option value="All">All</option>
                     {CLASS_OPTIONS.map((option) => (
@@ -5081,7 +5081,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     value={ledgerFilters.search}
                     onChange={handleLedgerFilterChange('search')}
                     placeholder="Student, parent email, voucher or notes"
-                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                    className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                   />
                 </label>
               </div>
@@ -5163,7 +5163,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       name="date"
                       value={expenseForm.date}
                       onChange={handleExpenseFieldChange}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     />
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -5173,7 +5173,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       value={expenseForm.vendor}
                       onChange={handleExpenseFieldChange}
                       placeholder="ABC Suppliers"
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     />
                   </label>
                   <div className="grid gap-3 md:grid-cols-2">
@@ -5183,7 +5183,7 @@ const resolveTransactionMonthLabel = (entry) => {
                         name="category"
                         value={expenseForm.category}
                         onChange={handleExpenseFieldChange}
-                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                       >
                         {EXPENSE_CATEGORIES.map((category) => (
                           <option key={category} value={category}>
@@ -5198,7 +5198,7 @@ const resolveTransactionMonthLabel = (entry) => {
                         name="paymentMode"
                         value={expenseForm.paymentMode}
                         onChange={handleExpenseFieldChange}
-                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                       >
                         {['Cash', 'BankTransfer', 'UPI', 'Card'].map((modeOption) => (
                           <option key={modeOption} value={modeOption}>
@@ -5216,7 +5216,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       onChange={handleExpenseFieldChange}
                       inputMode="decimal"
                       placeholder="0"
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     />
                   </label>
                   <div className="grid gap-3 md:grid-cols-2">
@@ -5226,7 +5226,7 @@ const resolveTransactionMonthLabel = (entry) => {
                         name="coa"
                         value={expenseForm.coa}
                         onChange={handleExpenseFieldChange}
-                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                       >
                         {COA_EXPENSE.map((coaOption) => (
                           <option key={coaOption} value={coaOption}>
@@ -5241,7 +5241,7 @@ const resolveTransactionMonthLabel = (entry) => {
                         name="costCenter"
                         value={expenseForm.costCenter}
                         onChange={handleExpenseFieldChange}
-                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                       >
                         {COST_CENTERS.map((center) => (
                           <option key={center} value={center}>
@@ -5259,7 +5259,7 @@ const resolveTransactionMonthLabel = (entry) => {
                         value={expenseForm.invoiceNo}
                         onChange={handleExpenseFieldChange}
                         placeholder="INV-2024-001"
-                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                       />
                     </label>
                     <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -5268,7 +5268,7 @@ const resolveTransactionMonthLabel = (entry) => {
                         name="status"
                         value={expenseForm.status}
                         onChange={handleExpenseFieldChange}
-                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                        className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                       >
                         {EXPENSE_STATUS_OPTIONS.map((statusOption) => (
                           <option key={statusOption} value={statusOption}>
@@ -5286,7 +5286,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       onChange={handleExpenseFieldChange}
                       rows={3}
                       placeholder="Brief note about the expense"
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     />
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -5305,7 +5305,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     <button
                       type="submit"
                       disabled={expenseSubmitting}
-                      className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                      className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
                     >
                       {expenseSubmitting ? 'Saving…' : 'Save Expense'}
                     </button>
@@ -5333,7 +5333,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       type="date"
                       value={expenseFilters.startDate}
                       onChange={handleExpenseFilterChange('startDate')}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     />
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -5342,7 +5342,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       type="date"
                       value={expenseFilters.endDate}
                       onChange={handleExpenseFilterChange('endDate')}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     />
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -5350,7 +5350,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     <select
                       value={expenseFilters.category}
                       onChange={handleExpenseFilterChange('category')}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     >
                       <option value="All">All</option>
                       {EXPENSE_CATEGORIES.map((category) => (
@@ -5365,7 +5365,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     <select
                       value={expenseFilters.costCenter}
                       onChange={handleExpenseFilterChange('costCenter')}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     >
                       <option value="All">All</option>
                       {COST_CENTERS.map((center) => (
@@ -5380,7 +5380,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     <select
                       value={expenseFilters.status}
                       onChange={handleExpenseFilterChange('status')}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     >
                       <option value="All">All</option>
                       {EXPENSE_STATUS_OPTIONS.map((statusOption) => (
@@ -5397,7 +5397,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       value={expenseFilters.vendor}
                       onChange={handleExpenseFilterChange('vendor')}
                       placeholder="Search vendor"
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     />
                   </label>
                 </div>
@@ -5469,7 +5469,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       type="date"
                       value={reportRanges.collectionStart}
                       onChange={handleReportsRangeChange('collectionStart')}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     />
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -5478,7 +5478,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       type="date"
                       value={reportRanges.collectionEnd}
                       onChange={handleReportsRangeChange('collectionEnd')}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     />
                   </label>
                 </div>
@@ -5487,7 +5487,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     type="button"
                     onClick={handleDownloadMonthlyCollections}
                     disabled={reportsLoading.collections}
-                    className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                    className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     {reportsLoading.collections ? 'Preparing…' : 'Download CSV'}
                   </button>
@@ -5506,7 +5506,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       type="date"
                       value={reportRanges.outstandingStart}
                       onChange={handleReportsRangeChange('outstandingStart')}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     />
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -5515,7 +5515,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       type="date"
                       value={reportRanges.outstandingEnd}
                       onChange={handleReportsRangeChange('outstandingEnd')}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     />
                   </label>
                 </div>
@@ -5524,7 +5524,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     type="button"
                     onClick={handleDownloadOutstanding}
                     disabled={reportsLoading.outstanding}
-                    className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                    className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     {reportsLoading.outstanding ? 'Preparing…' : 'Download CSV'}
                   </button>
@@ -5543,7 +5543,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       type="date"
                       value={reportRanges.expenseStart}
                       onChange={handleReportsRangeChange('expenseStart')}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     />
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -5552,7 +5552,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       type="date"
                       value={reportRanges.expenseEnd}
                       onChange={handleReportsRangeChange('expenseEnd')}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     />
                   </label>
                 </div>
@@ -5561,7 +5561,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     type="button"
                     onClick={handleDownloadExpensesLedger}
                     disabled={reportsLoading.expenses}
-                    className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                    className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     {reportsLoading.expenses ? 'Preparing…' : 'Download CSV'}
                   </button>
@@ -5580,7 +5580,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       type="date"
                       value={reportRanges.cashFlowStart}
                       onChange={handleReportsRangeChange('cashFlowStart')}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     />
                   </label>
                   <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -5589,7 +5589,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       type="date"
                       value={reportRanges.cashFlowEnd}
                       onChange={handleReportsRangeChange('cashFlowEnd')}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     />
                   </label>
                 </div>
@@ -5598,7 +5598,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     type="button"
                     onClick={handleDownloadCashflow}
                     disabled={reportsLoading.cashflow}
-                    className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                    className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     {reportsLoading.cashflow ? 'Preparing…' : 'Download CSV'}
                   </button>
@@ -5624,7 +5624,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     value={paymentSearch}
                     onChange={(event) => setPaymentSearch(event.target.value)}
                     placeholder="Search student, ID, or reference"
-                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 sm:w-auto"
+                    className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20 sm:w-auto"
                   />
                   <label className="text-sm font-medium text-slate-600">
                     <span className="mr-2 hidden text-xs uppercase tracking-wide text-slate-500 md:inline">
@@ -5633,7 +5633,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     <select
                       value={paymentModeFilter}
                       onChange={(event) => setPaymentModeFilter(event.target.value)}
-                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     >
                       {paymentModeOptions.map((option) => (
                         <option key={option} value={option}>
@@ -5724,7 +5724,7 @@ const resolveTransactionMonthLabel = (entry) => {
                 type="button"
                 onClick={handleBulkReminder}
                 disabled={bulkSending}
-                className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {bulkSending ? 'Sending…' : 'Send Bulk Reminder'}
               </button>
@@ -5768,7 +5768,7 @@ const resolveTransactionMonthLabel = (entry) => {
         )}
 
 
-      </main>
+      </div>
 
       {manualEntryModalOpen && (
         <Modal
@@ -5787,7 +5787,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   name="date"
                   value={manualEntryForm.date}
                   onChange={handleManualEntryFieldChange}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 />
               </label>
               <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -5796,7 +5796,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   name="studentId"
                   value={manualEntryForm.studentId}
                   onChange={handleManualEntryFieldChange}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 >
                   <option value="">Misc / Not Linked</option>
                   {students.map((student) => (
@@ -5812,7 +5812,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   name="feeType"
                   value={manualEntryForm.feeType}
                   onChange={handleManualEntryFieldChange}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 >
                   <option value="Tuition">Tuition</option>
                   <option value="Transport">Transport</option>
@@ -5827,7 +5827,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   name="paymentMode"
                   value={manualEntryForm.paymentMode}
                   onChange={handleManualEntryFieldChange}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 >
                   {PAYMENT_MODES.map((modeOption) => (
                     <option key={modeOption} value={modeOption}>
@@ -5844,7 +5844,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   name="coa"
                   value={manualEntryForm.coa}
                   onChange={handleManualEntryFieldChange}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 >
                   {COA_INCOME.map((coaOption) => (
                     <option key={coaOption} value={coaOption}>
@@ -5859,7 +5859,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   name="costCenter"
                   value={manualEntryForm.costCenter}
                   onChange={handleManualEntryFieldChange}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 >
                   {COST_CENTERS.map((center) => (
                     <option key={center} value={center}>
@@ -5878,7 +5878,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   onChange={handleManualEntryFieldChange}
                   inputMode="decimal"
                   placeholder="0"
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 />
               </label>
               <label className="flex flex-col gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -5889,7 +5889,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   onChange={handleManualEntryFieldChange}
                   rows={3}
                   placeholder="Optional narration for this voucher"
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 />
               </label>
             </div>
@@ -5907,7 +5907,7 @@ const resolveTransactionMonthLabel = (entry) => {
               <button
                 type="submit"
                 disabled={manualEntrySubmitting}
-                className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {manualEntrySubmitting ? 'Saving…' : 'Save Entry'}
               </button>
@@ -5978,7 +5978,7 @@ const resolveTransactionMonthLabel = (entry) => {
                         href={url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-sm font-semibold text-cardinal underline"
+                        className="text-sm font-semibold text-portal underline"
                       >
                         View file
                       </a>
@@ -6001,7 +6001,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   name="class"
                   value={reportFilters.class}
                   onChange={handleReportFilterChange}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 >
                   <option value="All">All classes</option>
                   {CLASS_OPTIONS.map((option) => (
@@ -6017,7 +6017,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   name="status"
                   value={reportFilters.status}
                   onChange={handleReportFilterChange}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 >
                   {['All', 'Paid', 'Pending', 'Overdue'].map((option) => (
                     <option key={option} value={option}>
@@ -6032,7 +6032,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   name="cycle"
                   value={reportFilters.cycle}
                   onChange={handleReportFilterChange}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 >
                   <option value="All">All cycles</option>
                   {REQUEST_CYCLE_OPTIONS.map((option) => (
@@ -6049,7 +6049,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   name="session"
                   value={reportFilters.session}
                   onChange={handleReportFilterChange}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 >
                   <option value="All">All sessions</option>
                   {sessionOptions.map((option) => (
@@ -6065,7 +6065,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   name="paymentMode"
                   value={reportFilters.paymentMode}
                   onChange={handleReportFilterChange}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 >
                   {['All', 'Cash', 'Online', 'Bank Transfer', 'Other', 'Unspecified'].map((option) => (
                     <option key={option} value={option}>
@@ -6080,7 +6080,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   name="reminder"
                   value={reportFilters.reminder}
                   onChange={handleReportFilterChange}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 >
                   <option value="All">All reminders</option>
                   <option value="Sent">Reminder sent</option>
@@ -6096,7 +6096,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   name="dueFrom"
                   value={reportFilters.dueFrom}
                   onChange={handleReportFilterChange}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 />
               </label>
               <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
@@ -6106,7 +6106,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   name="dueTo"
                   value={reportFilters.dueTo}
                   onChange={handleReportFilterChange}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 />
               </label>
             </div>
@@ -6119,7 +6119,7 @@ const resolveTransactionMonthLabel = (entry) => {
                     name="lastAcademicYear"
                     checked={reportFilters.lastAcademicYear}
                     onChange={handleReportFilterChange}
-                    className="h-4 w-4 rounded border-slate-300 text-cardinal focus:ring-cardinal"
+                    className="h-4 w-4 rounded border-slate-300 text-portal focus:ring-portal"
                   />
                   <span className="text-sm text-slate-700">Use previous academic cycle</span>
                 </div>
@@ -6131,7 +6131,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   value={reportFilters.year}
                   onChange={handleReportFilterChange}
                   disabled={reportFilters.lastAcademicYear}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20 disabled:cursor-not-allowed disabled:bg-slate-100"
                 >
                   {reportYearOptions.map((yearOption) => (
                     <option key={yearOption} value={yearOption}>
@@ -6147,7 +6147,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   value={reportFilters.month}
                   onChange={handleReportFilterChange}
                   disabled={reportFilters.lastAcademicYear}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20 disabled:cursor-not-allowed disabled:bg-slate-100"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20 disabled:cursor-not-allowed disabled:bg-slate-100"
                 >
                   {MONTH_OPTIONS.map((monthOption) => (
                     <option key={monthOption} value={monthOption}>
@@ -6165,7 +6165,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   value={reportFilters.term}
                   onChange={handleReportFilterChange}
                   placeholder="e.g. Term 1"
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 />
               </label>
               <div />
@@ -6189,7 +6189,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   type="button"
                   onClick={handleDownloadReport}
                   disabled={reportDownloadState.loading}
-                  className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="rounded-xl border border-portal px-4 py-2 text-sm font-semibold text-portal transition hover:bg-portal/10 disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {reportDownloadState.loading && reportDownloadState.format === 'csv'
                     ? 'Preparing…'
@@ -6426,7 +6426,7 @@ const resolveTransactionMonthLabel = (entry) => {
                         type="button"
                         onClick={handleDetailSendReminder}
                         disabled={!hasOutstanding}
-                        className="rounded-full border border-cardinal px-4 py-2 text-xs font-semibold transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="rounded-full border border-portal px-4 py-2 text-xs font-semibold transition hover:bg-portal/10 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         Send Reminder
                       </button>
@@ -6452,7 +6452,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       <button
                         type="button"
                         onClick={() => beginMarkPaidFlow(detailStudent)}
-                        className="mt-3 w-full rounded-full bg-cardinal px-4 py-2 text-xs font-semibold text-white transition hover:bg-cardinal/90"
+                        className="mt-3 w-full rounded-full bg-portal px-4 py-2 text-xs font-semibold text-white transition hover:bg-portal/90"
                       >
                         Start mark as paid
                       </button>
@@ -6467,7 +6467,7 @@ const resolveTransactionMonthLabel = (entry) => {
                               onClick={() => handleMarkPaidModeSelect(modeOption)}
                               className={`rounded-full px-3 py-1 font-semibold transition ${
                                 markPaidContext.mode === modeOption
-                                  ? 'bg-cardinal text-white'
+                                  ? 'bg-portal text-white'
                                   : 'border border-slate-200 text-slate-600 hover:bg-slate-100'
                               }`}
                             >
@@ -6486,7 +6486,7 @@ const resolveTransactionMonthLabel = (entry) => {
                                   ? 'UTR / reference number'
                                   : 'Razorpay payment ID'
                               }
-                              className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                              className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                             />
                           </label>
                         )}
@@ -6498,7 +6498,7 @@ const resolveTransactionMonthLabel = (entry) => {
                             type="button"
                             onClick={handleSubmitMarkPaidFromDetail}
                             disabled={markPaidContext.submitting}
-                            className="rounded-full bg-cardinal px-4 py-2 text-xs font-semibold text-white transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                            className="rounded-full bg-portal px-4 py-2 text-xs font-semibold text-white transition hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
                           >
                             {markPaidContext.submitting ? 'Recording…' : 'Confirm payment'}
                           </button>
@@ -6546,7 +6546,7 @@ const resolveTransactionMonthLabel = (entry) => {
               <button
                 type="button"
                 onClick={handleConfirmSignOut}
-                className="rounded-full bg-cardinal px-4 py-2 text-sm font-semibold text-white transition hover:bg-cardinal/90"
+                className="rounded-full bg-portal px-4 py-2 text-sm font-semibold text-white transition hover:bg-portal/90"
               >
                 Yes
               </button>
