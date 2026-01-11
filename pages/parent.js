@@ -269,6 +269,7 @@ const ParentDashboard = () => {
   const [settings, setSettings] = useState({ currentTerm: '', defaultDueDate: '' });
   const [feeStructure, setFeeStructure] = useState({ session: '', fees: {} });
   const [selectedChildId, setSelectedChildId] = useState(null);
+  const [activeParentSection, setActiveParentSection] = useState('fees');
   const [historyFilters, setHistoryFilters] = useState({ child: 'All', month: 'All', year: 'All' });
   const [supportForm, setSupportForm] = useState({ subject: '', message: '' });
   const [profileForm, setProfileForm] = useState({ name: '', contactNumber: '' });
@@ -623,6 +624,19 @@ const ParentDashboard = () => {
       return matchesChild && matchesMonth && matchesYear;
     });
   }, [payments, historyFilters]);
+
+  const latestGatewayPayment = useMemo(() => {
+    const payment = payments.find((entry) => entry.razorpay_payment_id || entry.transaction_id);
+    if (!payment) return null;
+    const date = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
+    return {
+      id: payment.razorpay_payment_id || payment.transaction_id,
+      date: Number.isFinite(date.getTime()) ? date.toLocaleString('en-IN') : '—',
+      amount: Number(payment.amount || 0),
+      mode: payment.mode || 'Online',
+      status: payment.status || 'Success',
+    };
+  }, [payments]);
 
   const yearsAvailable = useMemo(() => {
     const yearSet = new Set();
@@ -1171,35 +1185,118 @@ const ParentDashboard = () => {
               <h1 className="text-xl font-semibold text-white">Dashboard</h1>
             </div>
           </div>
-          <div className="border border-slate-700/60 bg-slate-900/40 px-4 py-3">
-            <p className="text-xs uppercase tracking-wide text-slate-300">Total due</p>
-            <p className="mt-2 text-2xl font-semibold text-white">
-              ₹{metrics.totalDue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-            </p>
-            <p className="text-xs text-slate-300">
-              {metrics.totalDue > 0 ? 'Balance due across students.' : 'No outstanding balance.'}
-            </p>
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-wide text-slate-300">Menu</p>
+            {[
+              { id: 'fees', label: 'Fees', icon: '/icons/sidebar/wallet.svg' },
+              { id: 'history', label: 'Payment History', icon: '/icons/sidebar/clipboard.svg' },
+              { id: 'notifications', label: 'Notifications', icon: '/icons/sidebar/bell.svg' },
+            ].map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveParentSection(item.id)}
+                className={`group flex w-full items-center gap-3 border px-4 py-2 text-left text-sm font-semibold transition ${
+                  activeParentSection === item.id
+                    ? 'border-portal/70 bg-white/10 text-white'
+                    : 'border-transparent text-slate-200 hover:border-slate-600/70 hover:bg-white/5'
+                }`}
+              >
+                <img
+                  src={item.icon}
+                  alt=""
+                  className={`h-4 w-4 transition ${
+                    activeParentSection === item.id ? 'opacity-100' : 'opacity-70 group-hover:opacity-100'
+                  }`}
+                  aria-hidden="true"
+                />
+                {item.label}
+              </button>
+            ))}
           </div>
-          <div className="space-y-2 border border-slate-700/60 bg-slate-900/40 px-4 py-3">
-            <p className="text-xs uppercase tracking-wide text-slate-300">Quick actions</p>
-            <button
-              type="button"
-              onClick={() => students.length > 0 && handleOpenPayment(students[0])}
-              disabled={metrics.totalDue <= 0}
-              className="group flex w-full items-center gap-3 border border-transparent bg-portal/90 px-3 py-2 text-left text-xs font-semibold text-white transition hover:border-portal/60 hover:bg-portal disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              <img
-                src="/icons/sidebar/payment.svg"
-                alt=""
-                className="h-4 w-4 opacity-90 transition group-hover:opacity-100"
-                aria-hidden="true"
-              />
-              {metrics.totalDue > 0 ? 'Pay Outstanding Balance' : 'All Clear'}
-            </button>
+          <div className="mt-auto space-y-4">
+            <div className="space-y-3 border border-slate-700/60 bg-slate-900/40 px-4 py-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs uppercase tracking-wide text-slate-300">Help & Support</p>
+                <button
+                  type="button"
+                  onClick={() => setActiveParentSection('notifications')}
+                  className="group flex items-center gap-2 border border-transparent px-2 py-1 text-[11px] font-semibold text-slate-200 transition hover:border-slate-600/70 hover:bg-white/5"
+                >
+                  <img
+                    src="/icons/sidebar/chat.svg"
+                    alt=""
+                    className="h-3.5 w-3.5 opacity-80 transition group-hover:opacity-100"
+                    aria-hidden="true"
+                  />
+                  Help Center
+                </button>
+              </div>
+              <form className="space-y-2" onSubmit={handleSupportSubmit}>
+                <input
+                  value={supportForm.subject}
+                  onChange={(event) => setSupportForm((prev) => ({ ...prev, subject: event.target.value }))}
+                  required
+                  placeholder="Subject"
+                  className="w-full border border-slate-700/70 bg-slate-900/60 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/30"
+                />
+                <textarea
+                  value={supportForm.message}
+                  onChange={(event) => setSupportForm((prev) => ({ ...prev, message: event.target.value }))}
+                  required
+                  rows={3}
+                  placeholder="How can we help?"
+                  className="w-full border border-slate-700/70 bg-slate-900/60 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/30"
+                />
+                <button
+                  type="submit"
+                  disabled={supportSubmitting}
+                  className="w-full border border-portal/60 bg-portal/90 px-3 py-2 text-xs font-semibold text-white transition hover:bg-portal disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {supportSubmitting ? 'Sending...' : 'Send Support Request'}
+                </button>
+              </form>
+            </div>
+            <div className="space-y-3 border border-slate-700/60 bg-slate-900/40 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <img src="/icons/sidebar/users.svg" alt="" className="h-4 w-4 opacity-80" aria-hidden="true" />
+                <p className="text-xs uppercase tracking-wide text-slate-300">Profile update</p>
+              </div>
+              <form className="space-y-2" onSubmit={handleProfileSave}>
+                <input
+                  value={profileForm.name}
+                  onChange={(event) => setProfileForm((prev) => ({ ...prev, name: event.target.value }))}
+                  placeholder="Full name"
+                  className="w-full border border-slate-700/70 bg-slate-900/60 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/30"
+                />
+                <input
+                  value={profileForm.contactNumber}
+                  onChange={(event) => setProfileForm((prev) => ({ ...prev, contactNumber: event.target.value }))}
+                  placeholder="Contact number"
+                  className="w-full border border-slate-700/70 bg-slate-900/60 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/30"
+                />
+                <div className="space-y-2">
+                  <button
+                    type="submit"
+                    disabled={profileSaving}
+                    className="w-full border border-portal/60 bg-portal/90 px-3 py-2 text-xs font-semibold text-white transition hover:bg-portal disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    {profileSaving ? 'Saving...' : 'Save profile'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetPassword}
+                    className="w-full border border-slate-600/70 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:border-slate-400/70 hover:bg-white/5"
+                  >
+                    Reset password
+                  </button>
+                </div>
+              </form>
+            </div>
             <button
               type="button"
               onClick={() => setSignOutConfirmOpen(true)}
-              className="group flex w-full items-center gap-3 border border-transparent px-3 py-2 text-left text-xs font-semibold text-white transition hover:border-slate-600/70 hover:bg-white/5"
+              className="group flex w-full items-center gap-3 border border-slate-700/70 px-3 py-2 text-left text-xs font-semibold text-white transition hover:border-slate-500/70 hover:bg-white/5"
             >
               <img
                 src="/icons/sidebar/logout.svg"
@@ -1218,333 +1315,374 @@ const ParentDashboard = () => {
       </Head>
 
       <div className="flex flex-col gap-8">
-        <section className="grid gap-4 md:grid-cols-3">
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="text-sm font-medium text-slate-500">Total Fees Due</h3>
-            <p className="mt-3 text-2xl font-semibold text-portal">
-              ₹{metrics.totalDue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-            </p>
-            <p className="mt-2 text-xs text-slate-500">
-              {metrics.totalDue > 0 ? 'Pay soon to avoid penalties.' : 'No outstanding dues!'}
-            </p>
-          </div>
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="text-sm font-medium text-slate-500">Next Due Date</h3>
-            <p className="mt-3 text-2xl font-semibold text-slate-900">{metrics.nextDueDate}</p>
-            <p className="mt-2 text-xs text-slate-500">Based on scheduled invoices.</p>
-          </div>
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h3 className="text-sm font-medium text-slate-500">Last Payment</h3>
-            <p className="mt-3 text-2xl font-semibold text-slate-900">
-              {metrics.lastPayment
-                ? `₹${Number(metrics.lastPayment.amount || 0).toLocaleString('en-IN')}`
-                : '—'}
-            </p>
-            <p className="mt-2 text-xs text-slate-500">
-              {metrics.lastPayment
-                ? metrics.lastPayment.date?.toDate
-                  ? metrics.lastPayment.date.toDate().toLocaleString()
-                  : new Date(metrics.lastPayment.date).toLocaleString()
-                : 'No payments yet.'}
-            </p>
-          </div>
-        </section>
+        {activeParentSection === 'fees' && (
+          <>
+            <section className="grid gap-4 md:grid-cols-3">
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Total Fees Due</h3>
+                <p className="mt-3 text-2xl font-semibold text-portal">
+                  ₹{metrics.totalDue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">
+                  {metrics.totalDue > 0 ? 'Pay soon to avoid penalties.' : 'No outstanding dues!'}
+                </p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Next Due Date</h3>
+                <p className="mt-3 text-2xl font-semibold text-slate-900">{metrics.nextDueDate}</p>
+                <p className="mt-2 text-xs text-slate-500">Based on scheduled invoices.</p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Last Payment</h3>
+                <p className="mt-3 text-2xl font-semibold text-slate-900">
+                  {metrics.lastPayment
+                    ? `₹${Number(metrics.lastPayment.amount || 0).toLocaleString('en-IN')}`
+                    : '—'}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">
+                  {metrics.lastPayment
+                    ? metrics.lastPayment.date?.toDate
+                      ? metrics.lastPayment.date.toDate().toLocaleString()
+                      : new Date(metrics.lastPayment.date).toLocaleString()
+                    : 'No payments yet.'}
+                </p>
+              </div>
+            </section>
 
-        <section className="space-y-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">Your Children</h2>
-              <p className="text-sm text-slate-500">Select a profile to review due amounts and pay instantly.</p>
-            </div>
-          </div>
-          <div className="grid gap-4 md:grid-cols-2">
-            {students.map((student) => {
-              const chargeList = chargesByStudent.get(student.id) || [];
-              const storeChargeTotal = chargeList.reduce(
-                (sum, charge) => sum + Number(charge.amount || 0),
-                0,
-              );
-              const tuitionDue = Number(student.balance ?? student.fee_amount ?? 0);
-              const totalDue = tuitionDue + storeChargeTotal;
-              const advanceStatus = getAdvanceStatus(student);
-              return (
-                <div
-                  key={student.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => setSelectedChildId(student.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' || event.key === ' ') {
-                      event.preventDefault();
-                      setSelectedChildId(student.id);
-                    }
-                  }}
-                  className={`rounded-3xl border ${
-                    selectedChildId === student.id ? 'border-portal bg-portal/5' : 'border-slate-200 bg-white'
-                  } p-6 shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-portal/30 cursor-pointer`}
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h3 className="text-lg font-semibold text-slate-900">{student.name}</h3>
-                      <p className="text-sm text-slate-500">Class {student.class}</p>
-                    </div>
-                    <span
-                      className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                        student.status === 'Paid'
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : student.status === 'Overdue'
-                          ? 'bg-rose-100 text-rose-700'
-                          : 'bg-amber-100 text-amber-700'
-                      }`}
-                    >
-                      {student.status}
-                    </span>
+            <section className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+              <div className="space-y-6">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-semibold text-slate-900">Your Children</h2>
+                    <p className="text-sm text-slate-500">Select a profile to review due amounts and pay instantly.</p>
                   </div>
-                  <div className="mt-4 grid gap-2 text-sm text-slate-600">
-                    <p>Total due: ₹{totalDue.toLocaleString('en-IN')}</p>
-                    <p>Tuition balance: ₹{tuitionDue.toLocaleString('en-IN')}</p>
-                    <p>Store charges: ₹{storeChargeTotal.toLocaleString('en-IN')}</p>
-                    <p>Fee cycle: {student.fee_cycle || 'Monthly'}</p>
-                    <p>Due date: {student.due_date || 'Not scheduled'}</p>
-                    {advanceStatus && (
-                      <p className="text-xs font-semibold text-emerald-600">{advanceStatus.message}</p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
+                  {students.map((student) => {
+                    const chargeList = chargesByStudent.get(student.id) || [];
+                    const storeChargeTotal = chargeList.reduce(
+                      (sum, charge) => sum + Number(charge.amount || 0),
+                      0,
+                    );
+                    const tuitionDue = Number(student.balance ?? student.fee_amount ?? 0);
+                    const totalDue = tuitionDue + storeChargeTotal;
+                    const advanceStatus = getAdvanceStatus(student);
+                    return (
+                      <div
+                        key={student.id}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedChildId(student.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setSelectedChildId(student.id);
+                          }
+                        }}
+                        className={`border ${
+                          selectedChildId === student.id ? 'border-portal bg-portal/5' : 'border-slate-200 bg-white'
+                        } p-6 shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-portal/30 cursor-pointer`}
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <h3 className="text-lg font-semibold text-slate-900">{student.name}</h3>
+                            <p className="text-sm text-slate-500">Class {student.class}</p>
+                          </div>
+                          <span className="border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600">
+                            {student.status}
+                          </span>
+                        </div>
+                        <div className="mt-4 grid gap-2 text-sm text-slate-600">
+                          <p>Total due: ₹{totalDue.toLocaleString('en-IN')}</p>
+                          <p>Tuition balance: ₹{tuitionDue.toLocaleString('en-IN')}</p>
+                          <p>Store charges: ₹{storeChargeTotal.toLocaleString('en-IN')}</p>
+                          <p>Fee cycle: {student.fee_cycle || 'Monthly'}</p>
+                          <p>Due date: {student.due_date || 'Not scheduled'}</p>
+                          {advanceStatus && (
+                            <p className="text-xs font-semibold text-emerald-600">{advanceStatus.message}</p>
+                          )}
+                        </div>
+                        <div className="mt-5 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setSelectedChildId(student.id);
+                              handleOpenPayment(student);
+                            }}
+                            className="border border-portal bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90"
+                          >
+                            Pay Now
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {students.length === 0 && (
+                    <div className="border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
+                      No student profiles are linked to this account yet.
+                    </div>
+                  )}
+                </div>
+
+                {selectedStudent && (
+                  <div className="border border-slate-200 bg-white p-6 shadow-sm">
+                    <h3 className="text-base font-semibold text-slate-900">{selectedStudent.name} · Details</h3>
+                    <div className="mt-4 grid gap-4 md:grid-cols-3">
+                      <div className="bg-slate-50 p-4 text-sm text-slate-600">
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Fee Overview</p>
+                        <p className="mt-2">
+                          Total fee: ₹{Number(selectedStudent.fee_amount || 0).toLocaleString('en-IN')}
+                        </p>
+                        <p className="mt-1">
+                          Tuition balance: ₹{Number(selectedStudent.balance ?? 0).toLocaleString('en-IN')}
+                        </p>
+                        <p className="mt-1">
+                          Store charges due: ₹{selectedStudentStoreTotal.toLocaleString('en-IN')}
+                        </p>
+                        <p className="mt-1">
+                          Other charges due: ₹{selectedStudentOthersTotal.toLocaleString('en-IN')}
+                        </p>
+                        <p className="mt-1 font-semibold text-slate-900">
+                          Overall due: ₹{selectedStudentTotalDue.toLocaleString('en-IN')}
+                        </p>
+                        <p className="mt-1">Fee cycle: {selectedStudent.fee_cycle || 'Monthly'}</p>
+                        <p className="mt-1">Due date: {selectedStudent.due_date || '—'}</p>
+                        {selectedStudentAdvanceStatus && (
+                          <p className="mt-1 text-xs font-semibold text-emerald-600">
+                            {selectedStudentAdvanceStatus.message}
+                          </p>
+                        )}
+                      </div>
+                      <div className="bg-slate-50 p-4 text-sm text-slate-600">
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Fee Breakdown</p>
+                        <ul className="mt-2 space-y-2">
+                          {(Array.isArray(selectedStudent.fee_breakdown) && selectedStudent.fee_breakdown.length > 0
+                            ? selectedStudent.fee_breakdown
+                            : [
+                                {
+                                  label: 'Term Fee',
+                                  amount: Number(selectedStudent.balance ?? selectedStudent.fee_amount ?? 0),
+                                },
+                              ]
+                          ).map((item, index) => (
+                            <li key={`${selectedStudent.id}-fee-${index}`} className="flex justify-between text-sm">
+                              <span>{item.label}</span>
+                              <span>₹{Number(item.amount || 0).toLocaleString('en-IN')}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                      <div className="bg-slate-50 p-4 text-sm text-slate-600">
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Extra Charges</p>
+                        {selectedStudentExtraGroups.store.length > 0 || selectedStudentExtraGroups.others.length > 0 ? (
+                          <div className="mt-2 space-y-3">
+                            {selectedStudentExtraGroups.others.length > 0 && (
+                              <div>
+                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Other Charges</p>
+                                <ul className="mt-2 space-y-2">
+                                  {selectedStudentExtraGroups.others.map((item) => (
+                                    <li key={item.id} className="flex items-start justify-between gap-3">
+                                      <div>
+                                        <p className="font-medium text-slate-900">{item.label}</p>
+                                        <p className="text-xs text-slate-500">{item.date}</p>
+                                      </div>
+                                      <span className="text-sm font-semibold text-slate-900">
+                                        ₹{Number(item.amount || 0).toLocaleString('en-IN')}
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                            {selectedStudentExtraGroups.store.length > 0 && (
+                              <div>
+                                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Store Charges</p>
+                                <ul className="mt-2 space-y-2">
+                                  {selectedStudentExtraGroups.store.map((item) => (
+                                    <li key={item.id} className="flex items-start justify-between gap-3">
+                                      <div>
+                                        <p className="font-medium text-slate-900">{item.label}</p>
+                                        <p className="text-xs text-slate-500">{item.date}</p>
+                                      </div>
+                                      <span className="text-sm font-semibold text-slate-900">
+                                        ₹{Number(item.amount || 0).toLocaleString('en-IN')}
+                                      </span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="mt-2 text-xs text-slate-500">No pending extra charges.</p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <aside className="space-y-4">
+                <div className="border border-slate-200 bg-white p-5 shadow-sm">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Razorpay details</h3>
+                  <div className="mt-4 space-y-3 text-sm text-slate-600">
+                    <div className="flex items-center justify-between border border-slate-200 px-3 py-2">
+                      <span className="text-xs uppercase tracking-wide text-slate-500">Status</span>
+                      <span className="text-xs font-semibold text-emerald-700">Active</span>
+                    </div>
+                    <div className="flex items-center justify-between border border-slate-200 px-3 py-2">
+                      <span className="text-xs uppercase tracking-wide text-slate-500">Account</span>
+                      <span className="text-xs font-semibold text-slate-700">{user.email}</span>
+                    </div>
+                    <div className="border border-slate-200 px-3 py-2">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Latest reference</p>
+                      {latestGatewayPayment ? (
+                        <div className="mt-2 text-xs text-slate-700">
+                          <p className="font-semibold text-slate-900">{latestGatewayPayment.id}</p>
+                          <p>{latestGatewayPayment.date}</p>
+                          <p>₹{latestGatewayPayment.amount.toLocaleString('en-IN')}</p>
+                          <p>{latestGatewayPayment.status}</p>
+                        </div>
+                      ) : (
+                        <p className="mt-2 text-xs text-slate-500">No Razorpay transactions yet.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <div className="border border-slate-200 bg-white p-5 shadow-sm">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">Pending requests</h3>
+                  <div className="mt-4 space-y-3 text-sm text-slate-600">
+                    {activeFeeRequests.length === 0 && (
+                      <p className="text-sm text-slate-500">No fee requests are pending right now.</p>
                     )}
-                  </div>
-                  <div className="mt-5 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setSelectedChildId(student.id);
-                        handleOpenPayment(student);
-                      }}
-                      className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90"
-                    >
-                      Pay Now
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-            {students.length === 0 && (
-              <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
-                No student profiles are linked to this account yet.
-              </div>
-            )}
-          </div>
-
-          {selectedStudent && (
-            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-              <h3 className="text-base font-semibold text-slate-900">{selectedStudent.name} · Details</h3>
-              <div className="mt-4 grid gap-4 md:grid-cols-3">
-                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Fee Overview</p>
-                  <p className="mt-2">
-                    Total fee: ₹{Number(selectedStudent.fee_amount || 0).toLocaleString('en-IN')}
-                  </p>
-                  <p className="mt-1">
-                    Tuition balance: ₹{Number(selectedStudent.balance ?? 0).toLocaleString('en-IN')}
-                  </p>
-                  <p className="mt-1">
-                    Store charges due: ₹{selectedStudentStoreTotal.toLocaleString('en-IN')}
-                  </p>
-                  <p className="mt-1">
-                    Other charges due: ₹{selectedStudentOthersTotal.toLocaleString('en-IN')}
-                  </p>
-                  <p className="mt-1 font-semibold text-slate-900">
-                    Overall due: ₹{selectedStudentTotalDue.toLocaleString('en-IN')}
-                  </p>
-                  <p className="mt-1">Fee cycle: {selectedStudent.fee_cycle || 'Monthly'}</p>
-                  <p className="mt-1">Due date: {selectedStudent.due_date || '—'}</p>
-                  {selectedStudentAdvanceStatus && (
-                    <p className="mt-1 text-xs font-semibold text-emerald-600">
-                      {selectedStudentAdvanceStatus.message}
-                    </p>
-                  )}
-                </div>
-                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Fee Breakdown</p>
-                  <ul className="mt-2 space-y-2">
-                    {(Array.isArray(selectedStudent.fee_breakdown) && selectedStudent.fee_breakdown.length > 0
-                      ? selectedStudent.fee_breakdown
-                      : [
-                          {
-                            label: 'Term Fee',
-                            amount: Number(selectedStudent.balance ?? selectedStudent.fee_amount ?? 0),
-                          },
-                        ]
-                    ).map((item, index) => (
-                      <li key={`${selectedStudent.id}-fee-${index}`} className="flex justify-between text-sm">
-                        <span>{item.label}</span>
-                        <span>₹{Number(item.amount || 0).toLocaleString('en-IN')}</span>
-                      </li>
+                    {activeFeeRequests.slice(0, 3).map((request) => (
+                      <div key={request.id} className="border border-slate-200 px-3 py-2">
+                        <p className="text-xs font-semibold text-slate-900">{buildRequestLabel(request)}</p>
+                        <p className="text-xs text-slate-500">Due: {request.due_date || settings.defaultDueDate || '—'}</p>
+                        <p className="text-xs text-slate-700">
+                          ₹{Number(request.balance ?? request.amount_total ?? 0).toLocaleString('en-IN')}
+                        </p>
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 </div>
-                <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                  <p className="text-xs uppercase tracking-wide text-slate-500">Extra Charges</p>
-                  {selectedStudentExtraGroups.store.length > 0 || selectedStudentExtraGroups.others.length > 0 ? (
-                    <div className="mt-2 space-y-3">
-                      {selectedStudentExtraGroups.others.length > 0 && (
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Other Charges</p>
-                          <ul className="mt-2 space-y-2">
-                            {selectedStudentExtraGroups.others.map((item) => (
-                              <li key={item.id} className="flex items-start justify-between gap-3">
-                                <div>
-                                  <p className="font-medium text-slate-900">{item.label}</p>
-                                  <p className="text-xs text-slate-500">{item.date}</p>
-                                </div>
-                                <span className="text-sm font-semibold text-slate-900">
-                                  ₹{Number(item.amount || 0).toLocaleString('en-IN')}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                      {selectedStudentExtraGroups.store.length > 0 && (
-                        <div>
-                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Store Charges</p>
-                          <ul className="mt-2 space-y-2">
-                            {selectedStudentExtraGroups.store.map((item) => (
-                              <li key={item.id} className="flex items-start justify-between gap-3">
-                                <div>
-                                  <p className="font-medium text-slate-900">{item.label}</p>
-                                  <p className="text-xs text-slate-500">{item.date}</p>
-                                </div>
-                                <span className="text-sm font-semibold text-slate-900">
-                                  ₹{Number(item.amount || 0).toLocaleString('en-IN')}
-                                </span>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="mt-2 text-xs text-slate-500">No pending extra charges.</p>
-                  )}
-                </div>
+              </aside>
+            </section>
+          </>
+        )}
+
+        {activeParentSection === 'history' && (
+          <section className="border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Payment History</h2>
+                <p className="text-sm text-slate-500">Download receipts and filter by student or timeframe.</p>
+              </div>
+              <div className="grid gap-3 md:grid-cols-3">
+                <select
+                  value={historyFilters.child}
+                  onChange={(event) =>
+                    setHistoryFilters((prev) => ({ ...prev, child: event.target.value }))
+                  }
+                  className="border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                >
+                  <option value="All">All Children</option>
+                  {students.map((student) => (
+                    <option key={student.id} value={student.studentId || student.id}>
+                      {student.name}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={historyFilters.month}
+                  onChange={(event) =>
+                    setHistoryFilters((prev) => ({ ...prev, month: event.target.value }))
+                  }
+                  className="border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                >
+                  <option value="All">All Months</option>
+                  {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((month) => (
+                    <option key={month} value={month}>
+                      {new Date(0, month - 1).toLocaleString('en-IN', { month: 'short' })}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={historyFilters.year}
+                  onChange={(event) =>
+                    setHistoryFilters((prev) => ({ ...prev, year: event.target.value }))
+                  }
+                  className="border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                >
+                  <option value="All">All Years</option>
+                  {yearsAvailable.map((year) => (
+                    <option key={year} value={year}>
+                      {year}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
-          )}
-        </section>
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">Payment History</h2>
-              <p className="text-sm text-slate-500">Download receipts and filter by student or timeframe.</p>
-            </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              <select
-                value={historyFilters.child}
-                onChange={(event) =>
-                  setHistoryFilters((prev) => ({ ...prev, child: event.target.value }))
-                }
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
-              >
-                <option value="All">All Children</option>
-                {students.map((student) => (
-                  <option key={student.id} value={student.studentId || student.id}>
-                    {student.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={historyFilters.month}
-                onChange={(event) =>
-                  setHistoryFilters((prev) => ({ ...prev, month: event.target.value }))
-                }
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
-              >
-                <option value="All">All Months</option>
-                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((month) => (
-                  <option key={month} value={month}>
-                    {new Date(0, month - 1).toLocaleString('en-IN', { month: 'short' })}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={historyFilters.year}
-                onChange={(event) =>
-                  setHistoryFilters((prev) => ({ ...prev, year: event.target.value }))
-                }
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
-              >
-                <option value="All">All Years</option>
-                {yearsAvailable.map((year) => (
-                  <option key={year} value={year}>
-                    {year}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="mt-6 overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3 text-left">Date</th>
-                  <th className="px-4 py-3 text-left">Child</th>
-                  <th className="px-4 py-3 text-left">Amount</th>
-                  <th className="px-4 py-3 text-left">Mode</th>
-                  <th className="px-4 py-3 text-left">Reference / UTR</th>
-                  <th className="px-4 py-3 text-left">Status</th>
-                  <th className="px-4 py-3 text-left">Receipt</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {paymentHistory.map((payment) => {
-                  const date = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
-                  return (
-                    <tr key={payment.id} className="hover:bg-slate-50/80">
-                      <td className="px-4 py-3">{Number.isFinite(date.getTime()) ? date.toLocaleString() : '—'}</td>
-                      <td className="px-4 py-3">{payment.student_name}</td>
-                      <td className="px-4 py-3">₹{Number(payment.amount || 0).toLocaleString('en-IN')}</td>
-                      <td className="px-4 py-3">{payment.mode || 'Online'}</td>
-                      <td className="px-4 py-3 text-slate-600">
-                        {payment.razorpay_payment_id || payment.transaction_id || '—'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            payment.status === 'Success'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-rose-100 text-rose-700'
-                          }`}
-                        >
-                          {payment.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => handleDownloadReceipt(payment)}
-                          className="rounded-lg border border-portal px-3 py-1.5 text-xs font-semibold text-portal transition hover:bg-portal/10"
-                        >
-                          Download
-                        </button>
+            <div className="mt-6 overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3 text-left">Date</th>
+                    <th className="px-4 py-3 text-left">Child</th>
+                    <th className="px-4 py-3 text-left">Amount</th>
+                    <th className="px-4 py-3 text-left">Mode</th>
+                    <th className="px-4 py-3 text-left">Reference / UTR</th>
+                    <th className="px-4 py-3 text-left">Status</th>
+                    <th className="px-4 py-3 text-left">Receipt</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {paymentHistory.map((payment) => {
+                    const date = payment.date?.toDate ? payment.date.toDate() : new Date(payment.date);
+                    return (
+                      <tr key={payment.id} className="hover:bg-slate-50/80">
+                        <td className="px-4 py-3">
+                          {Number.isFinite(date.getTime()) ? date.toLocaleString() : '—'}
+                        </td>
+                        <td className="px-4 py-3">{payment.student_name}</td>
+                        <td className="px-4 py-3">₹{Number(payment.amount || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-3">{payment.mode || 'Online'}</td>
+                        <td className="px-4 py-3 text-slate-600">
+                          {payment.razorpay_payment_id || payment.transaction_id || '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600">
+                            {payment.status}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadReceipt(payment)}
+                            className="border border-portal px-3 py-1.5 text-xs font-semibold text-portal transition hover:bg-portal/10"
+                          >
+                            Download
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {paymentHistory.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
+                        No payments match the selected filters.
                       </td>
                     </tr>
-                  );
-                })}
-                {paymentHistory.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
-                      No payments match the selected filters.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </section>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
 
-        <section className="grid gap-6 md:grid-cols-2">
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        {activeParentSection === 'notifications' && (
+          <section className="border border-slate-200 bg-white p-6 shadow-sm">
             <h2 className="text-lg font-semibold text-slate-900">Notifications</h2>
             <div className="mt-4 space-y-3">
               {notifications.length === 0 && (
@@ -1558,111 +1696,8 @@ const ParentDashboard = () => {
                 />
               ))}
             </div>
-          </div>
-
-          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-900">Profile</h2>
-            <form className="mt-4 space-y-4" onSubmit={handleProfileSave}>
-              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                Full name
-                <input
-                  value={profileForm.name}
-                  onChange={(event) => setProfileForm((prev) => ({ ...prev, name: event.target.value }))}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
-                  placeholder="Your name"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                Contact number
-                <input
-                  value={profileForm.contactNumber}
-                  onChange={(event) =>
-                    setProfileForm((prev) => ({ ...prev, contactNumber: event.target.value }))
-                  }
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
-                  placeholder="9876543210"
-                />
-              </label>
-              <div className="flex items-center gap-3">
-                <button
-                  type="submit"
-                  disabled={profileSaving}
-                  className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {profileSaving ? 'Saving…' : 'Save profile'}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleResetPassword}
-                  className="rounded-xl border border-portal px-4 py-2 text-sm font-semibold text-portal transition hover:bg-portal/10"
-                >
-                  Reset password
-                </button>
-              </div>
-            </form>
-          </div>
-        </section>
-
-        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">Help & Support</h2>
-          <div className="mt-4 grid gap-6 md:grid-cols-2">
-            <div>
-              <p className="text-sm font-semibold text-slate-700">Frequently Asked Questions</p>
-              <ul className="mt-3 space-y-3 text-sm text-slate-600">
-                <li>
-                  <p className="font-medium text-slate-800">How do I track my payments?</p>
-                  <p className="text-slate-600">Use the payment history table above to review transactions and download receipts.</p>
-                </li>
-                <li>
-                  <p className="font-medium text-slate-800">Can I pay partially?</p>
-                  <p className="text-slate-600">Yes, select the fee items you wish to pay in the payment modal.</p>
-                </li>
-                <li>
-                  <p className="font-medium text-slate-800">Who do I contact for technical help?</p>
-                  <p className="text-slate-600">Submit the support form and our team will respond within one business day.</p>
-                </li>
-              </ul>
-              <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm text-slate-600">
-                <p className="font-semibold text-slate-800">School Accounts Desk</p>
-                <p>Email: accounts@school.edu</p>
-                <p>Phone: +91 98765 43210</p>
-                <p>Timings: Mon-Fri · 9:00 AM – 5:00 PM</p>
-              </div>
-            </div>
-            <form className="space-y-4" onSubmit={handleSupportSubmit}>
-              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                Subject
-                <input
-                  value={supportForm.subject}
-                  onChange={(event) =>
-                    setSupportForm((prev) => ({ ...prev, subject: event.target.value }))
-                  }
-                  required
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
-                />
-              </label>
-              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-                Message
-                <textarea
-                  value={supportForm.message}
-                  onChange={(event) =>
-                    setSupportForm((prev) => ({ ...prev, message: event.target.value }))
-                  }
-                  required
-                  rows={4}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
-                />
-              </label>
-              <button
-                type="submit"
-                disabled={supportSubmitting}
-                className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
-              >
-                {supportSubmitting ? 'Sending…' : 'Send message'}
-              </button>
-            </form>
-          </div>
-        </section>
+          </section>
+        )}
       </div>
 
       <PayNowModal
