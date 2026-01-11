@@ -6568,7 +6568,7 @@ const resolveTransactionMonthLabel = (entry) => {
           {toast.message}
         </div>
       )}
-    </div>
+    </PortalLayout>
   );
 };
 
