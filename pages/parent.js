@@ -1215,83 +1215,46 @@ const ParentDashboard = () => {
             ))}
           </div>
           <div className="mt-auto space-y-4">
-            <div className="space-y-3 border border-slate-700/60 bg-slate-900/40 px-4 py-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs uppercase tracking-wide text-slate-300">Help & Support</p>
-                <button
-                  type="button"
-                  onClick={() => setActiveParentSection('notifications')}
-                  className="group flex items-center gap-2 border border-transparent px-2 py-1 text-[11px] font-semibold text-slate-200 transition hover:border-slate-600/70 hover:bg-white/5"
-                >
-                  <img
-                    src="/icons/sidebar/chat.svg"
-                    alt=""
-                    className="h-3.5 w-3.5 opacity-80 transition group-hover:opacity-100"
-                    aria-hidden="true"
-                  />
-                  Help Center
-                </button>
-              </div>
-              <form className="space-y-2" onSubmit={handleSupportSubmit}>
-                <input
-                  value={supportForm.subject}
-                  onChange={(event) => setSupportForm((prev) => ({ ...prev, subject: event.target.value }))}
-                  required
-                  placeholder="Subject"
-                  className="w-full border border-slate-700/70 bg-slate-900/60 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/30"
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-wide text-slate-300">Account tools</p>
+              <button
+                type="button"
+                onClick={() => setActiveParentSection('support')}
+                className={`group flex w-full items-center gap-3 border px-4 py-2 text-left text-sm font-semibold transition ${
+                  activeParentSection === 'support'
+                    ? 'border-portal/70 bg-white/10 text-white'
+                    : 'border-transparent text-slate-200 hover:border-slate-600/70 hover:bg-white/5'
+                }`}
+              >
+                <img
+                  src="/icons/sidebar/chat.svg"
+                  alt=""
+                  className={`h-4 w-4 transition ${
+                    activeParentSection === 'support' ? 'opacity-100' : 'opacity-70 group-hover:opacity-100'
+                  }`}
+                  aria-hidden="true"
                 />
-                <textarea
-                  value={supportForm.message}
-                  onChange={(event) => setSupportForm((prev) => ({ ...prev, message: event.target.value }))}
-                  required
-                  rows={3}
-                  placeholder="How can we help?"
-                  className="w-full border border-slate-700/70 bg-slate-900/60 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/30"
+                Help & Support
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveParentSection('profile')}
+                className={`group flex w-full items-center gap-3 border px-4 py-2 text-left text-sm font-semibold transition ${
+                  activeParentSection === 'profile'
+                    ? 'border-portal/70 bg-white/10 text-white'
+                    : 'border-transparent text-slate-200 hover:border-slate-600/70 hover:bg-white/5'
+                }`}
+              >
+                <img
+                  src="/icons/sidebar/users.svg"
+                  alt=""
+                  className={`h-4 w-4 transition ${
+                    activeParentSection === 'profile' ? 'opacity-100' : 'opacity-70 group-hover:opacity-100'
+                  }`}
+                  aria-hidden="true"
                 />
-                <button
-                  type="submit"
-                  disabled={supportSubmitting}
-                  className="w-full border border-portal/60 bg-portal/90 px-3 py-2 text-xs font-semibold text-white transition hover:bg-portal disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {supportSubmitting ? 'Sending...' : 'Send Support Request'}
-                </button>
-              </form>
-            </div>
-            <div className="space-y-3 border border-slate-700/60 bg-slate-900/40 px-4 py-3">
-              <div className="flex items-center gap-2">
-                <img src="/icons/sidebar/users.svg" alt="" className="h-4 w-4 opacity-80" aria-hidden="true" />
-                <p className="text-xs uppercase tracking-wide text-slate-300">Profile update</p>
-              </div>
-              <form className="space-y-2" onSubmit={handleProfileSave}>
-                <input
-                  value={profileForm.name}
-                  onChange={(event) => setProfileForm((prev) => ({ ...prev, name: event.target.value }))}
-                  placeholder="Full name"
-                  className="w-full border border-slate-700/70 bg-slate-900/60 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/30"
-                />
-                <input
-                  value={profileForm.contactNumber}
-                  onChange={(event) => setProfileForm((prev) => ({ ...prev, contactNumber: event.target.value }))}
-                  placeholder="Contact number"
-                  className="w-full border border-slate-700/70 bg-slate-900/60 px-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/30"
-                />
-                <div className="space-y-2">
-                  <button
-                    type="submit"
-                    disabled={profileSaving}
-                    className="w-full border border-portal/60 bg-portal/90 px-3 py-2 text-xs font-semibold text-white transition hover:bg-portal disabled:cursor-not-allowed disabled:opacity-70"
-                  >
-                    {profileSaving ? 'Saving...' : 'Save profile'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleResetPassword}
-                    className="w-full border border-slate-600/70 px-3 py-2 text-xs font-semibold text-slate-100 transition hover:border-slate-400/70 hover:bg-white/5"
-                  >
-                    Reset password
-                  </button>
-                </div>
-              </form>
+                Profile Update
+              </button>
             </div>
             <button
               type="button"
@@ -1696,6 +1659,111 @@ const ParentDashboard = () => {
                 />
               ))}
             </div>
+          </section>
+        )}
+
+        {activeParentSection === 'support' && (
+          <section className="border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="grid gap-6 md:grid-cols-2">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Help & Support</h2>
+                <p className="mt-2 text-sm text-slate-500">
+                  Reach out to the accounts team for billing, receipts, or access issues.
+                </p>
+                <div className="mt-4 space-y-3 text-sm text-slate-600">
+                  <div className="border border-slate-200 p-4">
+                    <p className="text-xs uppercase tracking-wide text-slate-500">School Accounts Desk</p>
+                    <p className="mt-2 font-semibold text-slate-900">accounts@school.edu</p>
+                    <p className="text-xs text-slate-500">Mon-Fri · 9:00 AM - 5:00 PM</p>
+                  </div>
+                  <div className="border border-slate-200 p-4">
+                    <p className="text-xs uppercase tracking-wide text-slate-500">Quick answers</p>
+                    <ul className="mt-2 space-y-2">
+                      <li>Track payments in the Payment History menu.</li>
+                      <li>Use Pay Now under Fees to clear pending balances.</li>
+                      <li>We reply to support requests within one business day.</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+              <form className="space-y-4" onSubmit={handleSupportSubmit}>
+                <div>
+                  <label className="text-sm font-medium text-slate-700">Subject</label>
+                  <input
+                    value={supportForm.subject}
+                    onChange={(event) => setSupportForm((prev) => ({ ...prev, subject: event.target.value }))}
+                    required
+                    className="mt-2 w-full border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-slate-700">Message</label>
+                  <textarea
+                    value={supportForm.message}
+                    onChange={(event) => setSupportForm((prev) => ({ ...prev, message: event.target.value }))}
+                    required
+                    rows={4}
+                    className="mt-2 w-full border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={supportSubmitting}
+                  className="border border-portal bg-portal px-4 py-2 text-sm font-semibold text-white transition hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {supportSubmitting ? 'Sending...' : 'Send Support Request'}
+                </button>
+              </form>
+            </div>
+          </section>
+        )}
+
+        {activeParentSection === 'profile' && (
+          <section className="border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Profile Update</h2>
+                <p className="text-sm text-slate-500">Manage your parent account details.</p>
+              </div>
+            </div>
+            <form className="mt-6 grid gap-4 md:grid-cols-2" onSubmit={handleProfileSave}>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Full name
+                <input
+                  value={profileForm.name}
+                  onChange={(event) => setProfileForm((prev) => ({ ...prev, name: event.target.value }))}
+                  className="border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                  placeholder="Your name"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Contact number
+                <input
+                  value={profileForm.contactNumber}
+                  onChange={(event) =>
+                    setProfileForm((prev) => ({ ...prev, contactNumber: event.target.value }))
+                  }
+                  className="border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                  placeholder="9876543210"
+                />
+              </label>
+              <div className="flex flex-wrap gap-3 md:col-span-2">
+                <button
+                  type="submit"
+                  disabled={profileSaving}
+                  className="border border-portal bg-portal px-4 py-2 text-sm font-semibold text-white transition hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {profileSaving ? 'Saving...' : 'Save profile'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetPassword}
+                  className="border border-portal px-4 py-2 text-sm font-semibold text-portal transition hover:bg-portal/10"
+                >
+                  Reset password
+                </button>
+              </div>
+            </form>
           </section>
         )}
       </div>
