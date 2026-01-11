@@ -21,6 +21,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
+import PortalLayout from '../components/PortalLayout';
 
 const parseDateValue = (value) => {
   if (!value) return null;
@@ -137,7 +138,7 @@ const PayNowModal = ({
                     type="checkbox"
                     checked={item.selected}
                     onChange={() => onToggle(index)}
-                    className="h-4 w-4 rounded border-slate-300 text-cardinal focus:ring-cardinal"
+                    className="h-4 w-4 rounded border-slate-300 text-portal focus:ring-portal"
                   />
                   <div>
                     <p className="font-medium text-slate-900">{item.label}</p>
@@ -156,7 +157,7 @@ const PayNowModal = ({
                   checked={advanceEnabled}
                   onChange={(event) => onAdvanceToggle(event.target.checked)}
                   disabled={advanceUnavailable}
-                  className="h-4 w-4 rounded border-slate-300 text-cardinal focus:ring-cardinal disabled:opacity-50"
+                  className="h-4 w-4 rounded border-slate-300 text-portal focus:ring-portal disabled:opacity-50"
                 />
                 Pay advance
               </label>
@@ -178,7 +179,7 @@ const PayNowModal = ({
                       id="advance-term"
                       value={selectedAdvanceId || ''}
                       onChange={(event) => onAdvanceSelect(event.target.value)}
-                      className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                      className="w-full appearance-none rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                     >
                       {availableAdvanceOptions.map((plan) => (
                         <option key={plan.id} value={plan.id}>
@@ -201,10 +202,10 @@ const PayNowModal = ({
               )}
             </div>
           )}
-          <div className="mt-6 rounded-2xl border border-cardinal bg-cardinal/5 px-4 py-3 text-slate-800">
+          <div className="mt-6 rounded-2xl border border-portal bg-portal/5 px-4 py-3 text-slate-800">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Total payable</span>
-              <span className="text-lg font-semibold text-cardinal">₹{total.toLocaleString('en-IN')}</span>
+              <span className="text-lg font-semibold text-portal">₹{total.toLocaleString('en-IN')}</span>
             </div>
           </div>
         </div>
@@ -220,7 +221,7 @@ const PayNowModal = ({
             type="button"
             onClick={onConfirm}
             disabled={processing || total <= 0}
-            className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+            className="rounded-xl bg-portal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
           >
             {processing ? 'Processing…' : `Pay ₹${total.toLocaleString('en-IN')}`}
           </button>
@@ -246,7 +247,7 @@ const NotificationCard = ({ notification, onMarkRead }) => (
         <button
           type="button"
           onClick={() => onMarkRead(notification.id)}
-          className="rounded-lg border border-cardinal px-3 py-1 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
+          className="rounded-lg border border-portal px-3 py-1 text-xs font-semibold text-portal transition hover:bg-portal/10"
         >
           Mark as read
         </button>
@@ -1144,11 +1145,11 @@ const ParentDashboard = () => {
 
   if (!authChecked) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white text-cardinal">
+      <div className="flex min-h-screen items-center justify-center bg-white text-portal">
         <Head>
           <title>Parent Dashboard</title>
         </Head>
-        <span className="h-8 w-8 animate-spin rounded-full border-2 border-cardinal/40 border-t-cardinal" />
+        <span className="h-8 w-8 animate-spin rounded-full border-2 border-portal/40 border-t-portal" />
       </div>
     );
   }
@@ -1158,48 +1159,57 @@ const ParentDashboard = () => {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-rose-50 via-white to-slate-50">
-      <Head>
-        <title>Parent Dashboard · EL-NODE Pay</title>
-      </Head>
-      <header className="relative overflow-hidden border-b border-white/70 bg-white/80 shadow-sm backdrop-blur-xl">
-        <div className="absolute -left-16 top-0 h-40 w-40 rounded-full bg-cardinal/10 blur-3xl" aria-hidden="true" />
-        <div className="absolute right-0 top-0 h-32 w-56 rounded-full bg-indigo-200/30 blur-3xl" aria-hidden="true" />
-        <div className="relative mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6 md:flex-row md:items-center md:justify-between">
-          <div className="flex items-start gap-3">
-            <Image src="/elnode.png" alt="EL-NODE Pay logo" width={48} height={48} priority />
+    <PortalLayout
+      sidebar={
+        <>
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
+              <Image src="/elnode.png" alt="EL-NODE Pay logo" width={32} height={32} className="h-8 w-8" />
+            </div>
             <div>
-              <h1 className="text-2xl font-semibold text-slate-900">Parent Dashboard</h1>
-              <p className="text-sm text-slate-600">
-                Manage your children’s fee payments, track history, and stay on top of reminders.
-              </p>
+              <p className="text-xs uppercase tracking-wide text-slate-300">Parent</p>
+              <h1 className="text-xl font-semibold text-white">Dashboard</h1>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="rounded-2xl bg-white/5 p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-300">Total due</p>
+            <p className="mt-2 text-2xl font-semibold text-white">
+              ₹{metrics.totalDue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+            </p>
+            <p className="text-xs text-slate-300">
+              {metrics.totalDue > 0 ? 'Balance due across students.' : 'No outstanding balance.'}
+            </p>
+          </div>
+          <div className="space-y-2 rounded-2xl bg-white/5 p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-300">Quick actions</p>
             <button
               type="button"
               onClick={() => students.length > 0 && handleOpenPayment(students[0])}
               disabled={metrics.totalDue <= 0}
-              className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+              className="w-full rounded-xl bg-portal px-3 py-2 text-left text-xs font-semibold text-white shadow transition hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {metrics.totalDue > 0 ? 'Pay Outstanding Balance' : 'All Clear'}
             </button>
             <button
               type="button"
               onClick={() => setSignOutConfirmOpen(true)}
-              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-slate-100"
+              className="w-full rounded-xl bg-white/10 px-3 py-2 text-left text-xs font-semibold text-white transition hover:bg-white/20"
             >
               Sign Out
             </button>
           </div>
-        </div>
-      </header>
+        </>
+      }
+    >
+      <Head>
+        <title>Parent Dashboard · EL-NODE Pay</title>
+      </Head>
 
-      <main className="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-8">
+      <div className="flex flex-col gap-8">
         <section className="grid gap-4 md:grid-cols-3">
           <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <h3 className="text-sm font-medium text-slate-500">Total Fees Due</h3>
-            <p className="mt-3 text-2xl font-semibold text-cardinal">
+            <p className="mt-3 text-2xl font-semibold text-portal">
               ₹{metrics.totalDue.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
             </p>
             <p className="mt-2 text-xs text-slate-500">
@@ -1258,8 +1268,8 @@ const ParentDashboard = () => {
                     }
                   }}
                   className={`rounded-3xl border ${
-                    selectedChildId === student.id ? 'border-cardinal bg-cardinal/5' : 'border-slate-200 bg-white'
-                  } p-6 shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-cardinal/30 cursor-pointer`}
+                    selectedChildId === student.id ? 'border-portal bg-portal/5' : 'border-slate-200 bg-white'
+                  } p-6 shadow-sm transition hover:shadow-md focus:outline-none focus:ring-2 focus:ring-portal/30 cursor-pointer`}
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -1296,7 +1306,7 @@ const ParentDashboard = () => {
                         setSelectedChildId(student.id);
                         handleOpenPayment(student);
                       }}
-                      className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90"
+                      className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90"
                     >
                       Pay Now
                     </button>
@@ -1421,7 +1431,7 @@ const ParentDashboard = () => {
                 onChange={(event) =>
                   setHistoryFilters((prev) => ({ ...prev, child: event.target.value }))
                 }
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
               >
                 <option value="All">All Children</option>
                 {students.map((student) => (
@@ -1435,7 +1445,7 @@ const ParentDashboard = () => {
                 onChange={(event) =>
                   setHistoryFilters((prev) => ({ ...prev, month: event.target.value }))
                 }
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
               >
                 <option value="All">All Months</option>
                 {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((month) => (
@@ -1449,7 +1459,7 @@ const ParentDashboard = () => {
                 onChange={(event) =>
                   setHistoryFilters((prev) => ({ ...prev, year: event.target.value }))
                 }
-                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
               >
                 <option value="All">All Years</option>
                 {yearsAvailable.map((year) => (
@@ -1501,7 +1511,7 @@ const ParentDashboard = () => {
                         <button
                           type="button"
                           onClick={() => handleDownloadReceipt(payment)}
-                          className="rounded-lg border border-cardinal px-3 py-1.5 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
+                          className="rounded-lg border border-portal px-3 py-1.5 text-xs font-semibold text-portal transition hover:bg-portal/10"
                         >
                           Download
                         </button>
@@ -1546,7 +1556,7 @@ const ParentDashboard = () => {
                 <input
                   value={profileForm.name}
                   onChange={(event) => setProfileForm((prev) => ({ ...prev, name: event.target.value }))}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                   placeholder="Your name"
                 />
               </label>
@@ -1557,7 +1567,7 @@ const ParentDashboard = () => {
                   onChange={(event) =>
                     setProfileForm((prev) => ({ ...prev, contactNumber: event.target.value }))
                   }
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                   placeholder="9876543210"
                 />
               </label>
@@ -1565,14 +1575,14 @@ const ParentDashboard = () => {
                 <button
                   type="submit"
                   disabled={profileSaving}
-                  className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                  className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   {profileSaving ? 'Saving…' : 'Save profile'}
                 </button>
                 <button
                   type="button"
                   onClick={handleResetPassword}
-                  className="rounded-xl border border-cardinal px-4 py-2 text-sm font-semibold text-cardinal transition hover:bg-cardinal/10"
+                  className="rounded-xl border border-portal px-4 py-2 text-sm font-semibold text-portal transition hover:bg-portal/10"
                 >
                   Reset password
                 </button>
@@ -1616,7 +1626,7 @@ const ParentDashboard = () => {
                     setSupportForm((prev) => ({ ...prev, subject: event.target.value }))
                   }
                   required
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 />
               </label>
               <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
@@ -1628,20 +1638,20 @@ const ParentDashboard = () => {
                   }
                   required
                   rows={4}
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 />
               </label>
               <button
                 type="submit"
                 disabled={supportSubmitting}
-                className="rounded-xl bg-cardinal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+                className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
               >
                 {supportSubmitting ? 'Sending…' : 'Send message'}
               </button>
             </form>
           </div>
         </section>
-      </main>
+      </div>
 
       <PayNowModal
         open={paymentContext.open}
@@ -1679,7 +1689,7 @@ const ParentDashboard = () => {
               <button
                 type="button"
                 onClick={handleConfirmSignOut}
-                className="rounded-full bg-cardinal px-4 py-2 text-sm font-semibold text-white transition hover:bg-cardinal/90"
+                className="rounded-full bg-portal px-4 py-2 text-sm font-semibold text-white transition hover:bg-portal/90"
               >
                 Yes
               </button>
@@ -1687,7 +1697,7 @@ const ParentDashboard = () => {
           </div>
         </div>
       )}
-    </div>
+    </PortalLayout>
   );
 };
 

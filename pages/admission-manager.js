@@ -21,6 +21,7 @@ import {
 import { getApps, initializeApp } from 'firebase/app';
 import { createUserWithEmailAndPassword, getAuth as getFirebaseAuth, onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, db } from '../lib/firebase';
+import PortalLayout from '../components/PortalLayout';
 
 const CLASS_OPTIONS = ['Nursery', 'UKG', 'LKG', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
@@ -150,7 +151,7 @@ const SectionTabs = ({ tabs, active, onChange }) => (
         type="button"
         onClick={() => onChange(tab.id)}
         className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-          active === tab.id ? 'bg-cardinal text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+          active === tab.id ? 'bg-portal text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
         }`}
         role="tab"
         aria-selected={active === tab.id}
@@ -200,7 +201,7 @@ const StudentIntakeModal = ({
                 value={form.studentName}
                 onChange={onChange}
                 required
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
               />
             </label>
             <label className="space-y-1 font-semibold">
@@ -210,7 +211,7 @@ const StudentIntakeModal = ({
                 value={form.classApplied}
                 onChange={onChange}
                 required
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
               >
                 <option value="">Select class</option>
                 {CLASS_OPTIONS.map((item) => (
@@ -226,7 +227,7 @@ const StudentIntakeModal = ({
                 name="section"
                 value={form.section}
                 onChange={onChange}
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 placeholder="A"
               />
             </label>
@@ -236,7 +237,7 @@ const StudentIntakeModal = ({
                 name="house"
                 value={form.house}
                 onChange={onChange}
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
               >
                 <option value="">Not assigned</option>
                 {houseOptions.map((house) => (
@@ -256,7 +257,7 @@ const StudentIntakeModal = ({
                 value={form.yearOfJoining}
                 onChange={onChange}
                 required
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
               />
             </label>
             <label className="space-y-1 font-semibold">
@@ -267,7 +268,7 @@ const StudentIntakeModal = ({
                 value={form.yearOfPassing}
                 onChange={onChange}
                 required
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
               />
             </label>
           </div>
@@ -279,7 +280,7 @@ const StudentIntakeModal = ({
                 type="email"
                 value={form.parentEmail}
                 onChange={onChange}
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 placeholder="parent@email.com"
               />
             </label>
@@ -289,7 +290,7 @@ const StudentIntakeModal = ({
                 name="parentPhone"
                 value={form.parentPhone}
                 onChange={onChange}
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 placeholder="9876543210"
               />
             </label>
@@ -306,7 +307,7 @@ const StudentIntakeModal = ({
             <button
               type="submit"
               disabled={submitting}
-              className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-cardinal/90 disabled:cursor-not-allowed disabled:opacity-70"
+              className="rounded-xl bg-portal px-5 py-2 text-sm font-semibold text-white shadow transition hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
             >
               {submitting ? 'Saving…' : 'Save student'}
             </button>
@@ -391,7 +392,7 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
             value={form.studentName}
             onChange={handleChange}
             placeholder="Student name"
-            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             required
           />
           <div className="grid gap-3 sm:grid-cols-2">
@@ -400,14 +401,14 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
               name="dob"
               value={form.dob}
               onChange={handleChange}
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             />
             <input
               name="currentClass"
               value={form.currentClass}
               onChange={handleChange}
               placeholder="Current class"
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             />
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
@@ -415,7 +416,7 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
               name="classApplied"
               value={form.classApplied}
               onChange={handleChange}
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             >
               <option value="">Class applying for</option>
               {CLASS_OPTIONS.map((classOption) => (
@@ -428,7 +429,7 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
               name="academicYear"
               value={form.academicYear}
               onChange={handleChange}
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             >
               <option value="">Academic year for admission</option>
               {academicYears.map((year) => (
@@ -448,7 +449,7 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
               value={form.parentName}
               onChange={handleChange}
               placeholder="Name"
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
               required
             />
             <input
@@ -456,7 +457,7 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
               value={form.parentPhone}
               onChange={handleChange}
               placeholder="Mobile number"
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
               required
             />
             <input
@@ -465,13 +466,13 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
               value={form.parentEmail}
               onChange={handleChange}
               placeholder="Email"
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             />
             <select
               name="parentRelationship"
               value={form.parentRelationship}
               onChange={handleChange}
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             >
               <option value="">Relationship to student</option>
               <option value="Mother">Mother</option>
@@ -487,21 +488,21 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
               value={form.city}
               onChange={handleChange}
               placeholder="City"
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             />
             <input
               name="locality"
               value={form.locality}
               onChange={handleChange}
               placeholder="Area or locality"
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             />
             <textarea
               name="parentAddress"
               value={form.parentAddress}
               onChange={handleChange}
               placeholder="Full address (optional)"
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
               rows={3}
             />
           </div>
@@ -515,14 +516,14 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
               value={form.currentSchool}
               onChange={handleChange}
               placeholder="Current school name"
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             />
             <input
               name="board"
               value={form.board}
               onChange={handleChange}
               placeholder="Board"
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             />
           </div>
 
@@ -533,14 +534,14 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
               value={form.purpose}
               onChange={handleChange}
               placeholder="Purpose of inquiry"
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             />
             <div className="grid gap-3 sm:grid-cols-2">
               <select
                 name="preferredContact"
                 value={form.preferredContact}
                 onChange={handleChange}
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
               >
                 <option value="">Preferred contact mode</option>
                 <option value="Call">Call</option>
@@ -552,14 +553,14 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
                 value={form.bestTime}
                 onChange={handleChange}
                 placeholder="Best time to reach"
-                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
               />
             </div>
             <select
               name="inquirySource"
               value={form.inquirySource}
               onChange={handleChange}
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             >
               <option value="">How they found you</option>
               <option value="Walk-in">Walk-in</option>
@@ -572,11 +573,11 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
           </div>
         </div>
 
-        <div className="space-y-3 rounded-2xl border border-dashed border-cardinal/40 bg-cardinal/5 p-4">
+        <div className="space-y-3 rounded-2xl border border-dashed border-portal/40 bg-portal/5 p-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-cardinal">Additional Note</h3>
-              <p className="text-xs text-cardinal/80">Optional note for the counselor.</p>
+              <h3 className="text-sm font-semibold uppercase tracking-wide text-portal">Additional Note</h3>
+              <p className="text-xs text-portal/80">Optional note for the counselor.</p>
             </div>
           </div>
           <textarea
@@ -584,7 +585,7 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
             value={form.notes}
             onChange={handleChange}
             placeholder="Short message or questions"
-            className="w-full rounded-xl border border-cardinal/30 bg-white px-4 py-3 text-sm text-slate-900 focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+            className="w-full rounded-xl border border-portal/30 bg-white px-4 py-3 text-sm text-slate-900 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             rows={3}
           />
         </div>
@@ -594,7 +595,7 @@ const ManualInquiryForm = ({ onSubmit, submitting, academicYears, activeAcademic
         <button
           type="submit"
           disabled={submitting}
-          className="flex items-center gap-2 rounded-xl bg-cardinal px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-cardinal/90 disabled:opacity-60"
+          className="flex items-center gap-2 rounded-xl bg-portal px-6 py-3 text-sm font-semibold text-white shadow-lg transition hover:bg-portal/90 disabled:opacity-60"
         >
           {submitting ? 'Saving inquiry...' : 'Create Inquiry'}
         </button>
@@ -797,8 +798,8 @@ const PaymentModal = ({
                     key={plan.id}
                     className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3 py-2 transition ${
                       selectedPlanId === plan.id
-                        ? 'border-cardinal bg-cardinal/10 text-cardinal'
-                        : 'border-slate-200 bg-white text-slate-700 hover:border-cardinal/30'
+                        ? 'border-portal bg-portal/10 text-portal'
+                        : 'border-slate-200 bg-white text-slate-700 hover:border-portal/30'
                     }`}
                   >
                     <input
@@ -826,7 +827,7 @@ const PaymentModal = ({
             </div>
             <div className="mt-1 flex items-center justify-between gap-3">
               <span className="text-slate-500">Collect now</span>
-              <span className="font-semibold text-cardinal">₹{payableAmount.toLocaleString('en-IN')}</span>
+              <span className="font-semibold text-portal">₹{payableAmount.toLocaleString('en-IN')}</span>
             </div>
             {planRemainder.length > 0 && (
               <ul className="mt-2 space-y-1">
@@ -848,7 +849,7 @@ const PaymentModal = ({
               id="payment-mode"
               value={mode}
               onChange={(event) => setMode(event.target.value)}
-              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             >
               <option value="online">Online</option>
               <option value="cash">Cash</option>
@@ -865,8 +866,8 @@ const PaymentModal = ({
                   onClick={() => setOnlineMethod('now')}
                   className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${
                     onlineMethod === 'now'
-                      ? 'border-cardinal bg-cardinal/10 text-cardinal'
-                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-cardinal/40'
+                      ? 'border-portal bg-portal/10 text-portal'
+                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-portal/40'
                   }`}
                 >
                   Pay now (Razorpay)
@@ -876,8 +877,8 @@ const PaymentModal = ({
                   onClick={() => setOnlineMethod('website')}
                   className={`rounded-xl border px-4 py-3 text-sm font-semibold transition ${
                     onlineMethod === 'website'
-                      ? 'border-cardinal bg-cardinal/10 text-cardinal'
-                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-cardinal/40'
+                      ? 'border-portal bg-portal/10 text-portal'
+                      : 'border-slate-200 bg-slate-50 text-slate-700 hover:border-portal/40'
                   }`}
                 >
                   Recorded payment
@@ -896,7 +897,7 @@ const PaymentModal = ({
               min="0"
               value={payableAmount}
               readOnly
-              className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+              className="mt-2 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
             />
             {numericAmount !== payableAmount && (
               <p className="mt-1 text-xs text-slate-500">Total due: ₹{numericAmount.toLocaleString('en-IN')}</p>
@@ -913,7 +914,7 @@ const PaymentModal = ({
                 value={transactionId}
                 onChange={(event) => setTransactionId(event.target.value)}
                 placeholder="Transaction reference"
-                className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
               />
             </div>
           )}
@@ -928,7 +929,7 @@ const PaymentModal = ({
                 value={reference}
                 onChange={(event) => setReference(event.target.value)}
                 placeholder="Enter voucher number"
-                className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
               />
             </div>
           )}
@@ -943,7 +944,7 @@ const PaymentModal = ({
                 value={reference}
                 onChange={(event) => setReference(event.target.value)}
                 placeholder="Enter UTR number"
-                className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+                className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
               />
             </div>
           )}
@@ -960,7 +961,7 @@ const PaymentModal = ({
             type="button"
             disabled={processing || !canSubmit}
             onClick={handleLogPayment}
-            className="rounded-lg bg-cardinal px-4 py-2 text-xs font-semibold text-white shadow hover:bg-cardinal/90 disabled:opacity-60"
+            className="rounded-lg bg-portal px-4 py-2 text-xs font-semibold text-white shadow hover:bg-portal/90 disabled:opacity-60"
           >
             {processing ? 'Processing...' : onlineMethod === 'now' && mode === 'online' ? 'Pay now' : 'Confirm payment'}
           </button>
@@ -1014,14 +1015,14 @@ const RegistrationForm = ({ onSubmit, academicYears, activeAcademicYear, submitt
           onChange={handleChange}
           placeholder="Student name"
           required
-          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
         />
         <select
           name="classApplied"
           value={form.classApplied}
           onChange={handleChange}
           required
-          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
         >
           <option value="">Select class</option>
           {CLASS_OPTIONS.map((classOption) => (
@@ -1038,7 +1039,7 @@ const RegistrationForm = ({ onSubmit, academicYears, activeAcademicYear, submitt
           onChange={handleChange}
           placeholder="Parent/Guardian name"
           required
-          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
         />
         <input
           name="parentPhone"
@@ -1046,7 +1047,7 @@ const RegistrationForm = ({ onSubmit, academicYears, activeAcademicYear, submitt
           onChange={handleChange}
           placeholder="Mobile number"
           required
-          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
         />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -1056,13 +1057,13 @@ const RegistrationForm = ({ onSubmit, academicYears, activeAcademicYear, submitt
           value={form.parentEmail}
           onChange={handleChange}
           placeholder="Email (optional)"
-          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
         />
         <select
           name="academicYear"
           value={form.academicYear}
           onChange={handleChange}
-          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-cardinal focus:outline-none focus:ring-2 focus:ring-cardinal/20"
+          className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
         >
           <option value="">Academic year</option>
           {academicYears.map((year) => (
@@ -1078,7 +1079,7 @@ const RegistrationForm = ({ onSubmit, academicYears, activeAcademicYear, submitt
           name="inquired"
           checked={form.inquired}
           onChange={handleChange}
-          className="h-4 w-4 rounded border-slate-300 text-cardinal focus:ring-cardinal/60"
+          className="h-4 w-4 rounded border-slate-300 text-portal focus:ring-portal/60"
         />
         Student already inquired?
       </label>
@@ -1086,7 +1087,7 @@ const RegistrationForm = ({ onSubmit, academicYears, activeAcademicYear, submitt
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-xl bg-cardinal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-cardinal/90 disabled:opacity-60"
+          className="rounded-xl bg-portal px-5 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:opacity-60"
         >
           {submitting ? 'Preparing payment...' : 'Create & collect payment'}
         </button>
@@ -1094,25 +1095,6 @@ const RegistrationForm = ({ onSubmit, academicYears, activeAcademicYear, submitt
     </form>
   );
 };
-const MobileTabScroller = ({ tabs, active, onChange }) => (
-  <div className="flex gap-2 overflow-x-auto pb-4 sm:hidden" role="tablist" aria-label="Admissions navigation">
-    {tabs.map((tab) => (
-      <button
-        key={tab.id}
-        type="button"
-        onClick={() => onChange(tab.id)}
-        className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition ${
-          active === tab.id ? 'bg-cardinal text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-        }`}
-        role="tab"
-        aria-selected={active === tab.id}
-      >
-        {tab.label}
-      </button>
-    ))}
-  </div>
-);
-
 const handlePrint = (title, body) => {
   const win = window.open('', '_blank');
   if (!win) return;
@@ -1913,7 +1895,7 @@ export default function AdminManagerPortal() {
   }, []);
   if (!authChecked) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-white text-cardinal">
+      <div className="flex min-h-screen items-center justify-center bg-white text-portal">
         <p className="text-sm font-semibold">Loading portal...</p>
       </div>
     );
@@ -1922,52 +1904,49 @@ export default function AdminManagerPortal() {
   if (!user) return null;
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-gradient-to-br from-rose-50 via-white to-slate-50">
-      <Head>
-        <title>Admission Manager Portal</title>
-      </Head>
-
-      <header className="relative z-50 overflow-visible border-b border-white/60 bg-white/80 shadow-sm backdrop-blur-xl">
-        <div className="absolute -left-16 top-0 h-32 w-32 rounded-full bg-cardinal/10 blur-3xl" aria-hidden="true" />
-        <div className="absolute right-0 top-0 h-28 w-44 rounded-full bg-indigo-200/30 blur-3xl" aria-hidden="true" />
-        <div className="relative mx-auto flex max-w-6xl items-center justify-between px-4 py-4">
+    <PortalLayout
+      sidebar={
+        <>
           <div className="flex items-center gap-3">
-            <Image src="/elnode.png" alt="Elnode logo" width={40} height={40} className="h-10 w-10" />
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
+              <Image src="/elnode.png" alt="Elnode logo" width={32} height={32} className="h-8 w-8" />
+            </div>
             <div>
-              <p className="text-xs uppercase tracking-wide text-slate-500">Admission Manager</p>
-              <h1 className="text-xl font-semibold text-slate-900">Portal</h1>
+              <p className="text-xs uppercase tracking-wide text-slate-300">Admission Manager</p>
+              <h1 className="text-xl font-semibold text-white">Portal</h1>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="text-right">
-              <p className="text-sm font-semibold text-slate-900">{profile?.name || 'Admission Team'}</p>
-              <p className="text-xs text-slate-500">{user.email}</p>
-            </div>
+          <div className="rounded-2xl bg-white/5 p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-300">Signed in</p>
+            <p className="mt-2 text-sm font-semibold text-white">{profile?.name || 'Admission Team'}</p>
+            <p className="text-xs text-slate-300">{user.email}</p>
+          </div>
+          <div className="space-y-2 rounded-2xl bg-white/5 p-4">
+            <p className="text-xs uppercase tracking-wide text-slate-300">Quick actions</p>
             <button
               type="button"
               onClick={openManualStudentModal}
-              className="rounded-lg border border-cardinal px-3 py-2 text-xs font-semibold text-cardinal transition hover:bg-cardinal/10"
+              className="w-full rounded-xl bg-white/10 px-3 py-2 text-left text-xs font-semibold text-white transition hover:bg-white/20"
             >
               Add student
             </button>
             <button
               type="button"
               onClick={handleSignOut}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
+              className="w-full rounded-xl bg-white/10 px-3 py-2 text-left text-xs font-semibold text-white transition hover:bg-white/20"
             >
               Sign out
             </button>
           </div>
-        </div>
-        <div className="mx-auto max-w-6xl px-4">
-          <div className="hidden flex-wrap gap-2 pb-4 sm:flex" role="tablist" aria-label="Admissions navigation">
+          <div className="space-y-3">
+            <p className="text-xs uppercase tracking-wide text-slate-300">Menu</p>
             {NAV_TABS.map((tab) => (
               <button
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
-                  activeTab === tab.id ? 'bg-cardinal text-white shadow' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                className={`w-full rounded-xl px-4 py-2 text-left text-sm font-semibold transition ${
+                  activeTab === tab.id ? 'bg-portal text-white shadow' : 'bg-white/10 text-slate-200 hover:bg-white/20'
                 }`}
                 role="tab"
                 aria-selected={activeTab === tab.id}
@@ -1976,13 +1955,14 @@ export default function AdminManagerPortal() {
               </button>
             ))}
           </div>
-        </div>
-      </header>
+        </>
+      }
+    >
+      <Head>
+        <title>Admission Manager Portal</title>
+      </Head>
 
-      <div className="mx-auto max-w-6xl px-4 sm:hidden">
-        <MobileTabScroller tabs={NAV_TABS} active={activeTab} onChange={setActiveTab} />
-      </div>
-      <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
+      <div className="space-y-6">
         {activeTab === 'inquiry' && (
           <div className="space-y-4">
             <SectionTabs
@@ -2199,7 +2179,7 @@ export default function AdminManagerPortal() {
                                 type="button"
                                 onClick={() => openAdmissionStudentModal(admission)}
                                 disabled={onboarded}
-                                className="rounded-lg border border-cardinal px-3 py-1 text-cardinal transition hover:bg-cardinal/10 disabled:cursor-not-allowed disabled:opacity-60"
+                                className="rounded-lg border border-portal px-3 py-1 text-portal transition hover:bg-portal/10 disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 {onboarded ? 'Student created' : 'Welcome to school'}
                               </button>
@@ -2237,7 +2217,7 @@ export default function AdminManagerPortal() {
             </div>
           </div>
         )}
-      </main>
+      </div>
 
       <PaymentModal
         open={paymentModal.open}
@@ -2269,6 +2249,6 @@ export default function AdminManagerPortal() {
         houseOptions={houses}
         error={studentError}
       />
-    </div>
+    </PortalLayout>
   );
 }
