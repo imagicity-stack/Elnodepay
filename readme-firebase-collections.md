@@ -1,6 +1,6 @@
 # Firebase Collections & Documents
 
-This guide lists the Firestore collections/documents required for the new Super Admin student sections.
+This guide lists the Firestore collections/documents required for the Super Admin store, parent store orders, and accountant payment collection flows.
 
 ## Required collections/documents
 
@@ -53,3 +53,53 @@ Stores the class-specific store pricing for items selected from the catalog.
 - `price` (number)
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
+
+### `store_orders` (collection)
+Stores store orders raised by parents for cash or online checkout.
+
+**Path**: `store_orders/{autoId}`
+
+**Fields**:
+- `parent_uid` (string)
+- `parent_email` (string)
+- `student_doc_id` (string)
+- `student_id` (string)
+- `student_name` (string)
+- `class` (string)
+- `items` (array of `{ itemId, itemName, categoryId, categoryName, price }`)
+- `amount_total` (number)
+- `status` (string, e.g., `Pending`, `Paid`)
+- `payment_mode` (string, `Cash` or `Online`)
+- `voucher_code` (string, for cash payments)
+- `created_at` (timestamp)
+- `paid_at` (timestamp)
+- `razorpay_order_id` (string, for online payments)
+- `razorpay_payment_id` (string, for online payments)
+
+### `fee_requests` (collection)
+Stores fee and store payment requests created by the accountant.
+
+**Path**: `fee_requests/{autoId}`
+
+**Fields**:
+- `student_doc_id` (string)
+- `studentId` (string)
+- `student_name` (string)
+- `parent_email` (string)
+- `amount_total` (number)
+- `balance` (number)
+- `status` (string, `Pending` or `Paid`)
+- `payment_mode` (string)
+- `breakdown` (map: `tuition`, `custom`, `store`, `others`)
+- `due_date` (timestamp)
+- `created_at` (timestamp)
+- `paid_at` (timestamp)
+
+### `payments` (collection)
+Stores payment history across fees and store orders.
+
+**Path**: `payments/{autoId}`
+
+**Fields**:
+- `payment_type` (string, `fees` or `store`)
+- `store_order_id` (string, set for store payments)
