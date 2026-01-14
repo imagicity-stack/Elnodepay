@@ -66,6 +66,12 @@ const buildRequestLabel = (request) => {
   return dueDateLabel ? `${baseLabel} · Due ${dueDateLabel}` : baseLabel;
 };
 
+const buildVoucherCode = () => {
+  const random = Math.random().toString(36).slice(2, 8).toUpperCase();
+  const timestamp = Date.now().toString().slice(-4);
+  return `ELN-${random}-${timestamp}`;
+};
+
 const normaliseFeeStructure = (data = {}) => {
   const formattedFees = {};
   const rawFees = data?.fees || {};
@@ -264,6 +270,8 @@ const ParentDashboard = () => {
   const [students, setStudents] = useState([]);
   const [payments, setPayments] = useState([]);
   const [storeCharges, setStoreCharges] = useState([]);
+  const [storeCatalogItems, setStoreCatalogItems] = useState([]);
+  const [storeOrders, setStoreOrders] = useState([]);
   const [feeRequests, setFeeRequests] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [settings, setSettings] = useState({ currentTerm: '', defaultDueDate: '' });
@@ -271,6 +279,11 @@ const ParentDashboard = () => {
   const [selectedChildId, setSelectedChildId] = useState(null);
   const [activeParentSection, setActiveParentSection] = useState('fees');
   const [historyFilters, setHistoryFilters] = useState({ child: 'All', month: 'All', year: 'All' });
+  const [storeStudentId, setStoreStudentId] = useState('');
+  const [storeCartItems, setStoreCartItems] = useState([]);
+  const [storePaymentMode, setStorePaymentMode] = useState('Online');
+  const [storeProcessing, setStoreProcessing] = useState(false);
+  const [storeNotice, setStoreNotice] = useState('');
   const [supportForm, setSupportForm] = useState({ subject: '', message: '' });
   const [profileForm, setProfileForm] = useState({ name: '', contactNumber: '' });
   const [supportSubmitting, setSupportSubmitting] = useState(false);
@@ -372,6 +385,9 @@ const ParentDashboard = () => {
       if (!selectedChildId && data.length > 0) {
         setSelectedChildId(data[0].id);
       }
+      if (!storeStudentId && data.length > 0) {
+        setStoreStudentId(data[0].id);
+      }
     });
 
     const paymentsQuery = query(
@@ -402,6 +418,25 @@ const ParentDashboard = () => {
     const unsubscribeCharges = onSnapshot(chargesQuery, (snapshot) => {
       const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
       setStoreCharges(data);
+    });
+
+    const storeCatalogQuery = query(
+      collection(db, 'store_class_items'),
+      orderBy('created_at', 'desc'),
+    );
+    const unsubscribeStoreCatalog = onSnapshot(storeCatalogQuery, (snapshot) => {
+      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setStoreCatalogItems(data);
+    });
+
+    const storeOrdersQuery = query(
+      collection(db, 'store_orders'),
+      where('parent_uid', '==', user.uid),
+      orderBy('created_at', 'desc'),
+    );
+    const unsubscribeStoreOrders = onSnapshot(storeOrdersQuery, (snapshot) => {
+      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setStoreOrders(data);
     });
 
     const feeRequestsQuery = query(
@@ -450,23 +485,16 @@ const ParentDashboard = () => {
       unsubscribeSettings();
       unsubscribeFeeStructure();
       unsubscribeCharges();
+      unsubscribeStoreCatalog();
+      unsubscribeStoreOrders();
       unsubscribeFeeRequests();
     };
   }, [user]);
 
   const metrics = useMemo(() => {
-    const chargeMap = new Map();
-    storeCharges.forEach((charge) => {
-      if (charge.paid) return;
-      const key = charge.student_doc_id || charge.studentId;
-      if (!key) return;
-      const amount = Number(charge.amount || 0);
-      chargeMap.set(key, (chargeMap.get(key) || 0) + amount);
-    });
     const totalDue = students.reduce((sum, student) => {
       const tuitionDue = Number(student.balance ?? student.fee_amount ?? 0);
-      const storeDue = chargeMap.get(student.id) || 0;
-      return sum + tuitionDue + storeDue;
+      return sum + tuitionDue;
     }, 0);
     const nextDueDate = students
       .map((student) => student.due_date)
@@ -480,7 +508,7 @@ const ParentDashboard = () => {
       nextDueDate: nextDueDate ? nextDueDate.toLocaleDateString() : '—',
       lastPayment,
     };
-  }, [students, payments, storeCharges]);
+  }, [students, payments]);
 
   const chargesByStudent = useMemo(() => {
     const map = new Map();
@@ -495,6 +523,52 @@ const ParentDashboard = () => {
     });
     return map;
   }, [storeCharges]);
+
+  const activeStoreStudent = useMemo(
+    () => students.find((student) => student.id === storeStudentId) || null,
+    [students, storeStudentId],
+  );
+
+  const storeItemsForStudent = useMemo(() => {
+    if (!activeStoreStudent) return [];
+    return storeCatalogItems.filter((item) => item.className === activeStoreStudent.class);
+  }, [storeCatalogItems, activeStoreStudent]);
+
+  const storeItemsByCategory = useMemo(() => {
+    const map = new Map();
+    storeItemsForStudent.forEach((item) => {
+      const key = item.categoryId || item.categoryName || 'uncategorized';
+      const entry = map.get(key) || { categoryId: key, categoryName: item.categoryName || 'Uncategorized', items: [] };
+      entry.items.push(item);
+      map.set(key, entry);
+    });
+    return Array.from(map.values());
+  }, [storeItemsForStudent]);
+
+  const selectedStoreItems = useMemo(
+    () => storeItemsForStudent.filter((item) => storeCartItems.includes(item.id)),
+    [storeItemsForStudent, storeCartItems],
+  );
+
+  const storeCartTotal = useMemo(
+    () => selectedStoreItems.reduce((sum, item) => sum + Number(item.price || 0), 0),
+    [selectedStoreItems],
+  );
+
+  const pendingStoreOrders = useMemo(
+    () => storeOrders.filter((order) => (order.status || '').toLowerCase() !== 'paid'),
+    [storeOrders],
+  );
+
+  const pendingStoreTotal = useMemo(
+    () => pendingStoreOrders.reduce((sum, order) => sum + Number(order.amount_total || 0), 0),
+    [pendingStoreOrders],
+  );
+
+  useEffect(() => {
+    setStoreCartItems([]);
+    setStoreNotice('');
+  }, [storeStudentId]);
 
   const getAdvancePlanOptions = useCallback(
     (student) => {
@@ -624,6 +698,13 @@ const ParentDashboard = () => {
       return matchesChild && matchesMonth && matchesYear;
     });
   }, [payments, historyFilters]);
+
+  const resolvePaymentType = useCallback((payment) => {
+    if (!payment) return 'Fees';
+    if ((payment.payment_type || '').toLowerCase() === 'store') return 'Store';
+    if ((payment.fee_type || '').toLowerCase().includes('store')) return 'Store';
+    return 'Fees';
+  }, []);
 
   const latestGatewayPayment = useMemo(() => {
     const payment = payments.find((entry) => entry.razorpay_payment_id || entry.transaction_id);
@@ -902,6 +983,152 @@ const ParentDashboard = () => {
       advanceEnabled: false,
     });
     setPaymentProcessing(false);
+  };
+
+  const handleToggleStoreItem = (itemId) => {
+    setStoreNotice('');
+    setStoreCartItems((prev) =>
+      prev.includes(itemId) ? prev.filter((entry) => entry !== itemId) : [...prev, itemId],
+    );
+  };
+
+  const resetStoreCart = () => {
+    setStoreCartItems([]);
+    setStorePaymentMode('Online');
+  };
+
+  const handleSubmitStoreOrder = async () => {
+    if (!activeStoreStudent || selectedStoreItems.length === 0) {
+      alert('Select at least one store item.');
+      return;
+    }
+    if (storePaymentMode === 'Online' && (typeof window === 'undefined' || !window.Razorpay)) {
+      alert('Payment gateway is still loading. Please try again in a moment.');
+      return;
+    }
+    setStoreProcessing(true);
+    setStoreNotice('');
+    const itemsPayload = selectedStoreItems.map((item) => ({
+      itemId: item.id,
+      itemName: item.itemName,
+      categoryId: item.categoryId,
+      categoryName: item.categoryName,
+      price: Number(item.price || 0),
+    }));
+    let finalizeProcessing = true;
+    try {
+      if (storePaymentMode === 'Cash') {
+        const voucherCode = buildVoucherCode();
+        await addDoc(collection(db, 'store_orders'), {
+          parent_uid: user.uid,
+          parent_email: user.email,
+          student_doc_id: activeStoreStudent.id,
+          student_id: activeStoreStudent.studentId || activeStoreStudent.id,
+          student_name: activeStoreStudent.name,
+          class: activeStoreStudent.class || '',
+          items: itemsPayload,
+          amount_total: storeCartTotal,
+          status: 'Pending',
+          payment_mode: 'Cash',
+          voucher_code: voucherCode,
+          created_at: serverTimestamp(),
+        });
+        setStoreNotice(`Please show this voucher number in the store and collect your items: ${voucherCode}`);
+        resetStoreCart();
+        return;
+      }
+      const storeOrderRef = await addDoc(collection(db, 'store_orders'), {
+        parent_uid: user.uid,
+        parent_email: user.email,
+        student_doc_id: activeStoreStudent.id,
+        student_id: activeStoreStudent.studentId || activeStoreStudent.id,
+        student_name: activeStoreStudent.name,
+        class: activeStoreStudent.class || '',
+        items: itemsPayload,
+        amount_total: storeCartTotal,
+        status: 'Pending',
+        payment_mode: 'Online',
+        created_at: serverTimestamp(),
+      });
+
+      const orderResponse = await fetch('/api/createOrder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: storeCartTotal,
+          userId: user.uid,
+          studentId: activeStoreStudent.studentId || activeStoreStudent.id,
+          studentDocId: activeStoreStudent.id,
+          studentName: activeStoreStudent.name,
+          parentEmail: user.email,
+          breakdown: itemsPayload.map((item) => ({ label: item.itemName, amount: item.price, type: 'store' })),
+          term: settings.currentTerm || '',
+        }),
+      });
+      const orderData = await orderResponse.json();
+      if (!orderData.success) {
+        throw new Error(orderData.message || 'Unable to initiate store payment');
+      }
+
+      const options = {
+        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        amount: orderData.order.amount,
+        currency: 'INR',
+        name: 'Store Payment',
+        description: `Store payment for ${activeStoreStudent.name}`,
+        order_id: orderData.order.id,
+        handler: async (response) => {
+          try {
+            const verifyResponse = await fetch('/api/verifyStorePayment', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                ...response,
+                storeOrderId: storeOrderRef.id,
+                amount: storeCartTotal,
+                parentUid: user.uid,
+                parentEmail: user.email,
+                studentDocId: activeStoreStudent.id,
+                studentId: activeStoreStudent.studentId || activeStoreStudent.id,
+                studentName: activeStoreStudent.name,
+                className: activeStoreStudent.class,
+                items: itemsPayload,
+              }),
+            });
+            const verifyData = await verifyResponse.json();
+            if (!verifyData.success) {
+              throw new Error(verifyData.message || 'Payment verification failed');
+            }
+            setStoreNotice('Store payment successful.');
+            resetStoreCart();
+          } catch (error) {
+            console.error(error);
+            alert(error.message || 'Unable to verify store payment. Please contact support.');
+          } finally {
+            setStoreProcessing(false);
+          }
+        },
+        prefill: {
+          name: profileForm.name || profile?.name || '',
+          email: user.email,
+          contact: profileForm.contactNumber || '',
+        },
+        theme: { color: '#A31F36' },
+        modal: {
+          ondismiss: () => setStoreProcessing(false),
+        },
+      };
+      finalizeProcessing = false;
+      const razorpay = new window.Razorpay(options);
+      razorpay.open();
+    } catch (error) {
+      console.error(error);
+      alert(error.message || 'Unable to start store payment. Please try again.');
+    } finally {
+      if (finalizeProcessing) {
+        setStoreProcessing(false);
+      }
+    }
   };
 
   const handleProcessPayment = async () => {
@@ -1189,6 +1416,7 @@ const ParentDashboard = () => {
             <p className="text-xs uppercase tracking-wide text-slate-300">Menu</p>
             {[
               { id: 'fees', label: 'Fees', icon: '/icons/sidebar/wallet.svg' },
+              { id: 'store', label: 'Store', icon: '/icons/sidebar/payment.svg' },
               { id: 'history', label: 'Payment History', icon: '/icons/sidebar/clipboard.svg' },
               { id: 'notifications', label: 'Notifications', icon: '/icons/sidebar/bell.svg' },
             ].map((item) => (
@@ -1280,7 +1508,7 @@ const ParentDashboard = () => {
       <div className="flex flex-col gap-8">
         {activeParentSection === 'fees' && (
           <>
-            <section className="grid gap-4 md:grid-cols-3">
+            <section className="grid gap-4 md:grid-cols-4">
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="text-sm font-medium text-slate-500">Total Fees Due</h3>
                 <p className="mt-3 text-2xl font-semibold text-portal">
@@ -1289,6 +1517,22 @@ const ParentDashboard = () => {
                 <p className="mt-2 text-xs text-slate-500">
                   {metrics.totalDue > 0 ? 'Pay soon to avoid penalties.' : 'No outstanding dues!'}
                 </p>
+              </div>
+              <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <h3 className="text-sm font-medium text-slate-500">Store Charges</h3>
+                <p className="mt-3 text-2xl font-semibold text-portal">
+                  ₹{pendingStoreTotal.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                </p>
+                <p className="mt-2 text-xs text-slate-500">
+                  {pendingStoreTotal > 0 ? 'Settle store orders separately.' : 'No pending store orders.'}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setActiveParentSection('store')}
+                  className="mt-4 rounded-lg border border-portal px-3 py-1 text-xs font-semibold text-portal transition hover:bg-portal/10"
+                >
+                  Pay store charges
+                </button>
               </div>
               <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="text-sm font-medium text-slate-500">Next Due Date</h3>
@@ -1534,6 +1778,164 @@ const ParentDashboard = () => {
           </>
         )}
 
+        {activeParentSection === 'store' && (
+          <section className="space-y-6">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Store</h2>
+                  <p className="text-sm text-slate-500">Select items and pay online or request a cash voucher.</p>
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  <label className="text-sm font-medium text-slate-600">
+                    <span className="mr-2 text-xs uppercase tracking-wide text-slate-500">Student</span>
+                    <select
+                      value={storeStudentId || ''}
+                      onChange={(event) => setStoreStudentId(event.target.value)}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                    >
+                      {students.map((student) => (
+                        <option key={student.id} value={student.id}>
+                          {student.name} · Class {student.class}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="text-sm font-medium text-slate-600">
+                    <span className="mr-2 text-xs uppercase tracking-wide text-slate-500">Payment</span>
+                    <select
+                      value={storePaymentMode}
+                      onChange={(event) => setStorePaymentMode(event.target.value)}
+                      className="rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-700 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                    >
+                      <option value="Online">Online</option>
+                      <option value="Cash">Cash</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+
+              <div className="mt-6 grid gap-4 md:grid-cols-2">
+                <div className="space-y-4">
+                  {storeItemsByCategory.length === 0 && (
+                    <p className="text-sm text-slate-500">No store items are configured for this class yet.</p>
+                  )}
+                  {storeItemsByCategory.map((group) => (
+                    <div key={group.categoryId} className="rounded-2xl border border-slate-200 p-4">
+                      <h3 className="text-sm font-semibold text-slate-900">{group.categoryName}</h3>
+                      <div className="mt-3 space-y-2">
+                        {group.items.map((item) => {
+                          const checked = storeCartItems.includes(item.id);
+                          return (
+                            <label key={item.id} className="flex items-center justify-between text-sm text-slate-700">
+                              <span className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => handleToggleStoreItem(item.id)}
+                                  className="h-4 w-4 rounded border-slate-300 text-portal focus:ring-portal"
+                                />
+                                {item.itemName}
+                              </span>
+                              <span className="text-xs font-semibold text-slate-500">
+                                ₹{Number(item.price || 0).toLocaleString('en-IN')}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">Cart summary</h3>
+                    <p className="text-xs text-slate-500">Review selected store items before paying.</p>
+                  </div>
+                  {selectedStoreItems.length === 0 ? (
+                    <p className="text-sm text-slate-500">No items selected.</p>
+                  ) : (
+                    <ul className="space-y-2 text-sm text-slate-700">
+                      {selectedStoreItems.map((item) => (
+                        <li key={item.id} className="flex items-center justify-between">
+                          <span>{item.itemName}</span>
+                          <span className="text-xs font-semibold text-slate-500">
+                            ₹{Number(item.price || 0).toLocaleString('en-IN')}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="border-t border-slate-200 pt-3 text-sm text-slate-700">
+                    <div className="flex items-center justify-between font-semibold text-slate-900">
+                      <span>Total</span>
+                      <span>₹{storeCartTotal.toLocaleString('en-IN')}</span>
+                    </div>
+                  </div>
+                  {storeNotice && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      {storeNotice}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleSubmitStoreOrder}
+                    disabled={storeProcessing || selectedStoreItems.length === 0}
+                    className="w-full rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:bg-portal/50"
+                  >
+                    {storeProcessing
+                      ? 'Processing…'
+                      : storePaymentMode === 'Cash'
+                      ? 'Generate voucher'
+                      : 'Pay online'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-slate-900">Store past orders</h3>
+              </div>
+              <div className="mt-4 space-y-3">
+                {storeOrders.length === 0 && (
+                  <p className="text-sm text-slate-500">No store orders yet.</p>
+                )}
+                {storeOrders.map((order) => (
+                  <div key={order.id} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-700">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-semibold text-slate-900">
+                        {order.student_name || 'Student'} · Class {order.class || '—'}
+                      </div>
+                      <span className="text-xs font-semibold text-slate-500">
+                        ₹{Number(order.amount_total || 0).toLocaleString('en-IN')}
+                      </span>
+                    </div>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Status: <span className="font-semibold text-slate-700">{order.status || 'Pending'}</span> · Mode:{' '}
+                      {order.payment_mode || 'Cash'}
+                    </p>
+                    {order.voucher_code && (
+                      <p className="mt-1 text-xs text-slate-600">
+                        Voucher: <span className="font-semibold">{order.voucher_code}</span>
+                      </p>
+                    )}
+                    {Array.isArray(order.items) && order.items.length > 0 && (
+                      <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-600">
+                        {order.items.map((item, index) => (
+                          <li key={`${order.id}-${index}`}>
+                            {item.itemName || item.name} · ₹{Number(item.price || 0).toLocaleString('en-IN')}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
         {activeParentSection === 'history' && (
           <section className="border border-slate-200 bg-white p-6 shadow-sm">
             <div className="flex flex-wrap items-end justify-between gap-4">
@@ -1593,6 +1995,7 @@ const ParentDashboard = () => {
                   <tr>
                     <th className="px-4 py-3 text-left">Date</th>
                     <th className="px-4 py-3 text-left">Child</th>
+                    <th className="px-4 py-3 text-left">Type</th>
                     <th className="px-4 py-3 text-left">Amount</th>
                     <th className="px-4 py-3 text-left">Mode</th>
                     <th className="px-4 py-3 text-left">Reference / UTR</th>
@@ -1609,6 +2012,7 @@ const ParentDashboard = () => {
                           {Number.isFinite(date.getTime()) ? date.toLocaleString() : '—'}
                         </td>
                         <td className="px-4 py-3">{payment.student_name}</td>
+                        <td className="px-4 py-3">{resolvePaymentType(payment)}</td>
                         <td className="px-4 py-3">₹{Number(payment.amount || 0).toLocaleString('en-IN')}</td>
                         <td className="px-4 py-3">{payment.mode || 'Online'}</td>
                         <td className="px-4 py-3 text-slate-600">
@@ -1633,7 +2037,7 @@ const ParentDashboard = () => {
                   })}
                   {paymentHistory.length === 0 && (
                     <tr>
-                      <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
+                      <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
                         No payments match the selected filters.
                       </td>
                     </tr>

@@ -83,6 +83,7 @@ const FEE_NAV_ITEMS = [
   { id: 'students', label: 'Students' },
   { id: 'fee-report', label: 'Fee Report' },
   { id: 'payment-history', label: 'Payment History' },
+  { id: 'collect-payment', label: 'Collect Payment' },
   { id: 'reminders', label: 'Reminders and Notification' },
 ];
 const FEE_SECTION_TAB_IDS = FEE_NAV_ITEMS.map((item) => item.id);
@@ -658,151 +659,150 @@ const FeeRequestModal = ({
   formState,
   cycleOptions,
   amounts,
+  storeCategoryOptions,
+  storeItemsByCategory,
+  onStoreCategoryChange,
+  onStoreItemChange,
   onFieldChange,
   onSubmit,
   onClose,
   isSubmitting,
 }) => (
-  <Modal title={`Create Fee Request · ${student?.name || ''}`} onClose={onClose}>
+  <Modal title={`Create Payment Request · ${student?.name || ''}`} onClose={onClose}>
     <form onSubmit={onSubmit} className="space-y-5">
-      <div className="flex items-start gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-        <input
-          id="fee-request-tuition"
-          type="checkbox"
-          checked={formState.tuitionEnabled}
-          onChange={(event) => onFieldChange('tuitionEnabled', event.target.checked)}
-          className="mt-1 h-4 w-4 rounded border-slate-300 text-portal focus:ring-portal"
-        />
-        <label htmlFor="fee-request-tuition" className="space-y-1 text-sm">
-          <span className="block font-semibold text-slate-900">Tuition fees</span>
-          <span className="block text-slate-600">
-            Toggle this on when the request should include the regular tuition cycle and due date.
-          </span>
-        </label>
-      </div>
       <div className="grid gap-4 md:grid-cols-2">
-        {formState.tuitionEnabled && (
-          <>
-            <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-              Billing Cycle
-              <select
-                name="cycle"
-                value={formState.cycle}
-                onChange={(event) => onFieldChange(event.target.name, event.target.value)}
-                className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focu
-s:ring-2 focus:ring-portal/20"
-              >
-                {cycleOptions.map((option) => (
-                  <option key={option.id} value={option.id}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-              Due Date
-              <input
-                type="date"
-                name="dueDate"
-                value={formState.dueDate}
-                onChange={(event) => onFieldChange(event.target.name, event.target.value)}
-                className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focu
-s:ring-2 focus:ring-portal/20"
-              />
-            </label>
-          </>
-        )}
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Custom Fee (optional)
-          <input
-            name="customAmount"
-            value={formState.customAmount}
-            onChange={(event) => onFieldChange(event.target.name, event.target.value)}
-            placeholder="0"
-            inputMode="decimal"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focu
-s:ring-2 focus:ring-portal/20"
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Custom Fee Note
-          <input
-            name="customNote"
-            value={formState.customNote}
-            onChange={(event) => onFieldChange(event.target.name, event.target.value)}
-            placeholder="Reason for custom amount"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focu
-s:ring-2 focus:ring-portal/20"
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Others Amount (optional)
-          <input
-            name="othersAmount"
-            value={formState.othersAmount}
-            onChange={(event) => onFieldChange(event.target.name, event.target.value)}
-            placeholder="0"
-            inputMode="decimal"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focu
-s:ring-2 focus:ring-portal/20"
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Others Name (optional)
-          <input
-            name="othersLabel"
-            value={formState.othersLabel}
-            onChange={(event) => onFieldChange(event.target.name, event.target.value)}
-            placeholder="Lab fee, picnic…"
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focu
-s:ring-2 focus:ring-portal/20"
-          />
-        </label>
-        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-          Store Charges
-          <select
-            name="includeStore"
-            value={formState.includeStore ? 'yes' : 'no'}
-            onChange={(event) => onFieldChange('includeStore', event.target.value === 'yes')}
-            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focu
-s:ring-2 focus:ring-portal/20"
-          >
-            <option value="no">No</option>
-            <option value="yes">Yes</option>
-          </select>
-        </label>
-      </div>
-      {formState.includeStore && (
-        <div className="grid gap-4 md:grid-cols-2">
-          <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-            Store Item Name
+        <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-start gap-3">
             <input
-              name="storeItem"
-              value={formState.storeItem}
-              onChange={(event) => onFieldChange(event.target.name, event.target.value)}
-              placeholder="Uniform, books…"
-              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+              id="payment-request-fee"
+              type="checkbox"
+              checked={formState.tuitionEnabled}
+              onChange={(event) => onFieldChange('tuitionEnabled', event.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-portal focus:ring-portal"
             />
-          </label>
-          <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-            Store Amount
-            <input
-              name="storeAmount"
-              value={formState.storeAmount}
-              onChange={(event) => onFieldChange(event.target.name, event.target.value)}
-              placeholder="0"
-              inputMode="decimal"
-              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
-            />
-          </label>
+            <label htmlFor="payment-request-fee" className="space-y-1 text-sm">
+              <span className="block font-semibold text-slate-900">Fee</span>
+              <span className="block text-slate-600">Billing cycle, due date, and custom fee.</span>
+            </label>
+          </div>
+          {formState.tuitionEnabled && (
+            <div className="grid gap-3">
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Billing Cycle
+                <select
+                  name="cycle"
+                  value={formState.cycle}
+                  onChange={(event) => onFieldChange(event.target.name, event.target.value)}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                >
+                  {cycleOptions.map((option) => (
+                    <option key={option.id} value={option.id}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Due Date
+                <input
+                  type="date"
+                  name="dueDate"
+                  value={formState.dueDate}
+                  onChange={(event) => onFieldChange(event.target.name, event.target.value)}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Custom Fee (optional)
+                <input
+                  name="customAmount"
+                  value={formState.customAmount}
+                  onChange={(event) => onFieldChange(event.target.name, event.target.value)}
+                  placeholder="0"
+                  inputMode="decimal"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                />
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Custom Fee Note
+                <input
+                  name="customNote"
+                  value={formState.customNote}
+                  onChange={(event) => onFieldChange(event.target.name, event.target.value)}
+                  placeholder="Reason for custom amount"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                />
+              </label>
+            </div>
+          )}
         </div>
-      )}
+        <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <div className="flex items-start gap-3">
+            <input
+              id="payment-request-store"
+              type="checkbox"
+              checked={formState.includeStore}
+              onChange={(event) => onFieldChange('includeStore', event.target.checked)}
+              className="mt-1 h-4 w-4 rounded border-slate-300 text-portal focus:ring-portal"
+            />
+            <label htmlFor="payment-request-store" className="space-y-1 text-sm">
+              <span className="block font-semibold text-slate-900">Store</span>
+              <span className="block text-slate-600">Select a store category and item.</span>
+            </label>
+          </div>
+          {formState.includeStore && (
+            <div className="grid gap-3">
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Store Category
+                <select
+                  value={formState.storeCategoryId}
+                  onChange={(event) => onStoreCategoryChange(event.target.value)}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                >
+                  <option value="">Select category</option>
+                  {storeCategoryOptions.map((category) => (
+                    <option key={category.id} value={category.id}>
+                      {category.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Store Item
+                <select
+                  value={formState.storeItemId}
+                  onChange={(event) => onStoreItemChange(event.target.value)}
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                >
+                  <option value="">Select item</option>
+                  {(storeItemsByCategory.get(formState.storeCategoryId) || []).map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.itemName}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+                Store Amount
+                <input
+                  name="storeAmount"
+                  value={formState.storeAmount}
+                  onChange={(event) => onFieldChange(event.target.name, event.target.value)}
+                  placeholder="0"
+                  inputMode="decimal"
+                  className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                />
+              </label>
+            </div>
+          )}
+        </div>
+      </div>
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
         <p className="font-medium text-slate-900">Breakdown</p>
         <ul className="mt-2 space-y-1">
           {formState.tuitionEnabled && (
             <li className="flex justify-between">
-              <span>{cycleOptions.find((item) => item.id === formState.cycle)?.label || 'Tuition'}</span>
+              <span>{cycleOptions.find((item) => item.id === formState.cycle)?.label || 'Fee'}</span>
               <span>₹{amounts.base.toLocaleString('en-IN')}</span>
             </li>
           )}
@@ -810,12 +810,6 @@ s:ring-2 focus:ring-portal/20"
             <li className="flex justify-between">
               <span>{formState.customNote.trim() || 'Custom Fee'}</span>
               <span>₹{amounts.custom.toLocaleString('en-IN')}</span>
-            </li>
-          )}
-          {amounts.others > 0 && (
-            <li className="flex justify-between">
-              <span>{formState.othersLabel.trim() || 'Others'}</span>
-              <span>₹{amounts.others.toLocaleString('en-IN')}</span>
             </li>
           )}
           {amounts.store > 0 && (
@@ -848,7 +842,6 @@ s:ring-2 focus:ring-portal/20"
     </form>
   </Modal>
 );
-
 
 const CommonFeeRequestModal = ({
   state,
@@ -1040,6 +1033,11 @@ const PaymentHistoryModal = ({ student, payments, onClose, onDownload, onDownloa
         const modeLabel = payment.mode || 'Online';
         const isReferenceRequired = modeLabel.toLowerCase() !== 'cash';
         const transactionRef = payment.razorpay_payment_id || payment.transaction_id || '';
+        const typeLabel =
+          (payment.payment_type || '').toLowerCase() === 'store' ||
+          (payment.fee_type || '').toLowerCase().includes('store')
+            ? 'Store'
+            : 'Fees';
         return (
           <div
             key={payment.id}
@@ -1057,6 +1055,7 @@ const PaymentHistoryModal = ({ student, payments, onClose, onDownload, onDownloa
               </button>
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <span>{typeLabel}</span>
               <span>{payment.fee_type || 'Tuition'}</span>
               {payment.term && <span className="rounded-full bg-white px-2 py-0.5">{payment.term}</span>}
               <span>
@@ -1096,6 +1095,61 @@ const PaymentHistoryModal = ({ student, payments, onClose, onDownload, onDownloa
   </Modal>
 );
 
+const CollectPaymentModal = ({ open, order, voucher, onChange, onClose, onConfirm, submitting, error }) => {
+  if (!open || !order) return null;
+  return (
+    <Modal title="Collect Store Payment" onClose={onClose} size="lg">
+      <div className="space-y-4 text-sm">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p className="font-semibold text-slate-900">
+            {order.student_name || 'Student'} · Class {order.class || '—'}
+          </p>
+          <p className="text-xs text-slate-500">Parent: {order.parent_email || '—'}</p>
+          <p className="mt-2 text-xs text-slate-500">
+            Total: ₹{Number(order.amount_total || 0).toLocaleString('en-IN')} · Mode: {order.payment_mode || 'Cash'}
+          </p>
+          {Array.isArray(order.items) && order.items.length > 0 && (
+            <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-slate-600">
+              {order.items.map((item, index) => (
+                <li key={`${order.id}-${index}`}>
+                  {item.itemName || item.name || 'Store Item'} · ₹{Number(item.price || 0).toLocaleString('en-IN')}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+          Voucher Number
+          <input
+            value={voucher}
+            onChange={(event) => onChange(event.target.value)}
+            placeholder="Enter voucher number"
+            className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+          />
+        </label>
+        {error && <p className="text-xs text-rose-600">{error}</p>}
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-100"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={submitting}
+            className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:opacity-70"
+          >
+            {submitting ? 'Collecting…' : 'Collect payment'}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+};
+
 const StudentActionsModal = ({
   student,
   onClose,
@@ -1115,7 +1169,7 @@ const StudentActionsModal = ({
           onClick={onCreateFeeRequest}
           className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-portal/90"
         >
-          Create Fee Request
+          Create Payment Request
         </button>
         <button
           type="button"
@@ -1260,6 +1314,8 @@ const AccountantDashboard = () => {
   const [feeStructure, setFeeStructure] = useState({ session: '', defaultDueDate: '', fees: {} });
   const [feeStructureDraft, setFeeStructureDraft] = useState({ session: '', defaultDueDate: '', fees: {} });
   const [feeStructureSaving, setFeeStructureSaving] = useState(false);
+  const [storeClassItems, setStoreClassItems] = useState([]);
+  const [storeOrders, setStoreOrders] = useState([]);
   const [feeRequestContext, setFeeRequestContext] = useState({ open: false, student: null });
   const [feeRequestForm, setFeeRequestForm] = useState({
     tuitionEnabled: true,
@@ -1270,6 +1326,8 @@ const AccountantDashboard = () => {
     othersAmount: '',
     othersLabel: '',
     includeStore: false,
+    storeCategoryId: '',
+    storeItemId: '',
     storeItem: '',
     storeAmount: '',
   });
@@ -1360,6 +1418,13 @@ const AccountantDashboard = () => {
   });
   const [selectedStudentId, setSelectedStudentId] = useState(null);
   const [studentActionsContext, setStudentActionsContext] = useState({ open: false, student: null });
+  const [collectPaymentContext, setCollectPaymentContext] = useState({
+    open: false,
+    order: null,
+    voucher: '',
+    submitting: false,
+    error: '',
+  });
   const [deleteContext, setDeleteContext] = useState({
     open: false,
     student: null,
@@ -1745,6 +1810,18 @@ const resolveTransactionMonthLabel = (entry) => {
       setFeeStructureDraft(structure);
     });
 
+    const storeItemsQuery = query(collection(db, 'store_class_items'), orderBy('created_at', 'desc'));
+    const unsubscribeStoreItems = onSnapshot(storeItemsQuery, (snapshot) => {
+      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setStoreClassItems(data);
+    });
+
+    const storeOrdersQuery = query(collection(db, 'store_orders'), orderBy('created_at', 'desc'));
+    const unsubscribeStoreOrders = onSnapshot(storeOrdersQuery, (snapshot) => {
+      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setStoreOrders(data);
+    });
+
     const transactionsQuery = query(collection(db, 'transactions_log'), orderBy('date', 'desc'));
     const unsubscribeTransactions = onSnapshot(transactionsQuery, (snapshot) => {
       const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
@@ -1769,6 +1846,8 @@ const resolveTransactionMonthLabel = (entry) => {
       unsubscribeFeeRequests();
       unsubscribeSettings();
       unsubscribeFeeStructure();
+      unsubscribeStoreItems();
+      unsubscribeStoreOrders();
       unsubscribeTransactions();
       unsubscribeExpenses();
     };
@@ -2209,6 +2288,11 @@ const resolveTransactionMonthLabel = (entry) => {
   const pendingRequestCount = monthMetrics.requestStatusCounts?.pending || 0;
   const paymentModeTotals = monthMetrics.paymentModeSplit || { Cash: 0, Online: 0, 'Bank Transfer': 0, Other: 0 };
   const feeTypeDistribution = monthMetrics.feeTypeDistribution || [];
+  const resolvePaymentTypeLabel = (payment) => {
+    if ((payment?.payment_type || '').toLowerCase() === 'store') return 'Store';
+    if ((payment?.fee_type || '').toLowerCase().includes('store')) return 'Store';
+    return 'Fees';
+  };
 
   const feeRequestAmounts = useMemo(() => {
     const student = feeRequestContext.student;
@@ -2223,16 +2307,54 @@ const resolveTransactionMonthLabel = (entry) => {
       return Number.isFinite(numeric) ? numeric : 0;
     };
     const custom = parseAmount(feeRequestForm.customAmount);
-    const others = parseAmount(feeRequestForm.othersAmount);
     const store = feeRequestForm.includeStore ? parseAmount(feeRequestForm.storeAmount) : 0;
     return {
       base,
       custom,
-      others,
+      others: 0,
       store,
-      total: base + custom + others + store,
+      total: base + custom + store,
     };
   }, [feeRequestContext.student, feeRequestForm, getFeeAmountFromStructure]);
+
+  const storeItemsForClass = useMemo(() => {
+    const className = feeRequestContext.student?.class;
+    if (!className) return [];
+    return storeClassItems.filter((item) => item.className === className);
+  }, [feeRequestContext.student, storeClassItems]);
+
+  const storeCategoryOptions = useMemo(() => {
+    const map = new Map();
+    storeItemsForClass.forEach((item) => {
+      if (!item.categoryId) return;
+      if (!map.has(item.categoryId)) {
+        map.set(item.categoryId, item.categoryName || 'Category');
+      }
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [storeItemsForClass]);
+
+  const storeItemsByCategory = useMemo(() => {
+    const map = new Map();
+    storeItemsForClass.forEach((item) => {
+      if (!item.categoryId) return;
+      if (!map.has(item.categoryId)) {
+        map.set(item.categoryId, []);
+      }
+      map.get(item.categoryId).push(item);
+    });
+    return map;
+  }, [storeItemsForClass]);
+
+  const pendingStoreOrders = useMemo(
+    () =>
+      storeOrders.filter(
+        (order) =>
+          (order.status || '').toLowerCase() !== 'paid' &&
+          (order.payment_mode || '').toLowerCase() === 'cash',
+      ),
+    [storeOrders],
+  );
 
   const filteredStudents = useMemo(() => {
     const safeStudents = Array.isArray(students) ? students : [];
@@ -2926,10 +3048,12 @@ const resolveTransactionMonthLabel = (entry) => {
       othersAmount: '',
       othersLabel: '',
       includeStore: false,
+      storeCategoryId: '',
+      storeItemId: '',
       storeItem: '',
       storeAmount: '',
+    };
   };
-};
 
   const buildCommonRequestState = () => ({
     cycle: 'Monthly',
@@ -2969,6 +3093,77 @@ const resolveTransactionMonthLabel = (entry) => {
     setCommonRequestState(buildCommonRequestState());
   };
 
+  const openCollectPayment = (order) => {
+    setCollectPaymentContext({
+      open: true,
+      order,
+      voucher: '',
+      submitting: false,
+      error: '',
+    });
+  };
+
+  const closeCollectPayment = () => {
+    setCollectPaymentContext({ open: false, order: null, voucher: '', submitting: false, error: '' });
+  };
+
+  const handleCollectPaymentVoucherChange = (value) => {
+    setCollectPaymentContext((prev) => ({ ...prev, voucher: value, error: '' }));
+  };
+
+  const handleConfirmCollectPayment = async () => {
+    const order = collectPaymentContext.order;
+    if (!order) return;
+    if (!collectPaymentContext.voucher.trim()) {
+      setCollectPaymentContext((prev) => ({ ...prev, error: 'Enter the voucher number.' }));
+      return;
+    }
+    if ((order.voucher_code || '').trim() !== collectPaymentContext.voucher.trim()) {
+      setCollectPaymentContext((prev) => ({ ...prev, error: 'Voucher number does not match.' }));
+      return;
+    }
+    setCollectPaymentContext((prev) => ({ ...prev, submitting: true, error: '' }));
+    try {
+      await updateDoc(doc(db, 'store_orders', order.id), {
+        status: 'Paid',
+        paid_at: serverTimestamp(),
+        payment_mode: 'Cash',
+      });
+      await addDoc(collection(db, 'payments'), {
+        student_doc_id: order.student_doc_id || '',
+        studentId: order.student_id || '',
+        student_name: order.student_name || '',
+        class: order.class || '',
+        parent_uid: order.parent_uid || '',
+        parent_email: order.parent_email || '',
+        amount: Number(order.amount_total || 0),
+        mode: 'Cash',
+        date: serverTimestamp(),
+        term: '',
+        fee_type: 'Store',
+        payment_type: 'store',
+        breakdown: Array.isArray(order.items)
+          ? order.items.map((item) => ({
+              label: item.itemName || item.name || 'Store Item',
+              amount: Number(item.price || 0),
+              type: 'store',
+            }))
+          : [],
+        store_order_id: order.id,
+        status: 'Success',
+      });
+      triggerToast('Store payment collected successfully.', 'success');
+      closeCollectPayment();
+    } catch (error) {
+      console.error('Error collecting store payment', error);
+      setCollectPaymentContext((prev) => ({
+        ...prev,
+        submitting: false,
+        error: 'Unable to collect payment. Please try again.',
+      }));
+    }
+  };
+
   const handleFeeRequestFieldChange = (name, rawValue) => {
     setFeeRequestForm((prev) => {
       if (name === 'tuitionEnabled') {
@@ -2993,6 +3188,8 @@ const resolveTransactionMonthLabel = (entry) => {
           ...(include
             ? {}
             : {
+                storeCategoryId: '',
+                storeItemId: '',
                 storeItem: '',
                 storeAmount: '',
               }),
@@ -3002,6 +3199,26 @@ const resolveTransactionMonthLabel = (entry) => {
       const value = isAmountField ? `${rawValue}`.replace(/[^0-9.]/g, '') : rawValue;
       return { ...prev, [name]: value };
     });
+  };
+
+  const handleStoreCategorySelection = (categoryId) => {
+    setFeeRequestForm((prev) => ({
+      ...prev,
+      storeCategoryId: categoryId,
+      storeItemId: '',
+      storeItem: '',
+      storeAmount: '',
+    }));
+  };
+
+  const handleStoreItemSelection = (itemId) => {
+    const selected = storeItemsForClass.find((item) => item.id === itemId);
+    setFeeRequestForm((prev) => ({
+      ...prev,
+      storeItemId: itemId,
+      storeItem: selected?.itemName || '',
+      storeAmount: selected?.price ? `${selected.price}` : '',
+    }));
   };
 
   const handleCommonCycleChange = (value) => {
@@ -3521,15 +3738,22 @@ const resolveTransactionMonthLabel = (entry) => {
     const includeTuition = Boolean(feeRequestForm.tuitionEnabled);
     const baseAmount = includeTuition ? feeRequestAmounts.base : 0;
     const customAmount = feeRequestAmounts.custom;
-    const othersAmount = feeRequestAmounts.others;
     const storeAmount = feeRequestAmounts.store;
     const totalAmount = feeRequestAmounts.total;
     if (totalAmount <= 0) {
       triggerToast('Enter at least one amount before creating a request.', 'error');
       return;
     }
+    if (!includeTuition && !feeRequestForm.includeStore) {
+      triggerToast('Select fee or store before creating a request.', 'error');
+      return;
+    }
     if (feeRequestForm.includeStore && storeAmount <= 0) {
       triggerToast('Store charges must include an amount.', 'error');
+      return;
+    }
+    if (feeRequestForm.includeStore && !feeRequestForm.storeItemId) {
+      triggerToast('Select a store category and item before saving.', 'error');
       return;
     }
     const dueDateValue = includeTuition
@@ -3560,15 +3784,13 @@ const resolveTransactionMonthLabel = (entry) => {
           note: feeRequestForm.customNote.trim(),
         };
       }
-      if (othersAmount > 0) {
-        breakdown.others = {
-          label: feeRequestForm.othersLabel.trim() || 'Others',
-          amount: othersAmount,
-        };
-      }
       if (storeAmount > 0) {
+        const selectedItem = storeItemsForClass.find((item) => item.id === feeRequestForm.storeItemId);
+        const storeLabel = selectedItem
+          ? `${selectedItem.categoryName || 'Store'} · ${selectedItem.itemName}`
+          : feeRequestForm.storeItem.trim() || 'Store Item';
         breakdown.store = {
-          label: feeRequestForm.storeItem.trim() || 'Store Item',
+          label: storeLabel,
           amount: storeAmount,
         };
       }
@@ -3584,7 +3806,7 @@ const resolveTransactionMonthLabel = (entry) => {
         cycle: includeTuition ? cycleMeta.id : '',
         base_amount: baseAmount,
         custom_amount: customAmount,
-        extras_total: othersAmount + storeAmount,
+        extras_total: storeAmount,
         amount_total: totalAmount,
         due_date: dueDateValue,
         breakdown,
@@ -3620,11 +3842,11 @@ const resolveTransactionMonthLabel = (entry) => {
 
       await updateDoc(doc(db, 'students', student.id), studentUpdates);
 
-      triggerToast('Fee request created successfully.', 'success');
+      triggerToast('Payment request created successfully.', 'success');
       handleCloseFeeRequest();
     } catch (error) {
-      console.error('Error creating fee request', error);
-      triggerToast('Unable to create fee request. Please try again.', 'error');
+      console.error('Error creating payment request', error);
+      triggerToast('Unable to create payment request. Please try again.', 'error');
       setFeeRequestSubmitting(false);
     }
   };
@@ -5683,6 +5905,7 @@ const resolveTransactionMonthLabel = (entry) => {
                       <th className="px-4 py-3 text-left">Date</th>
                       <th className="px-4 py-3 text-left">Student</th>
                       <th className="px-4 py-3 text-left">Class</th>
+                      <th className="px-4 py-3 text-left">Type</th>
                       <th className="px-4 py-3 text-left">Amount</th>
                       <th className="px-4 py-3 text-left">Mode</th>
                       <th className="px-4 py-3 text-left">Reference / UTR</th>
@@ -5692,7 +5915,7 @@ const resolveTransactionMonthLabel = (entry) => {
                   <tbody className="divide-y divide-slate-100">
                     {loadingPayments && (
                       <tr>
-                        <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
+                        <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
                           Loading payment records…
                         </td>
                       </tr>
@@ -5714,7 +5937,8 @@ const resolveTransactionMonthLabel = (entry) => {
                               <div className="text-xs text-slate-500">{payment.studentId || payment.student_doc_id || '—'}</div>
                             </td>
                             <td className="px-4 py-3">{payment.class || '—'}</td>
-                            <td className="px-4 py-3">₹{Number(payment.amount || 0).toLocaleString('en-IN')}</td>
+                        <td className="px-4 py-3">{resolvePaymentTypeLabel(payment)}</td>
+                        <td className="px-4 py-3">₹{Number(payment.amount || 0).toLocaleString('en-IN')}</td>
                             <td className="px-4 py-3">{modeLabel}</td>
                             <td className="px-4 py-3 text-slate-600">{transactionRef}</td>
                             <td className="px-4 py-3">
@@ -5731,11 +5955,75 @@ const resolveTransactionMonthLabel = (entry) => {
                       })}
                     {!loadingPayments && filteredPaymentsByMode.length === 0 && (
                       <tr>
-                        <td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-500">
+                        <td colSpan={8} className="px-4 py-10 text-center text-sm text-slate-500">
                           No payments match the selected filter yet.
                         </td>
                       </tr>
                     )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeTab === 'collect-payment' && (
+          <section className="mt-8 space-y-6">
+            <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Collect Store Payments</h2>
+                <p className="text-sm text-slate-500">
+                  Verify cash vouchers from parents and record store payments.
+                </p>
+              </div>
+              <div className="mt-6 overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3 text-left">Date</th>
+                      <th className="px-4 py-3 text-left">Parent</th>
+                      <th className="px-4 py-3 text-left">Student</th>
+                      <th className="px-4 py-3 text-left">Amount</th>
+                      <th className="px-4 py-3 text-left">Voucher</th>
+                      <th className="px-4 py-3 text-left">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {pendingStoreOrders.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="px-4 py-10 text-center text-sm text-slate-500">
+                          No pending store payments right now.
+                        </td>
+                      </tr>
+                    )}
+                    {pendingStoreOrders.map((order) => {
+                      const dateValue = order.created_at?.toDate
+                        ? order.created_at.toDate().toLocaleString()
+                        : order.created_at
+                        ? new Date(order.created_at).toLocaleString()
+                        : '—';
+                      return (
+                        <tr key={order.id} className="hover:bg-slate-50/80">
+                          <td className="px-4 py-3">{dateValue}</td>
+                          <td className="px-4 py-3">{order.parent_email || '—'}</td>
+                          <td className="px-4 py-3">
+                            <div className="font-semibold text-slate-900">{order.student_name || '—'}</div>
+                            <div className="text-xs text-slate-500">{order.student_id || order.student_doc_id || '—'}</div>
+                          </td>
+                          <td className="px-4 py-3">₹{Number(order.amount_total || 0).toLocaleString('en-IN')}</td>
+                          <td className="px-4 py-3">{order.voucher_code || '—'}</td>
+                          <td className="px-4 py-3">
+                            <button
+                              type="button"
+                              onClick={() => openCollectPayment(order)}
+                              className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                            >
+                              Collect payment
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -6290,6 +6578,17 @@ const resolveTransactionMonthLabel = (entry) => {
         />
       )}
 
+      <CollectPaymentModal
+        open={collectPaymentContext.open}
+        order={collectPaymentContext.order}
+        voucher={collectPaymentContext.voucher}
+        onChange={handleCollectPaymentVoucherChange}
+        onClose={closeCollectPayment}
+        onConfirm={handleConfirmCollectPayment}
+        submitting={collectPaymentContext.submitting}
+        error={collectPaymentContext.error}
+      />
+
       {commonRequestContext.open && (
         <CommonFeeRequestModal
           state={commonRequestState}
@@ -6551,6 +6850,10 @@ const resolveTransactionMonthLabel = (entry) => {
           formState={feeRequestForm}
           cycleOptions={REQUEST_CYCLE_OPTIONS}
           amounts={feeRequestAmounts}
+          storeCategoryOptions={storeCategoryOptions}
+          storeItemsByCategory={storeItemsByCategory}
+          onStoreCategoryChange={handleStoreCategorySelection}
+          onStoreItemChange={handleStoreItemSelection}
           onFieldChange={handleFeeRequestFieldChange}
           onSubmit={handleFeeRequestSubmit}
           onClose={handleCloseFeeRequest}
