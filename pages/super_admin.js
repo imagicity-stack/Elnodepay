@@ -112,6 +112,106 @@ const CoreAcademicsEditor = ({ label, charges, onChange, onSave, savingClass }) 
   );
 };
 
+const StoreClassEditor = ({
+  className,
+  formState,
+  categories,
+  itemOptions,
+  onCategoryChange,
+  onItemChange,
+  onPriceChange,
+  onSave,
+  saving,
+  error,
+  groupedItems,
+}) => (
+  <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Store</p>
+        <h3 className="text-lg font-semibold text-slate-900">Class {className}</h3>
+        <p className="text-xs text-slate-500">Choose category, item, and set the price.</p>
+      </div>
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={saving}
+        className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:bg-portal/50"
+      >
+        {saving ? 'Saving…' : 'Save store item'}
+      </button>
+    </div>
+    <div className="grid gap-3 md:grid-cols-3">
+      <label className="space-y-1 text-sm font-semibold text-slate-700">
+        <span>Category</span>
+        <select
+          value={formState.categoryId || ''}
+          onChange={(event) => onCategoryChange(event.target.value)}
+          className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+        >
+          <option value="">Select category</option>
+          {categories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="space-y-1 text-sm font-semibold text-slate-700">
+        <span>Item name</span>
+        <select
+          value={formState.itemId || ''}
+          onChange={(event) => onItemChange(event.target.value)}
+          className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+        >
+          <option value="">Select item</option>
+          {itemOptions.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.itemName}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="space-y-1 text-sm font-semibold text-slate-700">
+        <span>Price (₹)</span>
+        <input
+          type="number"
+          min="0"
+          value={formState.price || ''}
+          onChange={(event) => onPriceChange(event.target.value)}
+          className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+          placeholder="0"
+        />
+      </label>
+    </div>
+    {error && <p className="text-xs font-semibold text-rose-600">{error}</p>}
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Saved items</p>
+      {groupedItems.length > 0 ? (
+        <div className="mt-2 space-y-3">
+          {groupedItems.map((group) => (
+            <div key={group.categoryId} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+              <p className="text-xs font-semibold text-slate-600">{group.categoryName}</p>
+              <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                {group.items.map((item) => (
+                  <li key={item.id} className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium text-slate-900">{item.itemName}</span>
+                    <span className="text-xs font-semibold text-slate-500">
+                      ₹{Number(item.price || 0).toLocaleString('en-IN')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-xs text-slate-500">No store items saved for this class yet.</p>
+      )}
+    </div>
+  </div>
+);
+
 const SuperAdminPortal = () => {
   const router = useRouter();
   const [authChecked, setAuthChecked] = useState(false);
@@ -135,6 +235,7 @@ const SuperAdminPortal = () => {
   const [itemForm, setItemForm] = useState(buildEmptyItemForm());
   const [categoryError, setCategoryError] = useState('');
   const [itemError, setItemError] = useState('');
+  const [activeStoreClass, setActiveStoreClass] = useState(CLASS_OPTIONS[0]);
   const [showStaffModal, setShowStaffModal] = useState(false);
 
   useEffect(() => {
@@ -412,6 +513,20 @@ const SuperAdminPortal = () => {
     return map;
   }, [storeClassItems]);
 
+  const storeGroupsForActiveClass = useMemo(() => {
+    const items = storeItemsByClass.get(activeStoreClass) || [];
+    const map = new Map();
+    items.forEach((item) => {
+      const categoryId = item.categoryId || 'uncategorized';
+      const categoryName = item.categoryName || 'Uncategorized';
+      if (!map.has(categoryId)) {
+        map.set(categoryId, { categoryId, categoryName, items: [] });
+      }
+      map.get(categoryId).items.push(item);
+    });
+    return Array.from(map.values());
+  }, [storeItemsByClass, activeStoreClass]);
+
   if (!authChecked) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-white text-portal">
@@ -612,108 +727,51 @@ const SuperAdminPortal = () => {
                         {itemError && <p className="mt-2 text-xs font-semibold text-rose-600">{itemError}</p>}
                       </div>
                     </div>
-                    {CLASS_OPTIONS.map((className) => {
-                      const items = storeItemsByClass.get(className) || [];
-                      const classForm = storeForms[className] || {};
-                      const categoryOptions = storeCategories;
-                      const itemOptions = classForm.categoryId
-                        ? catalogItemsByCategory.get(classForm.categoryId) || []
-                        : [];
-                      return (
-                        <div
-                          key={className}
-                          className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-3">
-                            <div>
-                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Store</p>
-                              <h3 className="text-lg font-semibold text-slate-900">Class {className}</h3>
-                              <p className="text-xs text-slate-500">Create a category, item, and price.</p>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleSaveStoreItem(className)}
-                              disabled={savingStoreClass === className}
-                              className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:bg-portal/50"
-                            >
-                              {savingStoreClass === className ? 'Saving…' : 'Save store item'}
-                            </button>
-                          </div>
-                          <div className="grid gap-3 md:grid-cols-3">
-                            <label className="space-y-1 text-sm font-semibold text-slate-700">
-                              <span>Category</span>
-                              <select
-                                value={classForm.categoryId || ''}
-                                onChange={(event) => {
-                                  const value = event.target.value;
-                                  setStoreForms((prev) => ({
-                                    ...prev,
-                                    [className]: { ...prev[className], categoryId: value, itemId: '' },
-                                  }));
-                                  setStoreFormErrors((prev) => ({ ...prev, [className]: '' }));
-                                }}
-                                className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
-                              >
-                                <option value="">Select category</option>
-                                {categoryOptions.map((category) => (
-                                  <option key={category.id} value={category.id}>
-                                    {category.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <label className="space-y-1 text-sm font-semibold text-slate-700">
-                              <span>Item name</span>
-                              <select
-                                value={classForm.itemId || ''}
-                                onChange={(event) => handleStoreFormChange(className, 'itemId', event.target.value)}
-                                className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
-                              >
-                                <option value="">Select item</option>
-                                {itemOptions.map((item) => (
-                                  <option key={item.id} value={item.id}>
-                                    {item.itemName}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-                            <label className="space-y-1 text-sm font-semibold text-slate-700">
-                              <span>Price (₹)</span>
-                              <input
-                                type="number"
-                                min="0"
-                                value={classForm.price || ''}
-                                onChange={(event) => handleStoreFormChange(className, 'price', event.target.value)}
-                                className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
-                                placeholder="0"
-                              />
-                            </label>
-                          </div>
-                          {storeFormErrors[className] && (
-                            <p className="text-xs font-semibold text-rose-600">{storeFormErrors[className]}</p>
-                          )}
-                          {items.length > 0 ? (
-                            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
-                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Saved items</p>
-                              <ul className="mt-2 space-y-1 text-sm text-slate-700">
-                                {items.slice(0, 5).map((item) => (
-                                  <li key={item.id} className="flex flex-wrap items-center justify-between gap-2">
-                                    <span>
-                                      <span className="font-semibold text-slate-900">{item.categoryName}</span> · {item.itemName}
-                                    </span>
-                                    <span className="text-xs font-semibold text-slate-500">
-                                      ₹{Number(item.price || 0).toLocaleString('en-IN')}
-                                    </span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          ) : (
-                            <p className="text-xs text-slate-500">No store items saved for this class yet.</p>
-                          )}
-                        </div>
-                      );
-                    })}
+                    <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Class-wise structure</p>
+                        <p className="text-xs text-slate-500">Select a class to manage store pricing.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {CLASS_OPTIONS.map((className) => (
+                          <button
+                            key={className}
+                            type="button"
+                            onClick={() => setActiveStoreClass(className)}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                              activeStoreClass === className
+                                ? 'bg-portal text-white shadow'
+                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                            }`}
+                          >
+                            Class {className}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <StoreClassEditor
+                      className={activeStoreClass}
+                      formState={storeForms[activeStoreClass] || { categoryId: '', itemId: '', price: '' }}
+                      categories={storeCategories}
+                      itemOptions={
+                        (storeForms[activeStoreClass]?.categoryId
+                          ? catalogItemsByCategory.get(storeForms[activeStoreClass].categoryId)
+                          : []) || []
+                      }
+                      onCategoryChange={(value) => {
+                        setStoreForms((prev) => ({
+                          ...prev,
+                          [activeStoreClass]: { ...prev[activeStoreClass], categoryId: value, itemId: '' },
+                        }));
+                        setStoreFormErrors((prev) => ({ ...prev, [activeStoreClass]: '' }));
+                      }}
+                      onItemChange={(value) => handleStoreFormChange(activeStoreClass, 'itemId', value)}
+                      onPriceChange={(value) => handleStoreFormChange(activeStoreClass, 'price', value)}
+                      onSave={() => handleSaveStoreItem(activeStoreClass)}
+                      saving={savingStoreClass === activeStoreClass}
+                      error={storeFormErrors[activeStoreClass]}
+                      groupedItems={storeGroupsForActiveClass}
+                    />
                   </div>
                 )}
               </>
