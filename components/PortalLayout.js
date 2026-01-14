@@ -54,11 +54,6 @@ const PortalLayout = ({ sidebar, children }) => {
         }`}
         aria-label="Portal menu"
         aria-hidden={!isMobileMenuOpen}
-        onClickCapture={(event) => {
-          if (event.target.closest('a, button')) {
-            setIsMobileMenuOpen(false);
-          }
-        }}
       >
         <div className="mb-6 flex items-center justify-between">
           <span className="text-lg font-semibold text-white">Menu</span>

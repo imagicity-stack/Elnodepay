@@ -32,10 +32,6 @@ const Header = () => {
     setIsMobileMenuOpen(false);
   };
 
-  const handleMobileNavigate = () => {
-    setIsMobileMenuOpen(false);
-  };
-
   return (
     <header className="relative overflow-hidden bg-gradient-to-r from-cardinal to-cardinal/90 text-white shadow-xl">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_30%,rgba(255,255,255,0.12),transparent_35%),radial-gradient(circle_at_80%_20%,rgba(255,255,255,0.08),transparent_30%)]" aria-hidden="true" />
@@ -140,7 +136,6 @@ const Header = () => {
               <Link
                 key={item.href}
                 href={item.href}
-                onClick={handleMobileNavigate}
                 className={`rounded-xl px-4 py-3 transition ${
                   isActive ? 'bg-cardinal/10 text-cardinal' : 'text-slate-700 hover:bg-slate-100'
                 }`}
