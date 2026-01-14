@@ -35,7 +35,7 @@ const ADMISSION_PAYMENT_PLANS = [
   {
     id: 'full',
     label: 'Standard',
-    description: 'Collect 100% of admission + kit charges now.',
+    description: 'Collect 100% of annual charges now.',
     upfrontFraction: 1,
     remainder: [],
   },
@@ -60,16 +60,14 @@ const ADMISSION_PAYMENT_PLANS = [
   },
 ];
 
-const buildDefaultSuperAdminCharges = (withExtras = false) =>
+const buildDefaultSuperAdminCharges = () =>
   CLASS_OPTIONS.reduce(
     (acc, className) => ({
       ...acc,
       [className]: {
         monthlyFees: 0,
-        kitCharges: 0,
-        storeCharges: 0,
+        registrationFees: 0,
         annualCharges: 0,
-        ...(withExtras ? { admissionCharges: 0, registrationFees: 0 } : {}),
       },
     }),
     {},
@@ -1134,10 +1132,7 @@ export default function AdminManagerPortal() {
   const [activeAcademicYear, setActiveAcademicYear] = useState('2026-27');
   const [houses, setHouses] = useState([]);
   const [defaultDueDate, setDefaultDueDate] = useState('');
-  const [superAdminCharges, setSuperAdminCharges] = useState({
-    new: buildDefaultSuperAdminCharges(true),
-    old: buildDefaultSuperAdminCharges(false),
-  });
+  const [superAdminCharges, setSuperAdminCharges] = useState(buildDefaultSuperAdminCharges());
   const secondaryAuthRef = useRef(null);
   const [creatingInquiry, setCreatingInquiry] = useState(false);
   const [registrationSubmitting, setRegistrationSubmitting] = useState(false);
@@ -1163,17 +1158,14 @@ export default function AdminManagerPortal() {
   useRazorpayScript();
 
   const getRegistrationFee = useCallback(
-    (className) => superAdminCharges.new?.[className]?.registrationFees ?? 0,
+    (className) => superAdminCharges?.[className]?.registrationFees ?? 0,
     [superAdminCharges],
   );
   const getAdmissionFee = useCallback(
-    (className) => superAdminCharges.new?.[className]?.admissionCharges ?? 0,
+    (className) => superAdminCharges?.[className]?.annualCharges ?? 0,
     [superAdminCharges],
   );
-  const getKitCharge = useCallback(
-    (className) => superAdminCharges.new?.[className]?.kitCharges ?? 0,
-    [superAdminCharges],
-  );
+  const getKitCharge = useCallback(() => 0, []);
 
   useEffect(() => {
     if (!secondaryAuthRef.current) {
@@ -1266,19 +1258,33 @@ export default function AdminManagerPortal() {
       if (!snap.exists()) return;
       const data = snap.data();
       const studentSettings = data.students || {};
-      const resolvedNew = studentSettings.new || studentSettings.newAdmission || {};
-      const resolvedOld = studentSettings.old || studentSettings.oldAdmission || studentSettings || {};
-      setSuperAdminCharges({
-        new: { ...buildDefaultSuperAdminCharges(true), ...resolvedNew },
-        old: { ...buildDefaultSuperAdminCharges(false), ...resolvedOld },
-      });
+      const resolvedCore =
+        studentSettings.coreAcademics ||
+        studentSettings.core_academics ||
+        studentSettings.new ||
+        studentSettings.newAdmission ||
+        studentSettings.old ||
+        studentSettings.oldAdmission ||
+        studentSettings ||
+        {};
+      const nextCharges = CLASS_OPTIONS.reduce(
+        (acc, className) => ({
+          ...acc,
+          [className]: {
+            monthlyFees: Number(resolvedCore?.[className]?.monthlyFees || 0),
+            registrationFees: Number(resolvedCore?.[className]?.registrationFees || 0),
+            annualCharges: Number(resolvedCore?.[className]?.annualCharges || 0),
+          },
+        }),
+        buildDefaultSuperAdminCharges(),
+      );
+      setSuperAdminCharges(nextCharges);
     });
     return () => unsub();
   }, [user]);
 
   const getSuperAdminFee = useCallback(
-    (className, admissionType = 'new') =>
-      Number(superAdminCharges?.[admissionType]?.[className]?.monthlyFees || 0),
+    (className) => Number(superAdminCharges?.[className]?.monthlyFees || 0),
     [superAdminCharges],
   );
 
@@ -1402,7 +1408,7 @@ export default function AdminManagerPortal() {
         return;
       }
       const schoolNumber = await generateSchoolNumber(joiningYear, passingYear);
-      const feeAmount = getSuperAdminFee(studentForm.classApplied, studentModal.admissionType);
+      const feeAmount = getSuperAdminFee(studentForm.classApplied);
       const resolvedSession = studentModal.admissionType === 'new' ? activeAcademicYear : 'old';
       const parentEmail = (studentForm.parentEmail || '').trim().toLowerCase();
       const parentPhone = (studentForm.parentPhone || '').trim();
@@ -2257,7 +2263,7 @@ export default function AdminManagerPortal() {
         }
         onClose={closePaymentModal}
         paymentPlans={paymentModal.plans || []}
-        summaryLabel={paymentModal.type === 'admission' ? 'Total (admission + kit)' : 'Registration fee'}
+        summaryLabel={paymentModal.type === 'admission' ? 'Total (annual charges)' : 'Registration fee'}
         onComplete={async (info) => {
           await handlePaymentComplete(info);
           closePaymentModal();
