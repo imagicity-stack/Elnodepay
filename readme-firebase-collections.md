@@ -53,3 +53,23 @@ Stores the class-specific store pricing for items selected from the catalog.
 - `price` (number)
 - `created_at` (timestamp)
 - `updated_at` (timestamp)
+
+### `store_orders` (collection)
+Stores store orders raised by parents for cash or online checkout.
+
+**Path**: `store_orders/{autoId}`
+
+**Fields**:
+- `parent_uid` (string)
+- `parent_email` (string)
+- `student_doc_id` (string)
+- `student_id` (string)
+- `student_name` (string)
+- `class` (string)
+- `items` (array of `{ itemId, itemName, categoryId, categoryName, price }`)
+- `amount_total` (number)
+- `status` (string, e.g., `Pending`, `Paid`)
+- `payment_mode` (string, `Cash` or `Online`)
+- `voucher_code` (string, for cash payments)
+- `created_at` (timestamp)
+- `paid_at` (timestamp)
