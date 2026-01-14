@@ -49,7 +49,7 @@ const Header = () => {
           <button
             type="button"
             onClick={() => setIsMobileMenuOpen(true)}
-            className="inline-flex items-center justify-center rounded-full border border-white/30 bg-white/10 p-2 text-white transition hover:bg-white/20 md:hidden"
+            className="inline-flex items-center justify-center rounded-full border border-white/30 bg-white/10 p-2 text-white transition hover:bg-white/20 lg:hidden"
             aria-label="Open menu"
             aria-expanded={isMobileMenuOpen}
           >
@@ -70,7 +70,7 @@ const Header = () => {
             </svg>
           </button>
         </div>
-        <nav className="hidden items-center gap-2 text-sm font-medium md:flex">
+        <nav className="hidden items-center gap-2 text-sm font-medium lg:flex">
           {navItems.map((item) => {
             const isActive = router.pathname === item.href;
             return (
@@ -96,14 +96,14 @@ const Header = () => {
         </nav>
       </div>
       <div
-        className={`fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm transition-opacity md:hidden ${
+        className={`fixed inset-0 z-40 bg-slate-900/50 backdrop-blur-sm transition-opacity lg:hidden ${
           isMobileMenuOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
         }`}
         role="presentation"
         onClick={() => setIsMobileMenuOpen(false)}
       />
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-72 bg-white text-slate-900 shadow-2xl transition-transform md:hidden ${
+        className={`fixed inset-y-0 left-0 z-50 w-72 bg-white text-slate-900 shadow-2xl transition-transform lg:hidden ${
           isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         aria-label="Mobile menu"
