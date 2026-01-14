@@ -3,47 +3,55 @@ import Head from 'next/head';
 import Image from 'next/image';
 import { useRouter } from 'next/router';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore';
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+} from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import StaffSettingsModal from '../components/StaffSettingsModal';
 import PortalLayout from '../components/PortalLayout';
 
 const CLASS_OPTIONS = ['Nursery', 'UKG', 'LKG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
 
-const buildEmptyChargeMap = (withExtras = false) =>
+const buildEmptyCoreAcademics = () =>
   CLASS_OPTIONS.reduce(
     (acc, className) => ({
       ...acc,
       [className]: {
         monthlyFees: 0,
-        kitCharges: 0,
-        storeCharges: 0,
+        registrationFees: 0,
         annualCharges: 0,
-        ...(withExtras
-          ? { admissionCharges: 0, registrationFees: 0 }
-          : {}),
       },
     }),
     {},
   );
 
-const emptyCharges = {
-  new: buildEmptyChargeMap(true),
-  old: buildEmptyChargeMap(false),
-};
+const buildEmptyStoreForms = () =>
+  CLASS_OPTIONS.reduce(
+    (acc, className) => ({
+      ...acc,
+      [className]: { categoryId: '', itemId: '', price: '' },
+    }),
+    {},
+  );
 
-const ChargeEditor = ({ label, charges, onChange, extraFields = false }) => {
+const buildEmptyCategoryForm = () => ({ name: '' });
+const buildEmptyItemForm = () => ({ categoryId: '', name: '' });
+
+const CoreAcademicsEditor = ({ label, charges, onChange, onSave, savingClass }) => {
   const [activeClass, setActiveClass] = useState(CLASS_OPTIONS[0]);
   const fields = [
     { id: 'monthlyFees', label: 'Monthly fees' },
-    { id: 'kitCharges', label: 'Kit charges' },
-    { id: 'storeCharges', label: 'Store charges' },
+    { id: 'registrationFees', label: 'Registration fees' },
     { id: 'annualCharges', label: 'Annual charges' },
   ];
-  if (extraFields) {
-    fields.push({ id: 'admissionCharges', label: 'Admission charges' });
-    fields.push({ id: 'registrationFees', label: 'Registration fees' });
-  }
 
   return (
     <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -51,9 +59,9 @@ const ChargeEditor = ({ label, charges, onChange, extraFields = false }) => {
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
           <h3 className="text-lg font-semibold text-slate-900">Class-wise structure</h3>
-          <p className="text-xs text-slate-500">Update default fee heads for this admission path.</p>
+          <p className="text-xs text-slate-500">Confirm and save fees for each class.</p>
         </div>
-        <span className="rounded-full bg-portal/10 px-3 py-1 text-[11px] font-semibold text-portal">Auto-save</span>
+        <span className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-700">Confirm &amp; save</span>
       </div>
       <div className="flex flex-wrap gap-2">
         {CLASS_OPTIONS.map((className) => (
@@ -87,9 +95,122 @@ const ChargeEditor = ({ label, charges, onChange, extraFields = false }) => {
           </label>
         ))}
       </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-slate-500">
+          Selected: <span className="font-semibold text-slate-700">Class {activeClass}</span>
+        </p>
+        <button
+          type="button"
+          onClick={() => onSave(activeClass)}
+          disabled={savingClass === activeClass}
+          className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:bg-portal/50"
+        >
+          {savingClass === activeClass ? 'Saving…' : 'Save class fees'}
+        </button>
+      </div>
     </div>
   );
 };
+
+const StoreClassEditor = ({
+  className,
+  formState,
+  categories,
+  itemOptions,
+  onCategoryChange,
+  onItemChange,
+  onPriceChange,
+  onSave,
+  saving,
+  error,
+  groupedItems,
+}) => (
+  <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Store</p>
+        <h3 className="text-lg font-semibold text-slate-900">Class {className}</h3>
+        <p className="text-xs text-slate-500">Choose category, item, and set the price.</p>
+      </div>
+      <button
+        type="button"
+        onClick={onSave}
+        disabled={saving}
+        className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:bg-portal/50"
+      >
+        {saving ? 'Saving…' : 'Save store item'}
+      </button>
+    </div>
+    <div className="grid gap-3 md:grid-cols-3">
+      <label className="space-y-1 text-sm font-semibold text-slate-700">
+        <span>Category</span>
+        <select
+          value={formState.categoryId || ''}
+          onChange={(event) => onCategoryChange(event.target.value)}
+          className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+        >
+          <option value="">Select category</option>
+          {categories.map((category) => (
+            <option key={category.id} value={category.id}>
+              {category.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="space-y-1 text-sm font-semibold text-slate-700">
+        <span>Item name</span>
+        <select
+          value={formState.itemId || ''}
+          onChange={(event) => onItemChange(event.target.value)}
+          className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+        >
+          <option value="">Select item</option>
+          {itemOptions.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.itemName}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="space-y-1 text-sm font-semibold text-slate-700">
+        <span>Price (₹)</span>
+        <input
+          type="number"
+          min="0"
+          value={formState.price || ''}
+          onChange={(event) => onPriceChange(event.target.value)}
+          className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+          placeholder="0"
+        />
+      </label>
+    </div>
+    {error && <p className="text-xs font-semibold text-rose-600">{error}</p>}
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Saved items</p>
+      {groupedItems.length > 0 ? (
+        <div className="mt-2 space-y-3">
+          {groupedItems.map((group) => (
+            <div key={group.categoryId} className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+              <p className="text-xs font-semibold text-slate-600">{group.categoryName}</p>
+              <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                {group.items.map((item) => (
+                  <li key={item.id} className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium text-slate-900">{item.itemName}</span>
+                    <span className="text-xs font-semibold text-slate-500">
+                      ₹{Number(item.price || 0).toLocaleString('en-IN')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-xs text-slate-500">No store items saved for this class yet.</p>
+      )}
+    </div>
+  </div>
+);
 
 const SuperAdminPortal = () => {
   const router = useRouter();
@@ -97,10 +218,24 @@ const SuperAdminPortal = () => {
   const [user, setUser] = useState(null);
   const [roleError, setRoleError] = useState('');
   const [activeTab, setActiveTab] = useState('students');
-  const [studentTab, setStudentTab] = useState('new');
-  const [charges, setCharges] = useState(emptyCharges);
+  const [studentTab, setStudentTab] = useState('core-academics');
+  const [coreAcademics, setCoreAcademics] = useState(buildEmptyCoreAcademics());
+  const [coreAcademicsDraft, setCoreAcademicsDraft] = useState(buildEmptyCoreAcademics());
   const [loadingCharges, setLoadingCharges] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingClass, setSavingClass] = useState('');
+  const [storeForms, setStoreForms] = useState(buildEmptyStoreForms());
+  const [storeFormErrors, setStoreFormErrors] = useState({});
+  const [storeCategories, setStoreCategories] = useState([]);
+  const [storeCatalogItems, setStoreCatalogItems] = useState([]);
+  const [storeClassItems, setStoreClassItems] = useState([]);
+  const [savingStoreClass, setSavingStoreClass] = useState('');
+  const [savingCategory, setSavingCategory] = useState(false);
+  const [savingItem, setSavingItem] = useState(false);
+  const [categoryForm, setCategoryForm] = useState(buildEmptyCategoryForm());
+  const [itemForm, setItemForm] = useState(buildEmptyItemForm());
+  const [categoryError, setCategoryError] = useState('');
+  const [itemError, setItemError] = useState('');
+  const [activeStoreClass, setActiveStoreClass] = useState(CLASS_OPTIONS[0]);
   const [showStaffModal, setShowStaffModal] = useState(false);
 
   useEffect(() => {
@@ -132,12 +267,28 @@ const SuperAdminPortal = () => {
         if (snap.exists()) {
           const data = snap.data();
           const studentSettings = data.students || {};
-          const resolvedNew = studentSettings.new || studentSettings.newAdmission || {};
-          const resolvedOld = studentSettings.old || studentSettings.oldAdmission || studentSettings || {};
-          setCharges({
-            new: { ...emptyCharges.new, ...resolvedNew },
-            old: { ...emptyCharges.old, ...resolvedOld },
-          });
+          const resolvedCore =
+            studentSettings.coreAcademics ||
+            studentSettings.core_academics ||
+            studentSettings.new ||
+            studentSettings.newAdmission ||
+            studentSettings.old ||
+            studentSettings.oldAdmission ||
+            studentSettings ||
+            {};
+          const nextCore = CLASS_OPTIONS.reduce(
+            (acc, className) => ({
+              ...acc,
+              [className]: {
+                monthlyFees: Number(resolvedCore?.[className]?.monthlyFees || 0),
+                registrationFees: Number(resolvedCore?.[className]?.registrationFees || 0),
+                annualCharges: Number(resolvedCore?.[className]?.annualCharges || 0),
+              },
+            }),
+            {},
+          );
+          setCoreAcademics(nextCore);
+          setCoreAcademicsDraft(nextCore);
         }
         setLoadingCharges(false);
       },
@@ -146,19 +297,190 @@ const SuperAdminPortal = () => {
     return () => unsub();
   }, []);
 
-  const handleChargeChange = async (admissionType, className, field, value) => {
-    setSaving(true);
-    setCharges((prev) => {
-      const updatedType = {
-        ...prev[admissionType],
-        [className]: { ...prev[admissionType][className], [field]: value },
-      };
-      const nextCharges = { ...prev, [admissionType]: updatedType };
-      setDoc(doc(db, 'settings', 'super_admin'), { students: nextCharges }, { merge: true })
-        .catch(() => setSaving(false))
-        .finally(() => setSaving(false));
-      return nextCharges;
+  useEffect(() => {
+    const categoryQuery = query(collection(db, 'store_categories'), orderBy('created_at', 'asc'));
+    const itemQuery = query(collection(db, 'store_catalog_items'), orderBy('created_at', 'asc'));
+    const classItemQuery = query(collection(db, 'store_class_items'), orderBy('created_at', 'desc'));
+    const unsubCategories = onSnapshot(categoryQuery, (snap) => {
+      const data = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setStoreCategories(data);
     });
+    const unsubItems = onSnapshot(itemQuery, (snap) => {
+      const data = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setStoreCatalogItems(data);
+    });
+    const unsubClassItems = onSnapshot(classItemQuery, (snap) => {
+      const data = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setStoreClassItems(data);
+    });
+    return () => {
+      unsubCategories();
+      unsubItems();
+      unsubClassItems();
+    };
+  }, []);
+
+  const handleCoreChange = (className, field, value) => {
+    setCoreAcademicsDraft((prev) => ({
+      ...prev,
+      [className]: { ...prev[className], [field]: value },
+    }));
+  };
+
+  const handleSaveCoreClass = async (className) => {
+    if (typeof window !== 'undefined') {
+      const confirmSave = window.confirm(`Save core academic fees for Class ${className}?`);
+      if (!confirmSave) return;
+    }
+    setSavingClass(className);
+    const nextCore = {
+      ...coreAcademics,
+      [className]: { ...coreAcademicsDraft[className] },
+    };
+    try {
+      await setDoc(
+        doc(db, 'settings', 'super_admin'),
+        { students: { coreAcademics: nextCore } },
+        { merge: true },
+      );
+      setCoreAcademics(nextCore);
+    } finally {
+      setSavingClass('');
+    }
+  };
+
+  const handleCategoryChange = (value) => {
+    setCategoryForm({ name: value });
+    setCategoryError('');
+  };
+
+  const handleItemFormChange = (field, value) => {
+    setItemForm((prev) => ({ ...prev, [field]: value }));
+    setItemError('');
+  };
+
+  const handleStoreFormChange = (className, field, value) => {
+    setStoreForms((prev) => ({
+      ...prev,
+      [className]: { ...prev[className], [field]: value },
+    }));
+    setStoreFormErrors((prev) => ({ ...prev, [className]: '' }));
+  };
+
+  const handleSaveCategory = async () => {
+    const name = categoryForm.name.trim();
+    if (!name) {
+      setCategoryError('Enter a category name.');
+      return;
+    }
+    if (storeCategories.some((category) => `${category.name}`.toLowerCase() === name.toLowerCase())) {
+      setCategoryError('Category already exists.');
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      const confirmSave = window.confirm(`Create category "${name}"?`);
+      if (!confirmSave) return;
+    }
+    setSavingCategory(true);
+    try {
+      await addDoc(collection(db, 'store_categories'), {
+        name,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      });
+      setCategoryForm(buildEmptyCategoryForm());
+    } finally {
+      setSavingCategory(false);
+    }
+  };
+
+  const handleSaveCatalogItem = async () => {
+    const categoryId = itemForm.categoryId;
+    const itemName = itemForm.name.trim();
+    if (!categoryId || !itemName) {
+      setItemError('Select a category and enter an item name.');
+      return;
+    }
+    if (
+      storeCatalogItems.some(
+        (item) =>
+          item.categoryId === categoryId &&
+          `${item.itemName}`.toLowerCase() === itemName.toLowerCase(),
+      )
+    ) {
+      setItemError('This item already exists in the selected category.');
+      return;
+    }
+    const category = storeCategories.find((entry) => entry.id === categoryId);
+    if (!category) {
+      setItemError('Choose a valid category.');
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      const confirmSave = window.confirm(`Create item "${itemName}" under ${category.name}?`);
+      if (!confirmSave) return;
+    }
+    setSavingItem(true);
+    try {
+      await addDoc(collection(db, 'store_catalog_items'), {
+        categoryId,
+        categoryName: category.name,
+        itemName,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      });
+      setItemForm(buildEmptyItemForm());
+    } finally {
+      setSavingItem(false);
+    }
+  };
+
+  const handleSaveStoreItem = async (className) => {
+    const payload = storeForms[className] || {};
+    const categoryId = payload.categoryId;
+    const itemId = payload.itemId;
+    const priceValue = Number(payload.price || 0);
+    if (!categoryId || !itemId || !(priceValue > 0)) {
+      setStoreFormErrors((prev) => ({
+        ...prev,
+        [className]: 'Select a category, item, and enter a price greater than zero.',
+      }));
+      return;
+    }
+    const category = storeCategories.find((entry) => entry.id === categoryId);
+    const item = storeCatalogItems.find((entry) => entry.id === itemId);
+    if (!category || !item) {
+      setStoreFormErrors((prev) => ({
+        ...prev,
+        [className]: 'Select a valid category and item.',
+      }));
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      const confirmSave = window.confirm(
+        `Save store item for Class ${className}?\n${category.name} · ${item.itemName} · ₹${priceValue.toLocaleString('en-IN')}`,
+      );
+      if (!confirmSave) return;
+    }
+    setSavingStoreClass(className);
+    try {
+      await addDoc(collection(db, 'store_class_items'), {
+        className,
+        categoryId,
+        categoryName: category.name,
+        itemId,
+        itemName: item.itemName,
+        price: priceValue,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      });
+      setStoreForms((prev) => ({
+        ...prev,
+        [className]: { categoryId: '', itemId: '', price: '' },
+      }));
+    } finally {
+      setSavingStoreClass('');
+    }
   };
 
   const handleSignOut = async () => {
@@ -166,7 +488,44 @@ const SuperAdminPortal = () => {
     router.replace('/');
   };
 
-  const studentCharges = useMemo(() => charges, [charges]);
+  const catalogItemsByCategory = useMemo(() => {
+    const map = new Map();
+    storeCatalogItems.forEach((item) => {
+      if (!item.categoryId) return;
+      if (!map.has(item.categoryId)) {
+        map.set(item.categoryId, []);
+      }
+      map.get(item.categoryId).push(item);
+    });
+    return map;
+  }, [storeCatalogItems]);
+
+  const storeItemsByClass = useMemo(() => {
+    const map = new Map();
+    storeClassItems.forEach((item) => {
+      const className = item.className || item.class || '';
+      if (!className) return;
+      if (!map.has(className)) {
+        map.set(className, []);
+      }
+      map.get(className).push(item);
+    });
+    return map;
+  }, [storeClassItems]);
+
+  const storeGroupsForActiveClass = useMemo(() => {
+    const items = storeItemsByClass.get(activeStoreClass) || [];
+    const map = new Map();
+    items.forEach((item) => {
+      const categoryId = item.categoryId || 'uncategorized';
+      const categoryName = item.categoryName || 'Uncategorized';
+      if (!map.has(categoryId)) {
+        map.set(categoryId, { categoryId, categoryName, items: [] });
+      }
+      map.get(categoryId).items.push(item);
+    });
+    return Array.from(map.values());
+  }, [storeItemsByClass, activeStoreClass]);
 
   if (!authChecked) {
     return (
@@ -250,8 +609,8 @@ const SuperAdminPortal = () => {
             <div className="space-y-2 border border-slate-700/60 bg-slate-900/40 px-4 py-3">
               <p className="text-xs uppercase tracking-wide text-slate-300">Student submenu</p>
               {[
-                { id: 'new', label: 'New admission' },
-                { id: 'old', label: 'Old admission' },
+                { id: 'core-academics', label: 'Core academics' },
+                { id: 'store', label: 'Store' },
               ].map((item) => (
                 <button
                   key={item.id}
@@ -283,17 +642,139 @@ const SuperAdminPortal = () => {
                 Loading fee settings…
               </div>
             ) : (
-              <ChargeEditor
-                label={studentTab === 'new' ? 'New admission settings' : 'Old admission settings'}
-                charges={studentCharges[studentTab]}
-                onChange={(className, field, value) =>
-                  handleChargeChange(studentTab, className, field, value)
-                }
-                extraFields={studentTab === 'new'}
-              />
-            )}
-            {saving && (
-              <p className="text-xs font-semibold text-portal">Saving changes…</p>
+              <>
+                {studentTab === 'core-academics' && (
+                  <CoreAcademicsEditor
+                    label="Core academics"
+                    charges={coreAcademicsDraft}
+                    onChange={(className, field, value) => handleCoreChange(className, field, value)}
+                    onSave={handleSaveCoreClass}
+                    savingClass={savingClass}
+                  />
+                )}
+                {studentTab === 'store' && (
+                  <div className="space-y-4">
+                    <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Create category</p>
+                          <h3 className="text-lg font-semibold text-slate-900">Store catalog builder</h3>
+                          <p className="text-xs text-slate-500">Add categories and items for the dropdowns below.</p>
+                        </div>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <label className="space-y-1 text-sm font-semibold text-slate-700">
+                          <span>Category name</span>
+                          <input
+                            type="text"
+                            value={categoryForm.name}
+                            onChange={(event) => handleCategoryChange(event.target.value)}
+                            className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                            placeholder="e.g. Books"
+                          />
+                        </label>
+                        <div className="flex items-end">
+                          <button
+                            type="button"
+                            onClick={handleSaveCategory}
+                            disabled={savingCategory}
+                            className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:bg-portal/50"
+                          >
+                            {savingCategory ? 'Saving…' : 'Save category'}
+                          </button>
+                        </div>
+                      </div>
+                      {categoryError && <p className="text-xs font-semibold text-rose-600">{categoryError}</p>}
+                      <div className="border-t border-slate-100 pt-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Create item</p>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <label className="space-y-1 text-sm font-semibold text-slate-700">
+                            <span>Category</span>
+                            <select
+                              value={itemForm.categoryId}
+                              onChange={(event) => handleItemFormChange('categoryId', event.target.value)}
+                              className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                            >
+                              <option value="">Select category</option>
+                              {storeCategories.map((category) => (
+                                <option key={category.id} value={category.id}>
+                                  {category.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="space-y-1 text-sm font-semibold text-slate-700">
+                            <span>Item name</span>
+                            <input
+                              type="text"
+                              value={itemForm.name}
+                              onChange={(event) => handleItemFormChange('name', event.target.value)}
+                              className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                              placeholder="e.g. Science workbook"
+                            />
+                          </label>
+                        </div>
+                        <div className="mt-3 flex items-center justify-end">
+                          <button
+                            type="button"
+                            onClick={handleSaveCatalogItem}
+                            disabled={savingItem}
+                            className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:bg-portal/50"
+                          >
+                            {savingItem ? 'Saving…' : 'Save item'}
+                          </button>
+                        </div>
+                        {itemError && <p className="mt-2 text-xs font-semibold text-rose-600">{itemError}</p>}
+                      </div>
+                    </div>
+                    <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Class-wise structure</p>
+                        <p className="text-xs text-slate-500">Select a class to manage store pricing.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {CLASS_OPTIONS.map((className) => (
+                          <button
+                            key={className}
+                            type="button"
+                            onClick={() => setActiveStoreClass(className)}
+                            className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                              activeStoreClass === className
+                                ? 'bg-portal text-white shadow'
+                                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                            }`}
+                          >
+                            Class {className}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <StoreClassEditor
+                      className={activeStoreClass}
+                      formState={storeForms[activeStoreClass] || { categoryId: '', itemId: '', price: '' }}
+                      categories={storeCategories}
+                      itemOptions={
+                        (storeForms[activeStoreClass]?.categoryId
+                          ? catalogItemsByCategory.get(storeForms[activeStoreClass].categoryId)
+                          : []) || []
+                      }
+                      onCategoryChange={(value) => {
+                        setStoreForms((prev) => ({
+                          ...prev,
+                          [activeStoreClass]: { ...prev[activeStoreClass], categoryId: value, itemId: '' },
+                        }));
+                        setStoreFormErrors((prev) => ({ ...prev, [activeStoreClass]: '' }));
+                      }}
+                      onItemChange={(value) => handleStoreFormChange(activeStoreClass, 'itemId', value)}
+                      onPriceChange={(value) => handleStoreFormChange(activeStoreClass, 'price', value)}
+                      onSave={() => handleSaveStoreItem(activeStoreClass)}
+                      saving={savingStoreClass === activeStoreClass}
+                      error={storeFormErrors[activeStoreClass]}
+                      groupedItems={storeGroupsForActiveClass}
+                    />
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}

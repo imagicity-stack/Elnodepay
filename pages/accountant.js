@@ -658,6 +658,10 @@ const FeeRequestModal = ({
   formState,
   cycleOptions,
   amounts,
+  storeCategoryOptions,
+  storeItemsByCategory,
+  onStoreCategoryChange,
+  onStoreItemChange,
   onFieldChange,
   onSubmit,
   onClose,
@@ -775,14 +779,34 @@ s:ring-2 focus:ring-portal/20"
       {formState.includeStore && (
         <div className="grid gap-4 md:grid-cols-2">
           <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
-            Store Item Name
-            <input
-              name="storeItem"
-              value={formState.storeItem}
-              onChange={(event) => onFieldChange(event.target.name, event.target.value)}
-              placeholder="Uniform, books…"
+            Store Category
+            <select
+              value={formState.storeCategoryId}
+              onChange={(event) => onStoreCategoryChange(event.target.value)}
               className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
-            />
+            >
+              <option value="">Select category</option>
+              {storeCategoryOptions.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
+            Store Item
+            <select
+              value={formState.storeItemId}
+              onChange={(event) => onStoreItemChange(event.target.value)}
+              className="rounded-xl border border-slate-200 px-3 py-2 text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+            >
+              <option value="">Select item</option>
+              {(storeItemsByCategory.get(formState.storeCategoryId) || []).map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.itemName}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="flex flex-col gap-2 text-sm font-medium text-slate-700">
             Store Amount
@@ -1260,6 +1284,7 @@ const AccountantDashboard = () => {
   const [feeStructure, setFeeStructure] = useState({ session: '', defaultDueDate: '', fees: {} });
   const [feeStructureDraft, setFeeStructureDraft] = useState({ session: '', defaultDueDate: '', fees: {} });
   const [feeStructureSaving, setFeeStructureSaving] = useState(false);
+  const [storeClassItems, setStoreClassItems] = useState([]);
   const [feeRequestContext, setFeeRequestContext] = useState({ open: false, student: null });
   const [feeRequestForm, setFeeRequestForm] = useState({
     tuitionEnabled: true,
@@ -1270,6 +1295,8 @@ const AccountantDashboard = () => {
     othersAmount: '',
     othersLabel: '',
     includeStore: false,
+    storeCategoryId: '',
+    storeItemId: '',
     storeItem: '',
     storeAmount: '',
   });
@@ -1745,6 +1772,12 @@ const resolveTransactionMonthLabel = (entry) => {
       setFeeStructureDraft(structure);
     });
 
+    const storeItemsQuery = query(collection(db, 'store_class_items'), orderBy('created_at', 'desc'));
+    const unsubscribeStoreItems = onSnapshot(storeItemsQuery, (snapshot) => {
+      const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setStoreClassItems(data);
+    });
+
     const transactionsQuery = query(collection(db, 'transactions_log'), orderBy('date', 'desc'));
     const unsubscribeTransactions = onSnapshot(transactionsQuery, (snapshot) => {
       const data = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
@@ -1769,6 +1802,7 @@ const resolveTransactionMonthLabel = (entry) => {
       unsubscribeFeeRequests();
       unsubscribeSettings();
       unsubscribeFeeStructure();
+      unsubscribeStoreItems();
       unsubscribeTransactions();
       unsubscribeExpenses();
     };
@@ -2233,6 +2267,35 @@ const resolveTransactionMonthLabel = (entry) => {
       total: base + custom + others + store,
     };
   }, [feeRequestContext.student, feeRequestForm, getFeeAmountFromStructure]);
+
+  const storeItemsForClass = useMemo(() => {
+    const className = feeRequestContext.student?.class;
+    if (!className) return [];
+    return storeClassItems.filter((item) => item.className === className);
+  }, [feeRequestContext.student, storeClassItems]);
+
+  const storeCategoryOptions = useMemo(() => {
+    const map = new Map();
+    storeItemsForClass.forEach((item) => {
+      if (!item.categoryId) return;
+      if (!map.has(item.categoryId)) {
+        map.set(item.categoryId, item.categoryName || 'Category');
+      }
+    });
+    return Array.from(map.entries()).map(([id, name]) => ({ id, name }));
+  }, [storeItemsForClass]);
+
+  const storeItemsByCategory = useMemo(() => {
+    const map = new Map();
+    storeItemsForClass.forEach((item) => {
+      if (!item.categoryId) return;
+      if (!map.has(item.categoryId)) {
+        map.set(item.categoryId, []);
+      }
+      map.get(item.categoryId).push(item);
+    });
+    return map;
+  }, [storeItemsForClass]);
 
   const filteredStudents = useMemo(() => {
     const safeStudents = Array.isArray(students) ? students : [];
@@ -2926,10 +2989,12 @@ const resolveTransactionMonthLabel = (entry) => {
       othersAmount: '',
       othersLabel: '',
       includeStore: false,
+      storeCategoryId: '',
+      storeItemId: '',
       storeItem: '',
       storeAmount: '',
+    };
   };
-};
 
   const buildCommonRequestState = () => ({
     cycle: 'Monthly',
@@ -2993,6 +3058,8 @@ const resolveTransactionMonthLabel = (entry) => {
           ...(include
             ? {}
             : {
+                storeCategoryId: '',
+                storeItemId: '',
                 storeItem: '',
                 storeAmount: '',
               }),
@@ -3002,6 +3069,26 @@ const resolveTransactionMonthLabel = (entry) => {
       const value = isAmountField ? `${rawValue}`.replace(/[^0-9.]/g, '') : rawValue;
       return { ...prev, [name]: value };
     });
+  };
+
+  const handleStoreCategorySelection = (categoryId) => {
+    setFeeRequestForm((prev) => ({
+      ...prev,
+      storeCategoryId: categoryId,
+      storeItemId: '',
+      storeItem: '',
+      storeAmount: '',
+    }));
+  };
+
+  const handleStoreItemSelection = (itemId) => {
+    const selected = storeItemsForClass.find((item) => item.id === itemId);
+    setFeeRequestForm((prev) => ({
+      ...prev,
+      storeItemId: itemId,
+      storeItem: selected?.itemName || '',
+      storeAmount: selected?.price ? `${selected.price}` : '',
+    }));
   };
 
   const handleCommonCycleChange = (value) => {
@@ -3532,6 +3619,10 @@ const resolveTransactionMonthLabel = (entry) => {
       triggerToast('Store charges must include an amount.', 'error');
       return;
     }
+    if (feeRequestForm.includeStore && !feeRequestForm.storeItemId) {
+      triggerToast('Select a store category and item before saving.', 'error');
+      return;
+    }
     const dueDateValue = includeTuition
       ? feeRequestForm.dueDate || feeStructureDraft.defaultDueDate || ''
       : '';
@@ -3567,8 +3658,12 @@ const resolveTransactionMonthLabel = (entry) => {
         };
       }
       if (storeAmount > 0) {
+        const selectedItem = storeItemsForClass.find((item) => item.id === feeRequestForm.storeItemId);
+        const storeLabel = selectedItem
+          ? `${selectedItem.categoryName || 'Store'} · ${selectedItem.itemName}`
+          : feeRequestForm.storeItem.trim() || 'Store Item';
         breakdown.store = {
-          label: feeRequestForm.storeItem.trim() || 'Store Item',
+          label: storeLabel,
           amount: storeAmount,
         };
       }
@@ -6551,6 +6646,10 @@ const resolveTransactionMonthLabel = (entry) => {
           formState={feeRequestForm}
           cycleOptions={REQUEST_CYCLE_OPTIONS}
           amounts={feeRequestAmounts}
+          storeCategoryOptions={storeCategoryOptions}
+          storeItemsByCategory={storeItemsByCategory}
+          onStoreCategoryChange={handleStoreCategorySelection}
+          onStoreItemChange={handleStoreItemSelection}
           onFieldChange={handleFeeRequestFieldChange}
           onSubmit={handleFeeRequestSubmit}
           onClose={handleCloseFeeRequest}
