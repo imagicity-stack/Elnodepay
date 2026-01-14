@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 
 const {
-  RAZORPAY_KEY_SECRET,
+  RAZORPAY_KEY_SECRET_BHAGWATI,
   FIREBASE_API_KEY,
   FIREBASE_PROJECT_ID,
   FIREBASE_SERVICE_EMAIL,
@@ -192,11 +192,11 @@ async function firestoreRunQuery(idToken, structuredQuery) {
 }
 
 const validateSignature = ({ orderId, paymentId, signature }) => {
-  if (!RAZORPAY_KEY_SECRET) {
+  if (!RAZORPAY_KEY_SECRET_BHAGWATI) {
     throw buildError('Razorpay secret not configured.');
   }
   const body = `${orderId}|${paymentId}`;
-  const expectedSignature = crypto.createHmac('sha256', RAZORPAY_KEY_SECRET).update(body).digest('hex');
+  const expectedSignature = crypto.createHmac('sha256', RAZORPAY_KEY_SECRET_BHAGWATI).update(body).digest('hex');
   if (expectedSignature !== signature) {
     throw buildError('Razorpay signature verification failed.');
   }
@@ -223,6 +223,7 @@ async function createPaymentEntry(idToken, payload) {
     date: nowIso,
     term: payload.term || '',
     fee_type: payload.feeType || '',
+    payment_type: payload.paymentType || 'fees',
     breakdown: normalizedBreakdown,
     razorpay_order_id: payload.razorpay_order_id || '',
     razorpay_payment_id: payload.razorpay_payment_id || '',

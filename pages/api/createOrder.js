@@ -1,8 +1,19 @@
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
 
-const keyId = process.env.RAZORPAY_KEY_ID || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
-const keySecret = process.env.RAZORPAY_KEY_SECRET;
+const resolveKeys = ({ paymentType } = {}) => {
+  const normalizedType = `${paymentType || ''}`.toLowerCase();
+  if (normalizedType === 'store') {
+    return {
+      keyId: process.env.RAZORPAY_KEY_ID_FLYKRAFT || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID_FLYKRAFT,
+      keySecret: process.env.RAZORPAY_KEY_SECRET_FLYKRAFT,
+    };
+  }
+  return {
+    keyId: process.env.RAZORPAY_KEY_ID_BHAGWATI || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID_BHAGWATI,
+    keySecret: process.env.RAZORPAY_KEY_SECRET_BHAGWATI,
+  };
+};
 
 const MAX_RECEIPT_LENGTH = 40;
 
@@ -24,10 +35,12 @@ const handler = async (req, res) => {
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
 
+  const { paymentType } = req.body || {};
+  const { keyId, keySecret } = resolveKeys({ paymentType });
   if (!keyId || !keySecret) {
     return res.status(500).json({
       success: false,
-      message: 'Razorpay keys are missing. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in your environment.',
+      message: 'Razorpay keys are missing. Please set the appropriate Razorpay key env vars for this payment type.',
     });
   }
 
@@ -42,6 +55,7 @@ const handler = async (req, res) => {
       breakdown = [],
       term,
       advancePayment = null,
+      paymentType = 'fees',
     } = req.body;
 
     if (!amount || amount <= 0) {
@@ -67,6 +81,7 @@ const handler = async (req, res) => {
         term: term || '',
         breakdown: JSON.stringify(breakdown || []),
         advancePayment: advancePayment ? JSON.stringify(advancePayment) : '',
+        paymentType: paymentType || '',
       },
     });
 
