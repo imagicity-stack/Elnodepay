@@ -3,47 +3,42 @@ import Head from 'next/head';
 import Image from 'next/image';
 import { useRouter } from 'next/router';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { doc, getDoc, onSnapshot, setDoc } from 'firebase/firestore';
+import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import StaffSettingsModal from '../components/StaffSettingsModal';
 import PortalLayout from '../components/PortalLayout';
 
 const CLASS_OPTIONS = ['Nursery', 'UKG', 'LKG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
 
-const buildEmptyChargeMap = (withExtras = false) =>
+const buildEmptyCoreAcademics = () =>
   CLASS_OPTIONS.reduce(
     (acc, className) => ({
       ...acc,
       [className]: {
         monthlyFees: 0,
-        kitCharges: 0,
-        storeCharges: 0,
+        registrationFees: 0,
         annualCharges: 0,
-        ...(withExtras
-          ? { admissionCharges: 0, registrationFees: 0 }
-          : {}),
       },
     }),
     {},
   );
 
-const emptyCharges = {
-  new: buildEmptyChargeMap(true),
-  old: buildEmptyChargeMap(false),
-};
+const buildEmptyStoreForms = () =>
+  CLASS_OPTIONS.reduce(
+    (acc, className) => ({
+      ...acc,
+      [className]: { category: '', itemName: '', price: '' },
+    }),
+    {},
+  );
 
-const ChargeEditor = ({ label, charges, onChange, extraFields = false }) => {
+const CoreAcademicsEditor = ({ label, charges, onChange, onSave, savingClass }) => {
   const [activeClass, setActiveClass] = useState(CLASS_OPTIONS[0]);
   const fields = [
     { id: 'monthlyFees', label: 'Monthly fees' },
-    { id: 'kitCharges', label: 'Kit charges' },
-    { id: 'storeCharges', label: 'Store charges' },
+    { id: 'registrationFees', label: 'Registration fees' },
     { id: 'annualCharges', label: 'Annual charges' },
   ];
-  if (extraFields) {
-    fields.push({ id: 'admissionCharges', label: 'Admission charges' });
-    fields.push({ id: 'registrationFees', label: 'Registration fees' });
-  }
 
   return (
     <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -51,9 +46,9 @@ const ChargeEditor = ({ label, charges, onChange, extraFields = false }) => {
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
           <h3 className="text-lg font-semibold text-slate-900">Class-wise structure</h3>
-          <p className="text-xs text-slate-500">Update default fee heads for this admission path.</p>
+          <p className="text-xs text-slate-500">Confirm and save fees for each class.</p>
         </div>
-        <span className="rounded-full bg-portal/10 px-3 py-1 text-[11px] font-semibold text-portal">Auto-save</span>
+        <span className="rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-700">Confirm &amp; save</span>
       </div>
       <div className="flex flex-wrap gap-2">
         {CLASS_OPTIONS.map((className) => (
@@ -87,6 +82,19 @@ const ChargeEditor = ({ label, charges, onChange, extraFields = false }) => {
           </label>
         ))}
       </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs text-slate-500">
+          Selected: <span className="font-semibold text-slate-700">Class {activeClass}</span>
+        </p>
+        <button
+          type="button"
+          onClick={() => onSave(activeClass)}
+          disabled={savingClass === activeClass}
+          className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:bg-portal/50"
+        >
+          {savingClass === activeClass ? 'Saving…' : 'Save class fees'}
+        </button>
+      </div>
     </div>
   );
 };
@@ -97,10 +105,15 @@ const SuperAdminPortal = () => {
   const [user, setUser] = useState(null);
   const [roleError, setRoleError] = useState('');
   const [activeTab, setActiveTab] = useState('students');
-  const [studentTab, setStudentTab] = useState('new');
-  const [charges, setCharges] = useState(emptyCharges);
+  const [studentTab, setStudentTab] = useState('core-academics');
+  const [coreAcademics, setCoreAcademics] = useState(buildEmptyCoreAcademics());
+  const [coreAcademicsDraft, setCoreAcademicsDraft] = useState(buildEmptyCoreAcademics());
   const [loadingCharges, setLoadingCharges] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [savingClass, setSavingClass] = useState('');
+  const [storeForms, setStoreForms] = useState(buildEmptyStoreForms());
+  const [storeItems, setStoreItems] = useState([]);
+  const [savingStoreClass, setSavingStoreClass] = useState('');
+  const [storeFormErrors, setStoreFormErrors] = useState({});
   const [showStaffModal, setShowStaffModal] = useState(false);
 
   useEffect(() => {
@@ -132,12 +145,28 @@ const SuperAdminPortal = () => {
         if (snap.exists()) {
           const data = snap.data();
           const studentSettings = data.students || {};
-          const resolvedNew = studentSettings.new || studentSettings.newAdmission || {};
-          const resolvedOld = studentSettings.old || studentSettings.oldAdmission || studentSettings || {};
-          setCharges({
-            new: { ...emptyCharges.new, ...resolvedNew },
-            old: { ...emptyCharges.old, ...resolvedOld },
-          });
+          const resolvedCore =
+            studentSettings.coreAcademics ||
+            studentSettings.core_academics ||
+            studentSettings.new ||
+            studentSettings.newAdmission ||
+            studentSettings.old ||
+            studentSettings.oldAdmission ||
+            studentSettings ||
+            {};
+          const nextCore = CLASS_OPTIONS.reduce(
+            (acc, className) => ({
+              ...acc,
+              [className]: {
+                monthlyFees: Number(resolvedCore?.[className]?.monthlyFees || 0),
+                registrationFees: Number(resolvedCore?.[className]?.registrationFees || 0),
+                annualCharges: Number(resolvedCore?.[className]?.annualCharges || 0),
+              },
+            }),
+            {},
+          );
+          setCoreAcademics(nextCore);
+          setCoreAcademicsDraft(nextCore);
         }
         setLoadingCharges(false);
       },
@@ -146,19 +175,87 @@ const SuperAdminPortal = () => {
     return () => unsub();
   }, []);
 
-  const handleChargeChange = async (admissionType, className, field, value) => {
-    setSaving(true);
-    setCharges((prev) => {
-      const updatedType = {
-        ...prev[admissionType],
-        [className]: { ...prev[admissionType][className], [field]: value },
-      };
-      const nextCharges = { ...prev, [admissionType]: updatedType };
-      setDoc(doc(db, 'settings', 'super_admin'), { students: nextCharges }, { merge: true })
-        .catch(() => setSaving(false))
-        .finally(() => setSaving(false));
-      return nextCharges;
+  useEffect(() => {
+    const storeQuery = query(collection(db, 'store_items'), orderBy('created_at', 'desc'));
+    const unsub = onSnapshot(storeQuery, (snap) => {
+      const data = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setStoreItems(data);
     });
+    return () => unsub();
+  }, []);
+
+  const handleCoreChange = (className, field, value) => {
+    setCoreAcademicsDraft((prev) => ({
+      ...prev,
+      [className]: { ...prev[className], [field]: value },
+    }));
+  };
+
+  const handleSaveCoreClass = async (className) => {
+    if (typeof window !== 'undefined') {
+      const confirmSave = window.confirm(`Save core academic fees for Class ${className}?`);
+      if (!confirmSave) return;
+    }
+    setSavingClass(className);
+    const nextCore = {
+      ...coreAcademics,
+      [className]: { ...coreAcademicsDraft[className] },
+    };
+    try {
+      await setDoc(
+        doc(db, 'settings', 'super_admin'),
+        { students: { coreAcademics: nextCore } },
+        { merge: true },
+      );
+      setCoreAcademics(nextCore);
+    } finally {
+      setSavingClass('');
+    }
+  };
+
+  const handleStoreFormChange = (className, field, value) => {
+    setStoreForms((prev) => ({
+      ...prev,
+      [className]: { ...prev[className], [field]: value },
+    }));
+    setStoreFormErrors((prev) => ({ ...prev, [className]: '' }));
+  };
+
+  const handleSaveStoreItem = async (className) => {
+    const payload = storeForms[className] || {};
+    const category = (payload.category || '').trim();
+    const itemName = (payload.itemName || '').trim();
+    const priceValue = Number(payload.price || 0);
+    if (!category || !itemName || !(priceValue > 0)) {
+      setStoreFormErrors((prev) => ({
+        ...prev,
+        [className]: 'Enter a category, item name, and price greater than zero.',
+      }));
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      const confirmSave = window.confirm(
+        `Save store item for Class ${className}?\n${category} · ${itemName} · ₹${priceValue.toLocaleString('en-IN')}`,
+      );
+      if (!confirmSave) return;
+    }
+    setSavingStoreClass(className);
+    try {
+      await addDoc(collection(db, 'store_items'), {
+        className,
+        category,
+        itemName,
+        price: priceValue,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      });
+      setStoreForms((prev) => ({
+        ...prev,
+        [className]: { category: '', itemName: '', price: '' },
+      }));
+    } finally {
+      setSavingStoreClass('');
+    }
   };
 
   const handleSignOut = async () => {
@@ -166,7 +263,18 @@ const SuperAdminPortal = () => {
     router.replace('/');
   };
 
-  const studentCharges = useMemo(() => charges, [charges]);
+  const storeItemsByClass = useMemo(() => {
+    const map = new Map();
+    storeItems.forEach((item) => {
+      const className = item.className || item.class || '';
+      if (!className) return;
+      if (!map.has(className)) {
+        map.set(className, []);
+      }
+      map.get(className).push(item);
+    });
+    return map;
+  }, [storeItems]);
 
   if (!authChecked) {
     return (
@@ -250,8 +358,8 @@ const SuperAdminPortal = () => {
             <div className="space-y-2 border border-slate-700/60 bg-slate-900/40 px-4 py-3">
               <p className="text-xs uppercase tracking-wide text-slate-300">Student submenu</p>
               {[
-                { id: 'new', label: 'New admission' },
-                { id: 'old', label: 'Old admission' },
+                { id: 'core-academics', label: 'Core academics' },
+                { id: 'store', label: 'Store' },
               ].map((item) => (
                 <button
                   key={item.id}
@@ -283,17 +391,101 @@ const SuperAdminPortal = () => {
                 Loading fee settings…
               </div>
             ) : (
-              <ChargeEditor
-                label={studentTab === 'new' ? 'New admission settings' : 'Old admission settings'}
-                charges={studentCharges[studentTab]}
-                onChange={(className, field, value) =>
-                  handleChargeChange(studentTab, className, field, value)
-                }
-                extraFields={studentTab === 'new'}
-              />
-            )}
-            {saving && (
-              <p className="text-xs font-semibold text-portal">Saving changes…</p>
+              <>
+                {studentTab === 'core-academics' && (
+                  <CoreAcademicsEditor
+                    label="Core academics"
+                    charges={coreAcademicsDraft}
+                    onChange={(className, field, value) => handleCoreChange(className, field, value)}
+                    onSave={handleSaveCoreClass}
+                    savingClass={savingClass}
+                  />
+                )}
+                {studentTab === 'store' && (
+                  <div className="space-y-4">
+                    {CLASS_OPTIONS.map((className) => {
+                      const items = storeItemsByClass.get(className) || [];
+                      return (
+                        <div
+                          key={className}
+                          className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Store</p>
+                              <h3 className="text-lg font-semibold text-slate-900">Class {className}</h3>
+                              <p className="text-xs text-slate-500">Create a category, item, and price.</p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleSaveStoreItem(className)}
+                              disabled={savingStoreClass === className}
+                              className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:bg-portal/50"
+                            >
+                              {savingStoreClass === className ? 'Saving…' : 'Save store item'}
+                            </button>
+                          </div>
+                          <div className="grid gap-3 md:grid-cols-3">
+                            <label className="space-y-1 text-sm font-semibold text-slate-700">
+                              <span>Category</span>
+                              <input
+                                type="text"
+                                value={storeForms[className]?.category || ''}
+                                onChange={(event) => handleStoreFormChange(className, 'category', event.target.value)}
+                                className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                                placeholder="e.g. Books"
+                              />
+                            </label>
+                            <label className="space-y-1 text-sm font-semibold text-slate-700">
+                              <span>Item name</span>
+                              <input
+                                type="text"
+                                value={storeForms[className]?.itemName || ''}
+                                onChange={(event) => handleStoreFormChange(className, 'itemName', event.target.value)}
+                                className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                                placeholder="e.g. Science workbook"
+                              />
+                            </label>
+                            <label className="space-y-1 text-sm font-semibold text-slate-700">
+                              <span>Price (₹)</span>
+                              <input
+                                type="number"
+                                min="0"
+                                value={storeForms[className]?.price || ''}
+                                onChange={(event) => handleStoreFormChange(className, 'price', event.target.value)}
+                                className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                                placeholder="0"
+                              />
+                            </label>
+                          </div>
+                          {storeFormErrors[className] && (
+                            <p className="text-xs font-semibold text-rose-600">{storeFormErrors[className]}</p>
+                          )}
+                          {items.length > 0 ? (
+                            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Saved items</p>
+                              <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                                {items.slice(0, 5).map((item) => (
+                                  <li key={item.id} className="flex flex-wrap items-center justify-between gap-2">
+                                    <span>
+                                      <span className="font-semibold text-slate-900">{item.category}</span> · {item.itemName}
+                                    </span>
+                                    <span className="text-xs font-semibold text-slate-500">
+                                      ₹{Number(item.price || 0).toLocaleString('en-IN')}
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          ) : (
+                            <p className="text-xs text-slate-500">No store items saved for this class yet.</p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </>
             )}
           </div>
         )}
