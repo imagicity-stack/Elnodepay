@@ -3,7 +3,17 @@ import Head from 'next/head';
 import Image from 'next/image';
 import { useRouter } from 'next/router';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { addDoc, collection, doc, getDoc, onSnapshot, orderBy, query, serverTimestamp, setDoc } from 'firebase/firestore';
+import {
+  addDoc,
+  collection,
+  doc,
+  getDoc,
+  onSnapshot,
+  orderBy,
+  query,
+  serverTimestamp,
+  setDoc,
+} from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
 import StaffSettingsModal from '../components/StaffSettingsModal';
 import PortalLayout from '../components/PortalLayout';
@@ -27,10 +37,13 @@ const buildEmptyStoreForms = () =>
   CLASS_OPTIONS.reduce(
     (acc, className) => ({
       ...acc,
-      [className]: { category: '', itemName: '', price: '' },
+      [className]: { categoryId: '', itemId: '', price: '' },
     }),
     {},
   );
+
+const buildEmptyCategoryForm = () => ({ name: '' });
+const buildEmptyItemForm = () => ({ categoryId: '', name: '' });
 
 const CoreAcademicsEditor = ({ label, charges, onChange, onSave, savingClass }) => {
   const [activeClass, setActiveClass] = useState(CLASS_OPTIONS[0]);
@@ -111,9 +124,17 @@ const SuperAdminPortal = () => {
   const [loadingCharges, setLoadingCharges] = useState(true);
   const [savingClass, setSavingClass] = useState('');
   const [storeForms, setStoreForms] = useState(buildEmptyStoreForms());
-  const [storeItems, setStoreItems] = useState([]);
-  const [savingStoreClass, setSavingStoreClass] = useState('');
   const [storeFormErrors, setStoreFormErrors] = useState({});
+  const [storeCategories, setStoreCategories] = useState([]);
+  const [storeCatalogItems, setStoreCatalogItems] = useState([]);
+  const [storeClassItems, setStoreClassItems] = useState([]);
+  const [savingStoreClass, setSavingStoreClass] = useState('');
+  const [savingCategory, setSavingCategory] = useState(false);
+  const [savingItem, setSavingItem] = useState(false);
+  const [categoryForm, setCategoryForm] = useState(buildEmptyCategoryForm());
+  const [itemForm, setItemForm] = useState(buildEmptyItemForm());
+  const [categoryError, setCategoryError] = useState('');
+  const [itemError, setItemError] = useState('');
   const [showStaffModal, setShowStaffModal] = useState(false);
 
   useEffect(() => {
@@ -176,12 +197,26 @@ const SuperAdminPortal = () => {
   }, []);
 
   useEffect(() => {
-    const storeQuery = query(collection(db, 'store_items'), orderBy('created_at', 'desc'));
-    const unsub = onSnapshot(storeQuery, (snap) => {
+    const categoryQuery = query(collection(db, 'store_categories'), orderBy('created_at', 'asc'));
+    const itemQuery = query(collection(db, 'store_catalog_items'), orderBy('created_at', 'asc'));
+    const classItemQuery = query(collection(db, 'store_class_items'), orderBy('created_at', 'desc'));
+    const unsubCategories = onSnapshot(categoryQuery, (snap) => {
       const data = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
-      setStoreItems(data);
+      setStoreCategories(data);
     });
-    return () => unsub();
+    const unsubItems = onSnapshot(itemQuery, (snap) => {
+      const data = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setStoreCatalogItems(data);
+    });
+    const unsubClassItems = onSnapshot(classItemQuery, (snap) => {
+      const data = snap.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }));
+      setStoreClassItems(data);
+    });
+    return () => {
+      unsubCategories();
+      unsubItems();
+      unsubClassItems();
+    };
   }, []);
 
   const handleCoreChange = (className, field, value) => {
@@ -213,6 +248,16 @@ const SuperAdminPortal = () => {
     }
   };
 
+  const handleCategoryChange = (value) => {
+    setCategoryForm({ name: value });
+    setCategoryError('');
+  };
+
+  const handleItemFormChange = (field, value) => {
+    setItemForm((prev) => ({ ...prev, [field]: value }));
+    setItemError('');
+  };
+
   const handleStoreFormChange = (className, field, value) => {
     setStoreForms((prev) => ({
       ...prev,
@@ -221,37 +266,116 @@ const SuperAdminPortal = () => {
     setStoreFormErrors((prev) => ({ ...prev, [className]: '' }));
   };
 
+  const handleSaveCategory = async () => {
+    const name = categoryForm.name.trim();
+    if (!name) {
+      setCategoryError('Enter a category name.');
+      return;
+    }
+    if (storeCategories.some((category) => `${category.name}`.toLowerCase() === name.toLowerCase())) {
+      setCategoryError('Category already exists.');
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      const confirmSave = window.confirm(`Create category "${name}"?`);
+      if (!confirmSave) return;
+    }
+    setSavingCategory(true);
+    try {
+      await addDoc(collection(db, 'store_categories'), {
+        name,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      });
+      setCategoryForm(buildEmptyCategoryForm());
+    } finally {
+      setSavingCategory(false);
+    }
+  };
+
+  const handleSaveCatalogItem = async () => {
+    const categoryId = itemForm.categoryId;
+    const itemName = itemForm.name.trim();
+    if (!categoryId || !itemName) {
+      setItemError('Select a category and enter an item name.');
+      return;
+    }
+    if (
+      storeCatalogItems.some(
+        (item) =>
+          item.categoryId === categoryId &&
+          `${item.itemName}`.toLowerCase() === itemName.toLowerCase(),
+      )
+    ) {
+      setItemError('This item already exists in the selected category.');
+      return;
+    }
+    const category = storeCategories.find((entry) => entry.id === categoryId);
+    if (!category) {
+      setItemError('Choose a valid category.');
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      const confirmSave = window.confirm(`Create item "${itemName}" under ${category.name}?`);
+      if (!confirmSave) return;
+    }
+    setSavingItem(true);
+    try {
+      await addDoc(collection(db, 'store_catalog_items'), {
+        categoryId,
+        categoryName: category.name,
+        itemName,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      });
+      setItemForm(buildEmptyItemForm());
+    } finally {
+      setSavingItem(false);
+    }
+  };
+
   const handleSaveStoreItem = async (className) => {
     const payload = storeForms[className] || {};
-    const category = (payload.category || '').trim();
-    const itemName = (payload.itemName || '').trim();
+    const categoryId = payload.categoryId;
+    const itemId = payload.itemId;
     const priceValue = Number(payload.price || 0);
-    if (!category || !itemName || !(priceValue > 0)) {
+    if (!categoryId || !itemId || !(priceValue > 0)) {
       setStoreFormErrors((prev) => ({
         ...prev,
-        [className]: 'Enter a category, item name, and price greater than zero.',
+        [className]: 'Select a category, item, and enter a price greater than zero.',
+      }));
+      return;
+    }
+    const category = storeCategories.find((entry) => entry.id === categoryId);
+    const item = storeCatalogItems.find((entry) => entry.id === itemId);
+    if (!category || !item) {
+      setStoreFormErrors((prev) => ({
+        ...prev,
+        [className]: 'Select a valid category and item.',
       }));
       return;
     }
     if (typeof window !== 'undefined') {
       const confirmSave = window.confirm(
-        `Save store item for Class ${className}?\n${category} · ${itemName} · ₹${priceValue.toLocaleString('en-IN')}`,
+        `Save store item for Class ${className}?\n${category.name} · ${item.itemName} · ₹${priceValue.toLocaleString('en-IN')}`,
       );
       if (!confirmSave) return;
     }
     setSavingStoreClass(className);
     try {
-      await addDoc(collection(db, 'store_items'), {
+      await addDoc(collection(db, 'store_class_items'), {
         className,
-        category,
-        itemName,
+        categoryId,
+        categoryName: category.name,
+        itemId,
+        itemName: item.itemName,
         price: priceValue,
         created_at: serverTimestamp(),
         updated_at: serverTimestamp(),
       });
       setStoreForms((prev) => ({
         ...prev,
-        [className]: { category: '', itemName: '', price: '' },
+        [className]: { categoryId: '', itemId: '', price: '' },
       }));
     } finally {
       setSavingStoreClass('');
@@ -263,9 +387,21 @@ const SuperAdminPortal = () => {
     router.replace('/');
   };
 
+  const catalogItemsByCategory = useMemo(() => {
+    const map = new Map();
+    storeCatalogItems.forEach((item) => {
+      if (!item.categoryId) return;
+      if (!map.has(item.categoryId)) {
+        map.set(item.categoryId, []);
+      }
+      map.get(item.categoryId).push(item);
+    });
+    return map;
+  }, [storeCatalogItems]);
+
   const storeItemsByClass = useMemo(() => {
     const map = new Map();
-    storeItems.forEach((item) => {
+    storeClassItems.forEach((item) => {
       const className = item.className || item.class || '';
       if (!className) return;
       if (!map.has(className)) {
@@ -274,7 +410,7 @@ const SuperAdminPortal = () => {
       map.get(className).push(item);
     });
     return map;
-  }, [storeItems]);
+  }, [storeClassItems]);
 
   if (!authChecked) {
     return (
@@ -403,8 +539,86 @@ const SuperAdminPortal = () => {
                 )}
                 {studentTab === 'store' && (
                   <div className="space-y-4">
+                    <div className="space-y-4 rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Create category</p>
+                          <h3 className="text-lg font-semibold text-slate-900">Store catalog builder</h3>
+                          <p className="text-xs text-slate-500">Add categories and items for the dropdowns below.</p>
+                        </div>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <label className="space-y-1 text-sm font-semibold text-slate-700">
+                          <span>Category name</span>
+                          <input
+                            type="text"
+                            value={categoryForm.name}
+                            onChange={(event) => handleCategoryChange(event.target.value)}
+                            className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                            placeholder="e.g. Books"
+                          />
+                        </label>
+                        <div className="flex items-end">
+                          <button
+                            type="button"
+                            onClick={handleSaveCategory}
+                            disabled={savingCategory}
+                            className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:bg-portal/50"
+                          >
+                            {savingCategory ? 'Saving…' : 'Save category'}
+                          </button>
+                        </div>
+                      </div>
+                      {categoryError && <p className="text-xs font-semibold text-rose-600">{categoryError}</p>}
+                      <div className="border-t border-slate-100 pt-4">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Create item</p>
+                        <div className="mt-3 grid gap-3 md:grid-cols-2">
+                          <label className="space-y-1 text-sm font-semibold text-slate-700">
+                            <span>Category</span>
+                            <select
+                              value={itemForm.categoryId}
+                              onChange={(event) => handleItemFormChange('categoryId', event.target.value)}
+                              className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                            >
+                              <option value="">Select category</option>
+                              {storeCategories.map((category) => (
+                                <option key={category.id} value={category.id}>
+                                  {category.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="space-y-1 text-sm font-semibold text-slate-700">
+                            <span>Item name</span>
+                            <input
+                              type="text"
+                              value={itemForm.name}
+                              onChange={(event) => handleItemFormChange('name', event.target.value)}
+                              className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                              placeholder="e.g. Science workbook"
+                            />
+                          </label>
+                        </div>
+                        <div className="mt-3 flex items-center justify-end">
+                          <button
+                            type="button"
+                            onClick={handleSaveCatalogItem}
+                            disabled={savingItem}
+                            className="rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed disabled:bg-portal/50"
+                          >
+                            {savingItem ? 'Saving…' : 'Save item'}
+                          </button>
+                        </div>
+                        {itemError && <p className="mt-2 text-xs font-semibold text-rose-600">{itemError}</p>}
+                      </div>
+                    </div>
                     {CLASS_OPTIONS.map((className) => {
                       const items = storeItemsByClass.get(className) || [];
+                      const classForm = storeForms[className] || {};
+                      const categoryOptions = storeCategories;
+                      const itemOptions = classForm.categoryId
+                        ? catalogItemsByCategory.get(classForm.categoryId) || []
+                        : [];
                       return (
                         <div
                           key={className}
@@ -428,30 +642,47 @@ const SuperAdminPortal = () => {
                           <div className="grid gap-3 md:grid-cols-3">
                             <label className="space-y-1 text-sm font-semibold text-slate-700">
                               <span>Category</span>
-                              <input
-                                type="text"
-                                value={storeForms[className]?.category || ''}
-                                onChange={(event) => handleStoreFormChange(className, 'category', event.target.value)}
+                              <select
+                                value={classForm.categoryId || ''}
+                                onChange={(event) => {
+                                  const value = event.target.value;
+                                  setStoreForms((prev) => ({
+                                    ...prev,
+                                    [className]: { ...prev[className], categoryId: value, itemId: '' },
+                                  }));
+                                  setStoreFormErrors((prev) => ({ ...prev, [className]: '' }));
+                                }}
                                 className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
-                                placeholder="e.g. Books"
-                              />
+                              >
+                                <option value="">Select category</option>
+                                {categoryOptions.map((category) => (
+                                  <option key={category.id} value={category.id}>
+                                    {category.name}
+                                  </option>
+                                ))}
+                              </select>
                             </label>
                             <label className="space-y-1 text-sm font-semibold text-slate-700">
                               <span>Item name</span>
-                              <input
-                                type="text"
-                                value={storeForms[className]?.itemName || ''}
-                                onChange={(event) => handleStoreFormChange(className, 'itemName', event.target.value)}
+                              <select
+                                value={classForm.itemId || ''}
+                                onChange={(event) => handleStoreFormChange(className, 'itemId', event.target.value)}
                                 className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
-                                placeholder="e.g. Science workbook"
-                              />
+                              >
+                                <option value="">Select item</option>
+                                {itemOptions.map((item) => (
+                                  <option key={item.id} value={item.id}>
+                                    {item.itemName}
+                                  </option>
+                                ))}
+                              </select>
                             </label>
                             <label className="space-y-1 text-sm font-semibold text-slate-700">
                               <span>Price (₹)</span>
                               <input
                                 type="number"
                                 min="0"
-                                value={storeForms[className]?.price || ''}
+                                value={classForm.price || ''}
                                 onChange={(event) => handleStoreFormChange(className, 'price', event.target.value)}
                                 className="w-full rounded-xl border border-slate-200 px-3 py-3 text-sm focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                                 placeholder="0"
@@ -468,7 +699,7 @@ const SuperAdminPortal = () => {
                                 {items.slice(0, 5).map((item) => (
                                   <li key={item.id} className="flex flex-wrap items-center justify-between gap-2">
                                     <span>
-                                      <span className="font-semibold text-slate-900">{item.category}</span> · {item.itemName}
+                                      <span className="font-semibold text-slate-900">{item.categoryName}</span> · {item.itemName}
                                     </span>
                                     <span className="text-xs font-semibold text-slate-500">
                                       ₹{Number(item.price || 0).toLocaleString('en-IN')}
