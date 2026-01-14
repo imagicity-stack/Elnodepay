@@ -223,6 +223,7 @@ async function createPaymentEntry(idToken, payload) {
     date: nowIso,
     term: payload.term || '',
     fee_type: payload.feeType || '',
+    payment_type: payload.paymentType || 'fees',
     breakdown: normalizedBreakdown,
     razorpay_order_id: payload.razorpay_order_id || '',
     razorpay_payment_id: payload.razorpay_payment_id || '',
