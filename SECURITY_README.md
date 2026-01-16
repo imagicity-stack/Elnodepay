@@ -102,6 +102,20 @@ The current payment verification flow uses Firebase's REST API with a service em
 - `FIREBASE_SERVICE_EMAIL`
 - `FIREBASE_SERVICE_PASSWORD`
 
+**Where to get these (simple steps):**
+
+1. **FIREBASE_API_KEY**
+   - Firebase Console → Project Settings → **General**.
+   - Under **Your apps**, copy the **Web API Key**.
+
+2. **FIREBASE_SERVICE_EMAIL**
+   - Use a **dedicated Firebase Auth user** (service user).
+   - Go to Firebase Console → **Authentication** → **Users**.
+   - Create a user (e.g., `service@yourdomain.com`) and copy the email.
+
+3. **FIREBASE_SERVICE_PASSWORD**
+   - This is the **password you set** for the service user above.
+
 > These should map to a **restricted service account user** (not a normal parent account).
 
 ### Razorpay Keys
