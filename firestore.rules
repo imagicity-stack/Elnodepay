@@ -5,13 +5,17 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function tokenRole() {
+      return request.auth.token.role != null ? request.auth.token.role : null;
+    }
+
     function userDoc() {
       return get(/databases/$(database)/documents/users/$(request.auth.uid));
     }
 
     function userRole() {
-      return request.auth.token.role != null
-        ? request.auth.token.role
+      return tokenRole() != null
+        ? tokenRole()
         : (userDoc().data.role != null
           ? userDoc().data.role
           : (userDoc().data.roles != null && userDoc().data.roles.size() > 0
@@ -27,6 +31,10 @@ service cloud.firestore {
       return isSignedIn() && userRole() in roles;
     }
 
+    function hasAnyTokenRole(roles) {
+      return isSignedIn() && tokenRole() in roles;
+    }
+
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
@@ -40,9 +48,9 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow read: if isOwner(userId) || hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
-      allow create, update: if isOwner(userId) || hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
-      allow delete: if hasAnyRole(['admin', 'super_admin']);
+      allow read: if isOwner(userId) || hasAnyTokenRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow create, update: if isOwner(userId) || hasAnyTokenRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyTokenRole(['admin', 'super_admin']);
     }
 
     match /students/{studentId} {
