@@ -62,12 +62,32 @@ Key behaviors:
 
 > These values must be configured in your hosting provider (Vercel, etc.).
 
-### Firebase Admin SDK
+### Firebase Admin SDK (Layman Setup)
 Used for server-side token verification in API routes.
 
-- `FIREBASE_SERVICE_ACCOUNT_JSON`
-  - Full JSON service account key (stringified JSON).
-  - Example: `{"type":"service_account", ...}`
+You will download a **service account JSON** file from Firebase. It contains fields like:
+
+- `type`
+- `project_id`
+- `private_key_id`
+- `private_key`
+- `client_email`
+- `client_id`
+- `auth_uri`
+- `token_uri`
+- `auth_provider_x509_cert_url`
+- `client_x509_cert_url`
+- `universe_domain`
+
+**What you do in Vercel (simple steps):**
+
+1. Go to **Firebase Console → Project Settings → Service Accounts**.
+2. Click **Generate new private key**.
+3. Open the downloaded JSON file.
+4. Copy the **entire JSON** (all fields above).
+5. In Vercel, add an environment variable:
+   - **Name:** `FIREBASE_SERVICE_ACCOUNT_JSON`
+   - **Value:** paste the full JSON in one line (Vercel will accept it).
 
 **Alternative (if not using JSON):**
 - `FIREBASE_PROJECT_ID`
