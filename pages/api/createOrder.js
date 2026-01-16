@@ -1,5 +1,37 @@
 import Razorpay from 'razorpay';
 import crypto from 'crypto';
+import { adminAuth } from '../../lib/firebaseAdmin';
+
+const buildError = (message, statusCode = 500) => {
+  const error = new Error(message || 'Unable to process request.');
+  error.statusCode = statusCode;
+  return error;
+};
+
+const getBearerToken = (req) => {
+  const header = req.headers.authorization || '';
+  const match = header.match(/^Bearer (.+)$/i);
+  if (match) {
+    return match[1];
+  }
+  return req.cookies?.token || req.cookies?.__session || null;
+};
+
+const requireRole = async (req, allowedRoles) => {
+  const token = getBearerToken(req);
+  if (!token) {
+    throw buildError('Missing authentication token.', 401);
+  }
+  const decoded = await adminAuth().verifyIdToken(token);
+  const role = decoded?.role;
+  if (!role) {
+    throw buildError('Missing role claim.', 403);
+  }
+  if (Array.isArray(allowedRoles) && allowedRoles.length && !allowedRoles.includes(role)) {
+    throw buildError('Insufficient permissions.', 403);
+  }
+  return { uid: decoded.uid, role };
+};
 
 const resolveKeys = ({ paymentType } = {}) => {
   const normalizedType = `${paymentType || ''}`.toLowerCase();
@@ -35,19 +67,11 @@ const handler = async (req, res) => {
     return res.status(405).json({ success: false, message: 'Method not allowed' });
   }
 
-  const { paymentType } = req.body || {};
-  const { keyId, keySecret } = resolveKeys({ paymentType });
-  if (!keyId || !keySecret) {
-    return res.status(500).json({
-      success: false,
-      message: 'Razorpay keys are missing. Please set the appropriate Razorpay key env vars for this payment type.',
-    });
-  }
-
   try {
+    const authContext = await requireRole(req, ['parent', 'admin', 'admission_manager']);
     const {
       amount,
-      userId,
+      userId: requestedUserId,
       studentId,
       studentDocId,
       studentName,
@@ -58,12 +82,26 @@ const handler = async (req, res) => {
       paymentType = 'fees',
     } = req.body;
 
+    const { keyId, keySecret } = resolveKeys({ paymentType });
+    if (!keyId || !keySecret) {
+      return res.status(500).json({
+        success: false,
+        message: 'Razorpay keys are missing. Please set the appropriate Razorpay key env vars for this payment type.',
+      });
+    }
+
     if (!amount || amount <= 0) {
       return res.status(400).json({ success: false, message: 'Amount must be greater than zero' });
     }
 
+    const userId = requestedUserId || authContext.uid;
+
     if (!userId) {
       return res.status(400).json({ success: false, message: 'Missing user reference' });
+    }
+
+    if (authContext.role !== 'admin' && authContext.uid !== userId) {
+      return res.status(403).json({ success: false, message: 'User mismatch.' });
     }
 
     const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
@@ -89,7 +127,7 @@ const handler = async (req, res) => {
   } catch (error) {
     console.error('createOrder error', error);
     const fallbackMessage = error?.error?.description || error?.message || 'Unable to create order';
-    return res.status(500).json({ success: false, message: fallbackMessage });
+    return res.status(error?.statusCode || 500).json({ success: false, message: fallbackMessage });
   }
 };
 

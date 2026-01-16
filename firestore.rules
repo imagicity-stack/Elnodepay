@@ -1,12 +1,61 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    function signedIn() {
+    function isSignedIn() {
       return request.auth != null;
     }
 
+    function hasRole(role) {
+      return isSignedIn() && request.auth.token.role == role;
+    }
+
+    function hasAnyRole(roles) {
+      return isSignedIn() && request.auth.token.role in roles;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    match /payments/{paymentId} {
+      allow read: if hasAnyRole(['admin', 'accountant', 'admission_manager']);
+      allow write: if false;
+    }
+
+    match /students/{studentId} {
+      allow read: if hasAnyRole(['admin', 'admission_manager', 'teacher'])
+        || (hasRole('parent')
+          && (resource.data.parent_uid == request.auth.uid
+            || resource.data.parentUid == request.auth.uid));
+      allow write: if false;
+    }
+
+    match /inquiries/{inquiryId} {
+      allow read, write: if hasRole('admission_manager');
+    }
+
+    match /visits/{visitId} {
+      allow read, write: if hasRole('admission_manager');
+    }
+
+    match /staff/{staffId} {
+      allow read: if hasAnyRole(['admin', 'admission_manager']);
+      allow write: if false;
+    }
+
+    match /salaries/{salaryId} {
+      allow read: if hasRole('admin')
+        || (hasRole('teacher') && request.auth.uid == resource.data.teacher_uid);
+      allow write: if false;
+    }
+
     match /{document=**} {
-      allow read, write: if signedIn();
+      allow read, write: if false;
     }
   }
 }

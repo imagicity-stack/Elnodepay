@@ -1114,9 +1114,13 @@ const ParentDashboard = () => {
         created_at: serverTimestamp(),
       });
 
+      const idToken = await user.getIdToken();
       const orderResponse = await fetch('/api/createOrder', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
         body: JSON.stringify({
           amount: storeCartTotal,
           paymentType: 'store',
@@ -1220,9 +1224,13 @@ const ParentDashboard = () => {
       });
     }
     try {
+      const idToken = await user.getIdToken();
       const orderResponse = await fetch('/api/createOrder', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
         body: JSON.stringify({
           amount: totalSelectedAmount,
           paymentType,
@@ -1283,7 +1291,10 @@ const ParentDashboard = () => {
           try {
             const verifyResponse = await fetch('/api/verifyPayment', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${idToken}`,
+              },
               body: JSON.stringify({
                 ...response,
                 userId: user.uid,
