@@ -1,0 +1,239 @@
+FIREBASE SETUP CHECKLIST (DETAILED)
+==================================
+
+This file explains exactly what to configure in Firebase for this ERP.
+
+1) Create or select a Firebase project
+--------------------------------------
+- Go to Firebase Console and create a project (or pick existing).
+- Use the same Project ID across web app + server.
+
+2) Enable Authentication
+------------------------
+- Firebase Console → Build → Authentication → Get started.
+- Sign-in method: enable “Email/Password”.
+- This app uses email/password for all roles (admin, accountant, staff, parent, admission manager, super admin).
+
+3) Create Authentication users (how accounts are made)
+------------------------------------------------------
+You can create accounts in two ways:
+
+A) From the ERP UI (recommended)
+- The admin/admission/accountant screens create users automatically using:
+  - createUserWithEmailAndPassword
+- This creates the auth account and then writes a Firestore “users” doc.
+
+B) Manually (Firebase Console → Authentication → Users)
+- If you create a user manually, you MUST also create a Firestore doc:
+  - Collection: users
+  - Document ID: same as auth UID
+  - Fields: at least { role: "parent" | "staff" | "accountant" | "admission_manager" | "super_admin" }
+
+4) Create Firestore (database)
+------------------------------
+- Firebase Console → Build → Firestore Database → Create database.
+- Use “Production” mode (rules below are already locked down).
+
+5) Firestore collections to create
+----------------------------------
+Some collections will appear automatically when the app writes data, but below is the full list used by the code.
+
+Core:
+- users
+- students
+- staff
+
+Admissions pipeline:
+- inquiries
+- visits
+- registrations
+- admissions
+- payments
+
+Finance & operations:
+- fee_requests
+- transactions_log
+- expenses
+- reminders
+
+Notifications & support:
+- notifications
+- support_tickets
+
+Store / catalog:
+- store_categories
+- store_catalog_items
+- store_class_items
+- store_orders
+- store_charges
+
+HR & payroll:
+- staffAttendance
+- salaryStructures
+- salaries
+
+Settings / counters:
+- settings (documents: general, feestructure, super_admin, admission)
+- metadata (document: school_number_counters)
+- counters (document: inquiry)
+
+Subcollections used:
+- inquiries/{inquiryId}/timeline
+
+6) Firestore rules (paste into Firestore Rules)
+-----------------------------------------------
+Current rules in the repository:
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function hasRole(role) {
+      return isSignedIn() && request.auth.token.role == role;
+    }
+
+    function hasAnyRole(roles) {
+      return isSignedIn() && request.auth.token.role in roles;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    match /payments/{paymentId} {
+      allow read: if hasAnyRole(['admin', 'accountant', 'admission_manager']);
+      allow write: if false;
+    }
+
+    match /students/{studentId} {
+      allow read: if hasAnyRole(['admin', 'admission_manager', 'teacher'])
+        || (hasRole('parent')
+          && (resource.data.parent_uid == request.auth.uid
+            || resource.data.parentUid == request.auth.uid));
+      allow write: if false;
+    }
+
+    match /inquiries/{inquiryId} {
+      allow read, write: if hasRole('admission_manager');
+    }
+
+    match /visits/{visitId} {
+      allow read, write: if hasRole('admission_manager');
+    }
+
+    match /staff/{staffId} {
+      allow read: if hasAnyRole(['admin', 'admission_manager']);
+      allow write: if false;
+    }
+
+    match /salaries/{salaryId} {
+      allow read: if hasRole('admin')
+        || (hasRole('teacher') && request.auth.uid == resource.data.teacher_uid);
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+7) Storage setup
+----------------
+- Firebase Console → Build → Storage → Get started.
+
+Storage paths used:
+- expenses/{expenseId}/{fileName}
+- inquiries/{inquiryId}/{fileName}
+- users/{userId}/...
+
+8) Storage rules (paste into Storage Rules)
+-------------------------------------------
+Current rules in the repository:
+
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function hasRole(role) {
+      return isSignedIn() && request.auth.token.role == role;
+    }
+
+    function hasAnyRole(roles) {
+      return isSignedIn() && request.auth.token.role in roles;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    match /expenses/{allPaths=**} {
+      allow read, write: if hasAnyRole(['admin', 'accountant', 'admission_manager']);
+      allow delete: if hasRole('admin');
+    }
+
+    match /users/{userId}/{allPaths=**} {
+      allow read, write: if isOwner(userId);
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+NOTE: inquiry uploads are used in code (inquiries/{inquiryId}/{fileName}) but not allowed in current rules.
+If you want inquiry uploads to work, add a rule such as:
+
+match /inquiries/{allPaths=**} {
+  allow read, write: if hasRole('admission_manager');
+}
+
+9) Environment variables (client)
+---------------------------------
+Set these in your hosting environment:
+- NEXT_PUBLIC_FIREBASE_API_KEY
+- NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+- NEXT_PUBLIC_FIREBASE_PROJECT_ID
+- NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET
+- NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+- NEXT_PUBLIC_FIREBASE_APP_ID
+
+10) Environment variables (server / API)
+----------------------------------------
+Set these for Next.js API routes:
+- FIREBASE_SERVICE_ACCOUNT_JSON (or FIREBASE_SERVICE_ACCOUNT)
+- FIREBASE_PROJECT_ID
+- FIREBASE_SERVICE_EMAIL
+- FIREBASE_PRIVATE_KEY
+
+Payment verification APIs also require:
+- FIREBASE_API_KEY
+- FIREBASE_SERVICE_EMAIL
+- FIREBASE_SERVICE_PASSWORD
+
+11) Role assignment checklist
+-----------------------------
+The app depends on a Firestore “users” document per auth user.
+Make sure each user document has:
+- role (string): admin, super_admin, admission_manager, accountant, staff, parent, student
+- name or email for display
+
+12) Quick sanity checklist
+--------------------------
+- Can you log in with a known user in Firebase Auth?
+- Is there a matching users/{uid} doc with a role?
+- Are Firestore and Storage rules deployed?
+- Are environment variables set on the host?
+
