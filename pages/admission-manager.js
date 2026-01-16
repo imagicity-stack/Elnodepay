@@ -677,10 +677,14 @@ const PaymentModal = ({
     }
     setProcessing(true);
     try {
+      const idToken = await user.getIdToken();
       const orderResponse = await fetch('/api/createOrder', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: payableAmount, studentName }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ amount: payableAmount, studentName, userId: user.uid }),
       });
       const orderData = await orderResponse.json();
       if (!orderData.success) {
@@ -698,7 +702,10 @@ const PaymentModal = ({
           try {
             const verifyResponse = await fetch('/api/verifyPayment', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${idToken}`,
+              },
               body: JSON.stringify({ ...response, amount: payableAmount }),
             });
             const verifyData = await verifyResponse.json();

@@ -1,6 +1,9 @@
 import crypto from 'crypto';
+import Razorpay from 'razorpay';
+import { adminAuth } from '../../lib/firebaseAdmin';
 
 const {
+  RAZORPAY_KEY_ID_BHAGWATI,
   RAZORPAY_KEY_SECRET_BHAGWATI,
   FIREBASE_API_KEY,
   FIREBASE_PROJECT_ID,
@@ -23,9 +26,41 @@ const toNumber = (value) => {
 
 const roundCurrency = (value) => Math.max(0, Math.round(toNumber(value) * 100) / 100);
 
-function buildError(message) {
-  return new Error(message || 'Unexpected error');
+function buildError(message, statusCode = 500) {
+  const error = new Error(message || 'Unexpected error');
+  error.statusCode = statusCode;
+  return error;
 }
+
+const getBearerToken = (req) => {
+  const header = req.headers.authorization || '';
+  const match = header.match(/^Bearer (.+)$/i);
+  if (match) {
+    return match[1];
+  }
+  return req.cookies?.token || req.cookies?.__session || null;
+};
+
+const requireRole = async (req, allowedRoles) => {
+  const token = getBearerToken(req);
+  if (!token) {
+    throw buildError('Missing authentication token.', 401);
+  }
+  const decoded = await adminAuth().verifyIdToken(token);
+  const role = decoded?.role;
+  if (!role) {
+    throw buildError('Missing role claim.', 403);
+  }
+  if (Array.isArray(allowedRoles) && allowedRoles.length && !allowedRoles.includes(role)) {
+    throw buildError('Insufficient permissions.', 403);
+  }
+  return { uid: decoded.uid, role };
+};
+
+const resolveKeys = () => ({
+  keyId: RAZORPAY_KEY_ID_BHAGWATI || process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID_BHAGWATI,
+  keySecret: RAZORPAY_KEY_SECRET_BHAGWATI,
+});
 
 async function getFirebaseIdToken() {
   if (!FIREBASE_API_KEY) {
@@ -191,6 +226,23 @@ async function firestoreRunQuery(idToken, structuredQuery) {
     .filter(Boolean);
 }
 
+async function findPaymentByRazorpayPaymentId(idToken, paymentId) {
+  if (!paymentId) return null;
+  const structuredQuery = {
+    from: [{ collectionId: 'payments' }],
+    where: {
+      fieldFilter: {
+        field: { fieldPath: 'razorpay_payment_id' },
+        op: 'EQUAL',
+        value: { stringValue: paymentId },
+      },
+    },
+    limit: 1,
+  };
+  const results = await firestoreRunQuery(idToken, structuredQuery);
+  return results[0] || null;
+}
+
 const validateSignature = ({ orderId, paymentId, signature }) => {
   if (!RAZORPAY_KEY_SECRET_BHAGWATI) {
     throw buildError('Razorpay secret not configured.');
@@ -200,6 +252,15 @@ const validateSignature = ({ orderId, paymentId, signature }) => {
   if (expectedSignature !== signature) {
     throw buildError('Razorpay signature verification failed.');
   }
+};
+
+const fetchRazorpayOrder = async (orderId) => {
+  const { keyId, keySecret } = resolveKeys();
+  if (!keyId || !keySecret) {
+    throw buildError('Razorpay keys are missing.', 500);
+  }
+  const razorpay = new Razorpay({ key_id: keyId, key_secret: keySecret });
+  return razorpay.orders.fetch(orderId);
 };
 
 async function createPaymentEntry(idToken, payload) {
@@ -482,6 +543,7 @@ const handler = async (req, res) => {
   }
 
   try {
+    const authContext = await requireRole(req, ['parent', 'admin', 'admission_manager']);
     const {
       razorpay_order_id,
       razorpay_payment_id,
@@ -506,12 +568,15 @@ const handler = async (req, res) => {
     }
     const isInquiryPayment = !!inquiryId && !studentDocId;
 
-    if (!studentDocId && !isInquiryPayment) {
-      return res.status(400).json({ success: false, message: 'Missing student reference.' });
+    if (isInquiryPayment && !['admin', 'admission_manager'].includes(authContext.role)) {
+      return res.status(403).json({ success: false, message: 'Insufficient permissions.' });
     }
-    const amountPaid = roundCurrency(amount);
-    if (!(amountPaid > 0)) {
-      return res.status(400).json({ success: false, message: 'Invalid payment amount.' });
+    if (!isInquiryPayment && !['admin', 'parent'].includes(authContext.role)) {
+      return res.status(403).json({ success: false, message: 'Insufficient permissions.' });
+    }
+
+    if (authContext.role === 'parent' && parentUid && parentUid !== authContext.uid) {
+      return res.status(403).json({ success: false, message: 'Parent mismatch.' });
     }
 
     validateSignature({
@@ -520,16 +585,41 @@ const handler = async (req, res) => {
       signature: razorpay_signature,
     });
 
+    const order = await fetchRazorpayOrder(razorpay_order_id);
+    const expectedAmount = roundCurrency(Number(order?.amount || 0) / 100);
+    if (!(expectedAmount > 0)) {
+      return res.status(400).json({ success: false, message: 'Invalid order amount.' });
+    }
+    const providedAmount = roundCurrency(amount);
+    if (providedAmount && providedAmount !== expectedAmount) {
+      return res.status(400).json({ success: false, message: 'Payment amount mismatch.' });
+    }
+
+    const orderNotes = order?.notes || {};
+    const expectedStudentDocId = String(orderNotes.studentDocId || '');
+    const resolvedStudentDocId = expectedStudentDocId || studentDocId || '';
+    if (!resolvedStudentDocId && !isInquiryPayment) {
+      return res.status(400).json({ success: false, message: 'Missing student reference.' });
+    }
+    if (expectedStudentDocId && studentDocId && studentDocId !== expectedStudentDocId) {
+      return res.status(400).json({ success: false, message: 'Student reference mismatch.' });
+    }
+
     const idToken = await getFirebaseIdToken();
 
+    const existingPayment = await findPaymentByRazorpayPaymentId(idToken, razorpay_payment_id);
+    if (existingPayment) {
+      return res.status(200).json({ success: true, paymentId: existingPayment.id, idempotent: true });
+    }
+
     const paymentId = await createPaymentEntry(idToken, {
-      studentId,
-      studentDocId,
-      studentName,
+      studentId: orderNotes.studentId || studentId,
+      studentDocId: resolvedStudentDocId,
+      studentName: orderNotes.studentName || studentName,
       className,
-      parentUid,
-      parentEmail,
-      amount: amountPaid,
+      parentUid: authContext.role === 'parent' ? authContext.uid : parentUid,
+      parentEmail: orderNotes.parentEmail || parentEmail,
+      amount: expectedAmount,
       term,
       feeType,
       breakdown,
@@ -543,29 +633,29 @@ const handler = async (req, res) => {
       await markInquiryRegistered(idToken, {
         inquiryId,
         paymentId: razorpay_payment_id || paymentId,
-        amount: amountPaid,
+        amount: expectedAmount,
       });
       return res.status(200).json({ success: true, paymentId: paymentId || razorpay_payment_id });
     }
 
-    await updateStudentAccount(idToken, studentDocId, amountPaid);
+    await updateStudentAccount(idToken, resolvedStudentDocId, expectedAmount);
 
     await reconcileFeeRequests({
       idToken,
-      studentDocId,
-      studentId,
-      amountPaid,
+      studentDocId: resolvedStudentDocId,
+      studentId: orderNotes.studentId || studentId,
+      amountPaid: expectedAmount,
       paymentMode: paymentMode || 'Online',
       transactionId: razorpay_payment_id,
     });
 
     await createTransactionLogEntry({
       idToken,
-      studentDocId,
-      studentId,
-      studentName,
+      studentDocId: resolvedStudentDocId,
+      studentId: orderNotes.studentId || studentId,
+      studentName: orderNotes.studentName || studentName,
       className,
-      amount: amountPaid,
+      amount: expectedAmount,
       paymentMode: paymentMode || 'Online',
       transactionId: razorpay_payment_id,
     });
@@ -573,12 +663,12 @@ const handler = async (req, res) => {
     if (advancePayment?.months) {
       await applyAdvancePayment({
         idToken,
-        studentDocId,
-        studentId,
-        studentName,
+        studentDocId: resolvedStudentDocId,
+        studentId: orderNotes.studentId || studentId,
+        studentName: orderNotes.studentName || studentName,
         className,
-        parentUid,
-        parentEmail,
+        parentUid: authContext.role === 'parent' ? authContext.uid : parentUid,
+        parentEmail: orderNotes.parentEmail || parentEmail,
         months: Number(advancePayment.months || 0),
         cycle: advancePayment.cycle,
         amount: Number(advancePayment.amount || 0),
@@ -588,15 +678,15 @@ const handler = async (req, res) => {
 
     await pushNotification({
       idToken,
-      parentUid,
-      studentName,
-      amount: amountPaid,
+      parentUid: authContext.role === 'parent' ? authContext.uid : parentUid,
+      studentName: orderNotes.studentName || studentName,
+      amount: expectedAmount,
     });
 
     return res.status(200).json({ success: true, paymentId: paymentId || razorpay_payment_id });
   } catch (error) {
     console.error('verifyPayment error:', error?.message || error);
-    return res.status(500).json({ success: false, message: error?.message || 'Unable to verify payment.' });
+    return res.status(error?.statusCode || 500).json({ success: false, message: error?.message || 'Unable to verify payment.' });
   }
 };
 
