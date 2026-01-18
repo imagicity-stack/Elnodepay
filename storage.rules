@@ -5,12 +5,26 @@ service firebase.storage {
       return request.auth != null;
     }
 
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userRole() {
+      return request.auth.token.role != null
+        ? request.auth.token.role
+        : (userDoc().data.role != null
+          ? userDoc().data.role
+          : (userDoc().data.roles != null && userDoc().data.roles.size() > 0
+            ? userDoc().data.roles[0]
+            : null));
+    }
+
     function hasRole(role) {
-      return isSignedIn() && request.auth.token.role == role;
+      return isSignedIn() && userRole() == role;
     }
 
     function hasAnyRole(roles) {
-      return isSignedIn() && request.auth.token.role in roles;
+      return isSignedIn() && userRole() in roles;
     }
 
     function isOwner(userId) {
@@ -18,8 +32,13 @@ service firebase.storage {
     }
 
     match /expenses/{allPaths=**} {
-      allow read, write: if hasAnyRole(['admin', 'accountant', 'admission_manager']);
-      allow delete: if hasRole('admin');
+      allow read, write: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /inquiries/{allPaths=**} {
+      allow read, write: if hasAnyRole(['admin', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
     }
 
     match /users/{userId}/{allPaths=**} {

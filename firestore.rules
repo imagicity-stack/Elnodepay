@@ -5,53 +5,212 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function tokenRole() {
+      return request.auth.token.role != null ? request.auth.token.role : null;
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userRole() {
+      return tokenRole() != null
+        ? tokenRole()
+        : (userDoc().data.role != null
+          ? userDoc().data.role
+          : (userDoc().data.roles != null && userDoc().data.roles.size() > 0
+            ? userDoc().data.roles[0]
+            : null));
+    }
+
     function hasRole(role) {
-      return isSignedIn() && request.auth.token.role == role;
+      return isSignedIn() && userRole() == role;
     }
 
     function hasAnyRole(roles) {
-      return isSignedIn() && request.auth.token.role in roles;
+      return isSignedIn() && userRole() in roles;
+    }
+
+    function hasAnyTokenRole(roles) {
+      return isSignedIn() && tokenRole() in roles;
     }
 
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    match /users/{userId} {
-      allow read: if isOwner(userId);
-      allow write: if false;
+    function isParentFor(data) {
+      return isSignedIn() && (
+        (data.parent_uid != null && data.parent_uid == request.auth.uid) ||
+        (data.parentUid != null && data.parentUid == request.auth.uid) ||
+        (data.parent_email != null && request.auth.token.email != null && data.parent_email == request.auth.token.email)
+      );
     }
 
-    match /payments/{paymentId} {
-      allow read: if hasAnyRole(['admin', 'accountant', 'admission_manager']);
-      allow write: if false;
+    match /users/{userId} {
+      allow read: if isOwner(userId) || hasAnyTokenRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow create, update: if isOwner(userId) || hasAnyTokenRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyTokenRole(['admin', 'super_admin']);
     }
 
     match /students/{studentId} {
-      allow read: if hasAnyRole(['admin', 'admission_manager', 'teacher'])
-        || (hasRole('parent')
-          && (resource.data.parent_uid == request.auth.uid
-            || resource.data.parentUid == request.auth.uid));
-      allow write: if false;
+      allow read: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin', 'teacher'])
+        || isParentFor(resource.data);
+      allow create, update: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'accountant', 'super_admin']);
+    }
+
+    match /payments/{paymentId} {
+      allow read: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin'])
+        || isParentFor(resource.data);
+      allow create: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin'])
+        || isParentFor(request.resource.data);
+      allow update: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /fee_requests/{requestId} {
+      allow read: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin'])
+        || isParentFor(resource.data);
+      allow create: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin'])
+        || isParentFor(request.resource.data);
+      allow update: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin'])
+        || isParentFor(resource.data);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /transactions_log/{transactionId} {
+      allow read: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow create, update: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /reminders/{reminderId} {
+      allow read: if isSignedIn();
+      allow create, update: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if isSignedIn();
+      allow create, update: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin']) || isSignedIn();
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /support_tickets/{ticketId} {
+      allow read: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow create: if isSignedIn();
+      allow update: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
     }
 
     match /inquiries/{inquiryId} {
-      allow read, write: if hasRole('admission_manager');
+      allow read, create, update: if hasAnyRole(['admin', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+
+      match /timeline/{entryId} {
+        allow read, create, update: if hasAnyRole(['admin', 'admission_manager', 'super_admin']);
+        allow delete: if hasAnyRole(['admin', 'super_admin']);
+      }
     }
 
     match /visits/{visitId} {
-      allow read, write: if hasRole('admission_manager');
+      allow read, create, update: if hasAnyRole(['admin', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /registrations/{registrationId} {
+      allow read, create, update: if hasAnyRole(['admin', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /admissions/{admissionId} {
+      allow read, create, update: if hasAnyRole(['admin', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
     }
 
     match /staff/{staffId} {
-      allow read: if hasAnyRole(['admin', 'admission_manager']);
-      allow write: if false;
+      allow read: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin'])
+        || (hasRole('staff') && request.auth.uid == resource.data.authUid);
+      allow create, update: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /salaryStructures/{staffId} {
+      allow read: if hasAnyRole(['admin', 'accountant', 'super_admin'])
+        || (hasRole('staff') && request.auth.uid == staffId);
+      allow create, update: if hasAnyRole(['admin', 'accountant', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /staffAttendance/{attendanceId} {
+      allow read: if hasAnyRole(['admin', 'accountant', 'super_admin'])
+        || (hasRole('staff') && request.auth.uid == resource.data.authUid);
+      allow create, update: if hasAnyRole(['admin', 'accountant', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
     }
 
     match /salaries/{salaryId} {
-      allow read: if hasRole('admin')
-        || (hasRole('teacher') && request.auth.uid == resource.data.teacher_uid);
-      allow write: if false;
+      allow read: if hasAnyRole(['admin', 'accountant', 'super_admin'])
+        || (hasRole('staff') && request.auth.uid == resource.data.authUid);
+      allow create, update: if hasAnyRole(['admin', 'accountant', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /store_categories/{categoryId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /store_catalog_items/{itemId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /store_class_items/{classItemId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /store_charges/{chargeId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /store_orders/{orderId} {
+      allow read: if hasAnyRole(['admin', 'accountant', 'super_admin'])
+        || isParentFor(resource.data);
+      allow create: if isParentFor(request.resource.data)
+        || hasAnyRole(['admin', 'accountant', 'super_admin']);
+      allow update: if hasAnyRole(['admin', 'accountant', 'super_admin'])
+        || isParentFor(resource.data);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /expenses/{expenseId} {
+      allow read, create, update: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /settings/{settingId} {
+      allow read: if isSignedIn();
+      allow create, update: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /metadata/{metadataId} {
+      allow read, create, update: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /counters/{counterId} {
+      allow read, create, update: if hasAnyRole(['admin', 'accountant', 'admission_manager', 'super_admin']);
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
+    }
+
+    match /parent_portal/{docId} {
+      allow read, create, update: if isSignedIn();
+      allow delete: if hasAnyRole(['admin', 'super_admin']);
     }
 
     match /{document=**} {
