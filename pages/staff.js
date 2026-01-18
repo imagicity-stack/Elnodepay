@@ -304,7 +304,7 @@ const StaffDashboard = () => {
         <Head>
           <title>Staff Login · EL-NODE Pay</title>
         </Head>
-        <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-xl">
+        <div className="w-full max-w-md rounded-none border border-slate-200 bg-white p-6 shadow-xl">
           <div className="flex items-center gap-3">
             <Image src="/elnode.png" alt="EL-NODE" width={48} height={48} />
             <div>
@@ -313,7 +313,7 @@ const StaffDashboard = () => {
             </div>
           </div>
           {roleState.error && (
-            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+            <div className="mt-4 rounded-none border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
               {roleState.error}
             </div>
           )}
@@ -324,7 +324,7 @@ const StaffDashboard = () => {
                 type="email"
                 value={loginState.email}
                 onChange={(event) => setLoginState((prev) => ({ ...prev, email: event.target.value }))}
-                className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                className="mt-2 w-full rounded-none border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 required
               />
             </label>
@@ -334,7 +334,7 @@ const StaffDashboard = () => {
                 type="password"
                 value={loginState.password}
                 onChange={(event) => setLoginState((prev) => ({ ...prev, password: event.target.value }))}
-                className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
+                className="mt-2 w-full rounded-none border border-slate-200 px-3 py-2 text-sm text-slate-800 focus:border-portal focus:outline-none focus:ring-2 focus:ring-portal/20"
                 required
               />
             </label>
@@ -342,7 +342,7 @@ const StaffDashboard = () => {
             <button
               type="submit"
               disabled={loginState.loading}
-              className="w-full rounded-xl bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed"
+              className="w-full rounded-none bg-portal px-4 py-2 text-sm font-semibold text-white shadow hover:bg-portal/90 disabled:cursor-not-allowed"
             >
               {loginState.loading ? 'Signing in…' : 'Sign In'}
             </button>
